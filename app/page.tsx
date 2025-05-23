@@ -59,6 +59,27 @@ export default function Home() {
     }
   }
 
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to remove this task? This will delete the worktree and all changes.')) {
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        fetchTasks()
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to remove task: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error removing task:', error)
+      setError(`Failed to remove task: ${error.message || 'Network error'}`)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!prompt.trim() || !repoPath.trim()) return
@@ -186,11 +207,34 @@ export default function Home() {
                       {new Date(task.createdAt).toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <Button variant="link" asChild>
-                        <Link href={`/task/${task.id}`}>
-                          View Details
-                        </Link>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="link" asChild>
+                          <Link href={`/task/${task.id}`}>
+                            View Details
+                          </Link>
+                        </Button>
+                        <Button
+                          onClick={() => handleDeleteTask(task.id)}
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
