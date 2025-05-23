@@ -23,6 +23,10 @@ export default function TaskDetail() {
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCommitting, setIsCommitting] = useState(false)
+  const [showPreviewConflict, setShowPreviewConflict] = useState(false)
+  const [conflictBranchName, setConflictBranchName] = useState<string | null>(null)
+  const [showMergeConflict, setShowMergeConflict] = useState(false)
+  const [mergeConflictBranchName, setMergeConflictBranchName] = useState<string | null>(null)
   const outputEndRef = useRef<HTMLDivElement>(null)
   const hasScrolledToBottom = useRef(false)
   const outputContainerRef = useRef<HTMLDivElement>(null)
@@ -90,7 +94,8 @@ export default function TaskDetail() {
         const errorMessage = errorData.error || 'Unknown error'
         if (errorMessage.startsWith('MERGE_CONFLICT:')) {
           const branchName = errorMessage.split(':')[1]
-          setError(`Merge conflict detected! You can manually merge with:\n\ngit checkout main\ngit merge ${branchName}\n\nThen resolve conflicts and commit, or create a new task with the latest changes.`)
+          setMergeConflictBranchName(branchName)
+          setShowMergeConflict(true)
         } else {
           setError(`Failed to merge: ${errorMessage}`)
         }
@@ -162,8 +167,18 @@ export default function TaskDetail() {
       })
       if (!response.ok) {
         const errorData = await response.json()
-        setError(`Failed to start preview: ${errorData.error || 'Unknown error'}`)
-        setIsPreviewing(false)
+        const errorMessage = errorData.error || 'Unknown error'
+        
+        // Check if this is a cherry-pick conflict
+        if (errorMessage.startsWith('CHERRY_PICK_CONFLICT:')) {
+          const branchName = errorMessage.split(':')[1]
+          setConflictBranchName(branchName)
+          setShowPreviewConflict(true)
+          setIsPreviewing(false)
+        } else {
+          setError(`Failed to start preview: ${errorMessage}`)
+          setIsPreviewing(false)
+        }
       }
     } catch (error: any) {
       console.error('Error starting preview:', error)
@@ -211,6 +226,33 @@ export default function TaskDetail() {
       setError(`Failed to commit: ${error.message || 'Network error'}`)
     } finally {
       setIsCommitting(false)
+    }
+  }
+
+  const handleResubmitTask = async () => {
+    if (!task) return
+    
+    try {
+      // Create a new task with the same prompt
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: task.prompt,
+          repoPath: task.repoPath
+        }),
+      })
+      
+      if (response.ok) {
+        const newTask = await response.json()
+        router.push(`/task/${newTask.id}`)
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to resubmit task: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error resubmitting task:', error)
+      setError(`Failed to resubmit task: ${error.message || 'Network error'}`)
     }
   }
 
@@ -428,6 +470,123 @@ export default function TaskDetail() {
                 disabled={isMerging}
               >
                 {isMerging ? 'Merging...' : 'Merge'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Conflict Dialog */}
+      {showPreviewConflict && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2 text-red-600">Preview Conflict Detected</h3>
+            <div className="space-y-4">
+              <p className="text-gray-600">
+                A merge conflict was detected while trying to preview changes. You have two options:
+              </p>
+              
+              <div className="bg-gray-50 p-4 rounded-md">
+                <h4 className="font-medium mb-2">Option 1: Manual Resolution</h4>
+                <p className="text-sm text-gray-600 mb-2">
+                  You can manually resolve the conflict using these commands:
+                </p>
+                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
+{`cd ${task?.repoPath || 'your-repo'}
+git cherry-pick ${conflictBranchName || 'branch-name'}
+# Resolve conflicts in your editor
+git add .
+git cherry-pick --continue`}
+                </pre>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded-md">
+                <h4 className="font-medium mb-2">Option 2: Resubmit Task</h4>
+                <p className="text-sm text-gray-600">
+                  Create a new task with the same prompt, starting from the latest main branch changes.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <Button
+                onClick={() => {
+                  setShowPreviewConflict(false)
+                  setConflictBranchName(null)
+                }}
+                variant="outline"
+                size="sm"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowPreviewConflict(false)
+                  handleResubmitTask()
+                }}
+                variant="default"
+                size="sm"
+              >
+                Resubmit Task
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Merge Conflict Dialog */}
+      {showMergeConflict && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2 text-red-600">Merge Conflict Detected</h3>
+            <div className="space-y-4">
+              <p className="text-gray-600">
+                A merge conflict was detected while trying to merge to main. You have two options:
+              </p>
+              
+              <div className="bg-gray-50 p-4 rounded-md">
+                <h4 className="font-medium mb-2">Option 1: Manual Resolution</h4>
+                <p className="text-sm text-gray-600 mb-2">
+                  You can manually resolve the conflict using these commands:
+                </p>
+                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
+{`cd ${task?.repoPath || 'your-repo'}
+git checkout main
+git merge ${mergeConflictBranchName || 'branch-name'}
+# Resolve conflicts in your editor
+git add .
+git commit`}
+                </pre>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded-md">
+                <h4 className="font-medium mb-2">Option 2: Resubmit Task</h4>
+                <p className="text-sm text-gray-600">
+                  Create a new task with the same prompt, starting from the latest main branch changes.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <Button
+                onClick={() => {
+                  setShowMergeConflict(false)
+                  setMergeConflictBranchName(null)
+                }}
+                variant="outline"
+                size="sm"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowMergeConflict(false)
+                  handleResubmitTask()
+                }}
+                variant="default"
+                size="sm"
+              >
+                Resubmit Task
               </Button>
             </div>
           </div>

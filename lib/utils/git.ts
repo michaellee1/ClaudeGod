@@ -140,9 +140,46 @@ export async function cherryPickCommit(repoPath: string, commitHash: string): Pr
   try {
     // Cherry-pick the commit
     await execFileAsync('git', ['-C', repoPath, 'cherry-pick', commitHash])
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error cherry-picking commit:', error)
-    throw error
+    
+    // Check if this is a conflict error
+    if (error.message?.includes('CONFLICT') || error.stderr?.includes('CONFLICT')) {
+      // Get the branch name for the commit
+      try {
+        const { stdout: branches } = await execFileAsync('git', [
+          '-C', repoPath,
+          'branch', '--contains', commitHash, '--format=%(refname:short)'
+        ])
+        const branchName = branches.split('\n').filter(b => b.trim())[0] || commitHash.substring(0, 7)
+        
+        // Abort the cherry-pick to clean up
+        await execFileAsync('git', ['-C', repoPath, 'cherry-pick', '--abort'])
+        
+        // Throw a special error that can be caught by the UI
+        throw new Error(`CHERRY_PICK_CONFLICT:${branchName}`)
+      } catch (abortError: any) {
+        // If we can't get branch name or abort, throw with commit hash
+        if (!abortError.message?.startsWith('CHERRY_PICK_CONFLICT:')) {
+          await execFileAsync('git', ['-C', repoPath, 'cherry-pick', '--abort']).catch(() => {})
+          throw new Error(`CHERRY_PICK_CONFLICT:${commitHash.substring(0, 7)}`)
+        }
+        throw abortError
+      }
+    }
+    
+    // For other errors, check if there are unmerged paths and abort if needed
+    try {
+      const { stdout: status } = await execFileAsync('git', ['-C', repoPath, 'status', '--porcelain'])
+      if (status.includes('UU') || status.includes('AA') || status.includes('DD')) {
+        // There are unmerged paths, abort the cherry-pick
+        await execFileAsync('git', ['-C', repoPath, 'cherry-pick', '--abort'])
+      }
+    } catch (cleanupError) {
+      console.error('Failed to cleanup cherry-pick state:', cleanupError)
+    }
+    
+    throw new Error(`Cherry-pick failed: ${error.message || 'Unknown error during cherry-pick'}`)
   }
 }
 
