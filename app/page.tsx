@@ -36,6 +36,8 @@ export default function Home() {
   const [isDeletingAll, setIsDeletingAll] = useState(false)
   const [previewingTaskId, setPreviewingTaskId] = useState<string | null>(null)
   const [thinkMode, setThinkMode] = useState('level1')
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   useEffect(() => {
     fetchTasks()
@@ -159,28 +161,66 @@ export default function Home() {
     }
   }
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        setError('Image size must be less than 10MB')
+        e.target.value = '' // Reset input
+        return
+      }
+      
+      setSelectedImage(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+  
+  const handleClearImage = () => {
+    setSelectedImage(null)
+    setImagePreview(null)
+    const fileInput = document.getElementById('image') as HTMLInputElement
+    if (fileInput) {
+      fileInput.value = ''
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!prompt.trim() || !repoPath.trim()) return
 
     let finalPrompt = prompt
+    
+    // Add think mode first (it will be moved after image ref on backend)
     if (thinkMode !== 'none') {
       const thinkModeText = thinkMode === 'level1' ? 'Think hard' : 
                            thinkMode === 'level2' ? 'Think harder' : 
                            'Ultrathink'
-      finalPrompt = `${prompt}. ${thinkModeText}`
+      finalPrompt = `${finalPrompt}. ${thinkModeText}`
     }
 
     setIsSubmitting(true)
     try {
+      const formData = new FormData()
+      formData.append('prompt', finalPrompt)
+      formData.append('repoPath', repoPath)
+      if (selectedImage) {
+        formData.append('image', selectedImage)
+      }
+
       const response = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: finalPrompt, repoPath }),
+        body: formData,
       })
 
       if (response.ok) {
         setPrompt('')
+        setSelectedImage(null)
+        setImagePreview(null)
         setError(null)
         fetchTasks()
       } else {
@@ -233,6 +273,37 @@ export default function Home() {
                 placeholder="Describe your task..."
                 required
               />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="image">Attach Image (Optional)</Label>
+              <div className="flex flex-col gap-2">
+                <Input
+                  id="image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="cursor-pointer"
+                />
+                {imagePreview && (
+                  <div className="mt-2 relative inline-block">
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="max-w-xs max-h-40 rounded border border-gray-200"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleClearImage}
+                      className="absolute top-1 right-1 p-1 h-6 w-6"
+                      variant="destructive"
+                      size="sm"
+                    >
+                      ×
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="space-y-2">
