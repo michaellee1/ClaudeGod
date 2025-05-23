@@ -45,5 +45,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function DELETE() {
+  try {
+    await taskStore.removeAllTasks()
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Error deleting all tasks:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to delete all tasks' },
+      { status: 500 }
+    )
+  }
+}
+
 // Prevent static caching for tasks list and creation
 export const dynamic = 'force-dynamic'

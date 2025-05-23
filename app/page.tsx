@@ -25,6 +25,7 @@ export default function Home() {
   const [repoPath, setRepoPath] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isDeletingAll, setIsDeletingAll] = useState(false)
 
   useEffect(() => {
     fetchTasks()
@@ -77,6 +78,32 @@ export default function Home() {
     } catch (error: any) {
       console.error('Error removing task:', error)
       setError(`Failed to remove task: ${error.message || 'Network error'}`)
+    }
+  }
+
+  const handleDeleteAllTasks = async () => {
+    if (!confirm('Are you sure you want to delete ALL tasks? This will remove all worktrees and changes permanently.')) {
+      return
+    }
+    
+    setIsDeletingAll(true)
+    setError(null)
+    
+    try {
+      const response = await fetch('/api/tasks', {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        fetchTasks()
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to delete all tasks: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error deleting all tasks:', error)
+      setError(`Failed to delete all tasks: ${error.message || 'Network error'}`)
+    } finally {
+      setIsDeletingAll(false)
     }
   }
 
@@ -239,6 +266,19 @@ export default function Home() {
                 ))}
               </TableBody>
             </Table>
+          )}
+          
+          {tasks.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <Button
+                onClick={handleDeleteAllTasks}
+                disabled={isDeletingAll}
+                variant="destructive"
+                className="w-full"
+              >
+                {isDeletingAll ? 'Deleting All Tasks...' : 'Delete All Tasks'}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

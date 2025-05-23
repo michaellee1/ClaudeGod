@@ -392,6 +392,35 @@ class TaskStore {
     this.outputs.delete(taskId)
     this.debouncedSave() // Save after removing task
   }
+
+  async removeAllTasks(): Promise<void> {
+    console.log('Removing all tasks...')
+    
+    // Get all task IDs
+    const taskIds = Array.from(this.tasks.keys())
+    
+    // Remove each task one by one to ensure proper cleanup
+    for (const taskId of taskIds) {
+      try {
+        await this.removeTask(taskId)
+        console.log(`Removed task ${taskId}`)
+      } catch (error) {
+        console.error(`Failed to remove task ${taskId}:`, error)
+        // Continue with other tasks even if one fails
+      }
+    }
+    
+    // Ensure everything is cleared
+    this.tasks.clear()
+    this.outputs.clear()
+    this.processManagers.clear()
+    
+    // Save the empty state
+    await this.saveTasks()
+    await this.saveOutputs()
+    
+    console.log('All tasks removed successfully')
+  }
 }
 
 export const taskStore = new TaskStore()
