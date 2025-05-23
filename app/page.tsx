@@ -26,6 +26,7 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isDeletingAll, setIsDeletingAll] = useState(false)
+  const [previewingTaskId, setPreviewingTaskId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchTasks()
@@ -104,6 +105,48 @@ export default function Home() {
       setError(`Failed to delete all tasks: ${error.message || 'Network error'}`)
     } finally {
       setIsDeletingAll(false)
+    }
+  }
+
+  const handlePreview = async (taskId: string, isCurrentlyPreviewing: boolean) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/preview`, {
+        method: isCurrentlyPreviewing ? 'DELETE' : 'POST',
+      })
+      
+      if (response.ok) {
+        setPreviewingTaskId(isCurrentlyPreviewing ? null : taskId)
+        setError(null)
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to ${isCurrentlyPreviewing ? 'stop' : 'start'} preview: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error toggling preview:', error)
+      setError(`Failed to ${isCurrentlyPreviewing ? 'stop' : 'start'} preview: ${error.message || 'Network error'}`)
+    }
+  }
+
+  const handleMerge = async (taskId: string) => {
+    if (!confirm('Are you sure you want to merge this task? This will merge the changes into the main branch.')) {
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/merge`, {
+        method: 'POST',
+      })
+      
+      if (response.ok) {
+        alert('Task merged successfully!')
+        fetchTasks()
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to merge task: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error merging task:', error)
+      setError(`Failed to merge task: ${error.message || 'Network error'}`)
     }
   }
 
@@ -240,10 +283,73 @@ export default function Home() {
                           </Link>
                         </Button>
                         <Button
+                          onClick={() => handlePreview(task.id, previewingTaskId === task.id)}
+                          variant="ghost"
+                          size="icon"
+                          className={`h-8 w-8 ${previewingTaskId === task.id ? 'text-orange-500 hover:text-orange-600' : 'hover:text-primary'}`}
+                          title={previewingTaskId === task.id ? 'Stop Preview' : 'Preview Changes'}
+                        >
+                          {previewingTaskId === task.id ? (
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <rect x="6" y="4" width="4" height="16" />
+                              <rect x="14" y="4" width="4" height="16" />
+                            </svg>
+                          ) : (
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={() => handleMerge(task.id)}
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-green-600 hover:text-green-700"
+                          title="Merge Task"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <circle cx="18" cy="18" r="3" />
+                            <circle cx="6" cy="6" r="3" />
+                            <path d="M6 21V9a9 9 0 0 0 9 9" />
+                          </svg>
+                        </Button>
+                        <Button
                           onClick={() => handleDeleteTask(task.id)}
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
+                          title="Delete Task"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
