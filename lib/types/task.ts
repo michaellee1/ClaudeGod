@@ -9,6 +9,8 @@ export interface Task {
   reviewerPid?: number
   output: TaskOutput[]
   isSelfModification?: boolean
+  commitHash?: string
+  isPreviewing?: boolean
 }
 
 export interface TaskOutput {

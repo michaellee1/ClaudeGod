@@ -1,6 +1,6 @@
 import { Task, TaskOutput } from '@/lib/types/task'
 import { ProcessManager } from './process-manager'
-import { createWorktree, removeWorktree, commitChanges } from './git'
+import { createWorktree, removeWorktree, commitChanges, cherryPickCommit, undoCherryPick, mergeWorktreeToMain } from './git'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -55,8 +55,12 @@ class TaskStore {
         this.tasks.set(task.id, task)
         
         // Note: We can't restore process managers for running tasks
-        // Mark previously running tasks as interrupted
-        if (task.status === 'in_progress' || task.status === 'starting') {
+        // Only mark as interrupted if the task is old enough (more than 5 minutes)
+        // This helps avoid marking recently started tasks as interrupted on page reload
+        const taskAge = Date.now() - new Date(task.createdAt).getTime()
+        const FIVE_MINUTES = 5 * 60 * 1000
+        
+        if ((task.status === 'in_progress' || task.status === 'starting') && taskAge > FIVE_MINUTES) {
           task.status = 'interrupted'
           task.phase = 'interrupted'
         }
@@ -212,12 +216,29 @@ class TaskStore {
       }
     })
     
-    processManager.on('completed', () => {
+    processManager.on('completed', async (shouldAutoCommit: boolean) => {
       const task = this.tasks.get(taskId)
       if (task) {
         task.status = 'finished'
         task.phase = 'done'
-        this.debouncedSave() // Save after completion
+        
+        // Auto-commit if reviewer completed successfully
+        if (shouldAutoCommit) {
+          try {
+            console.log(`Auto-committing task ${taskId} after successful completion`)
+            const commitHash = await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+            task.commitHash = commitHash
+            console.log(`Task ${taskId} auto-committed with hash: ${commitHash}`)
+          } catch (error) {
+            console.error(`Failed to auto-commit task ${taskId}:`, error)
+            // Don't fail the task completion if commit fails
+          }
+        }
+        
+        // Save immediately on completion to avoid losing status
+        this.saveTasks().then(() => {
+          console.log(`Task ${taskId} marked as finished and saved`)
+        })
       }
     })
     
@@ -253,6 +274,12 @@ class TaskStore {
   }
 
   private addOutput(taskId: string, output: any) {
+    console.log(`[TaskStore] Adding output for task ${taskId}:`, {
+      type: output.type,
+      contentLength: output.content?.length || 0,
+      preview: output.content?.substring(0, 50)
+    })
+    
     const outputs = this.outputs.get(taskId) || []
     const newOutput = {
       id: Math.random().toString(36).substring(7),
@@ -269,14 +296,23 @@ class TaskStore {
     }
     
     this.outputs.set(taskId, outputs)
+    console.log(`[TaskStore] Output count for task ${taskId}: ${outputs.length}`)
     this.debouncedSave() // Save after adding output
   }
 
-  async commitTask(taskId: string): Promise<void> {
+  async mergeTask(taskId: string): Promise<void> {
     const task = this.tasks.get(taskId)
     if (!task) throw new Error('Task not found')
     
-    await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+    // Stop preview if active
+    if (task.isPreviewing) {
+      await this.stopPreview(taskId)
+    }
+    
+    // Merge the worktree branch to main
+    await mergeWorktreeToMain(this.repoPath, task.worktree)
+    
+    // Remove the task after successful merge
     await this.removeTask(taskId)
   }
 
@@ -287,11 +323,43 @@ class TaskStore {
     }
   }
 
+  async startPreview(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId)
+    if (!task) throw new Error('Task not found')
+    if (!task.commitHash) throw new Error('Task has no commit to preview')
+    if (task.isPreviewing) throw new Error('Task is already being previewed')
+    
+    // Cherry-pick the commit to main repo
+    await cherryPickCommit(this.repoPath, task.commitHash)
+    task.isPreviewing = true
+    await this.saveTasks()
+  }
+  
+  async stopPreview(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId)
+    if (!task) throw new Error('Task not found')
+    if (!task.isPreviewing) throw new Error('Task is not being previewed')
+    
+    // Undo the cherry-pick
+    await undoCherryPick(this.repoPath)
+    task.isPreviewing = false
+    await this.saveTasks()
+  }
+
   async removeTask(taskId: string): Promise<void> {
     const task = this.tasks.get(taskId)
     if (!task) return
     
     console.log(`Removing task ${taskId} with status: ${task.status}`)
+    
+    // Stop preview if active
+    if (task.isPreviewing) {
+      try {
+        await this.stopPreview(taskId)
+      } catch (error) {
+        console.error('Error stopping preview:', error)
+      }
+    }
     
     const processManager = this.processManagers.get(taskId)
     if (processManager) {

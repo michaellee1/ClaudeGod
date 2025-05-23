@@ -15,18 +15,23 @@ export default function TaskDetail() {
   const router = useRouter()
   const [task, setTask] = useState<Task | null>(null)
   const [outputs, setOutputs] = useState<TaskOutput[]>([])
-  const [isCommitting, setIsCommitting] = useState(false)
+  const [isMerging, setIsMerging] = useState(false)
+  const [showMergeConfirm, setShowMergeConfirm] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
   const [additionalPrompt, setAdditionalPrompt] = useState('')
   const [isSendingPrompt, setIsSendingPrompt] = useState(false)
+  const [isPreviewing, setIsPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const outputEndRef = useRef<HTMLDivElement>(null)
+  const hasScrolledToBottom = useRef(false)
+  const outputContainerRef = useRef<HTMLDivElement>(null)
 
   const taskId = params.id as string
 
   useEffect(() => {
     if (taskId) {
       fetchTask()
+      fetchOutputs()
       const interval = setInterval(() => {
         fetchTask()
         fetchOutputs()
@@ -35,9 +40,13 @@ export default function TaskDetail() {
     }
   }, [taskId])
 
+  // Only scroll to bottom on initial load when outputs first appear
   useEffect(() => {
-    outputEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [outputs])
+    if (outputs.length > 0 && !hasScrolledToBottom.current && outputContainerRef.current) {
+      outputContainerRef.current.scrollTop = outputContainerRef.current.scrollHeight
+      hasScrolledToBottom.current = true
+    }
+  }, [outputs.length > 0])
 
   const fetchTask = async () => {
     try {
@@ -45,6 +54,10 @@ export default function TaskDetail() {
       if (response.ok) {
         const data = await response.json()
         setTask(data)
+        // Sync preview state with task data
+        if (data.isPreviewing !== undefined) {
+          setIsPreviewing(data.isPreviewing)
+        }
       }
     } catch (error) {
       console.error('Error fetching task:', error)
@@ -63,27 +76,30 @@ export default function TaskDetail() {
     }
   }
 
-  const handleCommit = async () => {
-    if (!confirm('Are you sure you want to commit the changes? This will complete the task.')) {
-      return
-    }
-    
-    setIsCommitting(true)
+  const handleMerge = async () => {
+    setIsMerging(true)
     try {
-      const response = await fetch(`/api/tasks/${taskId}/commit`, {
+      const response = await fetch(`/api/tasks/${taskId}/merge`, {
         method: 'POST',
       })
       if (response.ok) {
         router.push('/')
       } else {
         const errorData = await response.json()
-        setError(`Failed to commit: ${errorData.error || 'Unknown error'}`)
+        const errorMessage = errorData.error || 'Unknown error'
+        if (errorMessage.startsWith('MERGE_CONFLICT:')) {
+          const branchName = errorMessage.split(':')[1]
+          setError(`Merge conflict detected! You can manually merge with:\n\ngit checkout main\ngit merge ${branchName}\n\nThen resolve conflicts and commit, or create a new task with the latest changes.`)
+        } else {
+          setError(`Failed to merge: ${errorMessage}`)
+        }
       }
     } catch (error: any) {
-      console.error('Error committing task:', error)
-      setError(`Failed to commit task: ${error.message || 'Network error'}`)
+      console.error('Error merging task:', error)
+      setError(`Failed to merge task: ${error.message || 'Network error'}`)
     } finally {
-      setIsCommitting(false)
+      setIsMerging(false)
+      setShowMergeConfirm(false)
     }
   }
 
@@ -136,6 +152,43 @@ export default function TaskDetail() {
     }
   }
 
+  const handleStartPreview = async () => {
+    setIsPreviewing(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/preview`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        setError(`Failed to start preview: ${errorData.error || 'Unknown error'}`)
+        setIsPreviewing(false)
+      }
+    } catch (error: any) {
+      console.error('Error starting preview:', error)
+      setError(`Failed to start preview: ${error.message || 'Network error'}`)
+      setIsPreviewing(false)
+    }
+  }
+
+  const handleStopPreview = async () => {
+    setError(null)
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/preview`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        setError(`Failed to stop preview: ${errorData.error || 'Unknown error'}`)
+      } else {
+        setIsPreviewing(false)
+      }
+    } catch (error: any) {
+      console.error('Error stopping preview:', error)
+      setError(`Failed to stop preview: ${error.message || 'Network error'}`)
+    }
+  }
+
   if (!task) {
     return (
       <div className="container mx-auto p-8">
@@ -149,77 +202,113 @@ export default function TaskDetail() {
   }
 
   return (
-    <div className="container mx-auto p-8">
+    <div className="h-screen flex flex-col p-4">
       {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertDescription>{error}</AlertDescription>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>
+            <pre className="whitespace-pre-wrap font-sans">{error}</pre>
+          </AlertDescription>
         </Alert>
       )}
       
-      <Card className="mb-6">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Task Details</CardTitle>
-              <CardDescription className="mt-2 space-y-1">
-                <span className="block font-mono text-sm">ID: {task.id}</span>
-                <span className="block">Prompt: {task.prompt}</span>
-              </CardDescription>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Badge
-                variant={
-                  task.status === 'starting' ? 'outline' :
-                  task.status === 'in_progress' ? 'default' :
-                  task.status === 'finished' ? 'secondary' :
-                  task.status === 'interrupted' ? 'outline' :
-                  'destructive'
-                }
+      <div className="flex gap-4 h-full">
+        {/* Left side - controls */}
+        <div className="w-96 flex flex-col gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => router.push('/')}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </Button>
+                  <CardTitle className="text-lg">Task: {task.id}</CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={
+                      task.status === 'starting' ? 'outline' :
+                      task.status === 'in_progress' ? 'default' :
+                      task.status === 'finished' ? 'secondary' :
+                      task.status === 'interrupted' ? 'outline' :
+                      'destructive'
+                    }
+                  >
+                    {task.status}
+                  </Badge>
+                  <Button
+                    onClick={handleRemove}
+                    disabled={isRemoving}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </Button>
+                </div>
+              </div>
+              <CardDescription className="text-xs mt-1">{task.prompt}</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-2">
+              <Button
+                onClick={() => setShowMergeConfirm(true)}
+                disabled={isMerging || !task.commitHash}
+                variant="default"
+                className="w-full"
+                size="sm"
               >
-                {task.status}
-              </Badge>
-              <span className="text-sm text-muted-foreground">
-                {task.phase}
-              </span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex space-x-4">
-            <Button
-              onClick={handleCommit}
-              disabled={isCommitting || task.status === 'finished'}
-              variant="default"
-            >
-              {isCommitting ? 'Committing...' : 'Commit Code'}
-            </Button>
-            <Button
-              onClick={handleRemove}
-              disabled={isRemoving}
-              variant="destructive"
-            >
-              {isRemoving ? 'Removing...' : 'Remove Task'}
-            </Button>
-            <Button
-              onClick={() => router.push('/')}
-              variant="outline"
-            >
-              Back to Tasks
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                {isMerging ? 'Merging...' : 'Merge to Main'}
+              </Button>
+              
+              {task.commitHash && (
+                <Button
+                  onClick={isPreviewing ? handleStopPreview : handleStartPreview}
+                  disabled={task.status !== 'finished' || isMerging}
+                  variant={isPreviewing ? "destructive" : "secondary"}
+                  className="w-full"
+                  size="sm"
+                >
+                  {isPreviewing ? 'Stop Preview' : 'Preview Changes'}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
 
-      <div className="grid grid-cols-3 gap-6">
-        <Card className="col-span-1">
-          <CardHeader>
-            <CardTitle>Send Additional Prompt</CardTitle>
-            <CardDescription>Continue the conversation with Claude</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="additionalPrompt">Additional Instructions</Label>
+          <Card className="flex-1">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Additional Prompt</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
                 <Textarea
                   id="additionalPrompt"
                   value={additionalPrompt}
@@ -228,40 +317,63 @@ export default function TaskDetail() {
                   placeholder="Add more instructions or feedback..."
                   disabled={task.status === 'finished'}
                 />
+                <Button
+                  onClick={handleSendPrompt}
+                  disabled={isSendingPrompt || task.status === 'finished' || !additionalPrompt.trim()}
+                  className="w-full"
+                  size="sm"
+                >
+                  {isSendingPrompt ? 'Sending...' : 'Send Prompt'}
+                </Button>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right side - full height process output */}
+        <div ref={outputContainerRef} className="flex-1 bg-gray-50 text-gray-900 p-4 rounded-lg overflow-y-auto font-mono text-sm border border-gray-200">
+          {outputs.map((output) => (
+            <div key={output.id} className="mb-4">
+              <div className={`font-semibold ${
+                output.type === 'editor' ? 'text-green-700' : 'text-blue-700'
+              }`}>
+                [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
+              </div>
+              <pre className="whitespace-pre-wrap text-gray-800 leading-relaxed">{output.content}</pre>
+            </div>
+          ))}
+          <div ref={outputEndRef} />
+        </div>
+      </div>
+
+      {/* Merge Confirmation Dialog */}
+      {showMergeConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2">Merge to Main</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to merge this task to the main branch? This will apply the changes permanently and remove the task.
+            </p>
+            <div className="flex justify-end space-x-2">
               <Button
-                onClick={handleSendPrompt}
-                disabled={isSendingPrompt || task.status === 'finished' || !additionalPrompt.trim()}
-                className="w-full"
+                onClick={() => setShowMergeConfirm(false)}
+                variant="outline"
+                size="sm"
               >
-                {isSendingPrompt ? 'Sending...' : 'Send Prompt'}
+                Cancel
+              </Button>
+              <Button
+                onClick={handleMerge}
+                variant="default"
+                size="sm"
+                disabled={isMerging}
+              >
+                {isMerging ? 'Merging...' : 'Merge'}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="col-span-2">
-          <CardHeader>
-            <CardTitle>Process Output</CardTitle>
-            <CardDescription>Live stream of editor and reviewer outputs</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-slate-950 text-slate-50 p-4 rounded-lg h-[600px] overflow-y-auto font-mono text-sm">
-              {outputs.map((output) => (
-                <div key={output.id} className="mb-4">
-                  <div className={`font-bold ${
-                    output.type === 'editor' ? 'text-emerald-400' : 'text-sky-400'
-                  }`}>
-                    [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
-                  </div>
-                  <pre className="whitespace-pre-wrap text-slate-300">{output.content}</pre>
-                </div>
-              ))}
-              <div ref={outputEndRef} />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -44,3 +44,6 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Prevent static caching for tasks list and creation
+export const dynamic = 'force-dynamic'

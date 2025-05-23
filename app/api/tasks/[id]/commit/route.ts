@@ -7,8 +7,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    await taskStore.commitTask(id)
-    return NextResponse.json({ success: true })
+    const commitHash = await taskStore.commitTask(id)
+    return NextResponse.json({ success: true, commitHash })
   } catch (error) {
     console.error('Error committing task:', error)
     return NextResponse.json(

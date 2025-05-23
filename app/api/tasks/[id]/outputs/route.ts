@@ -9,3 +9,6 @@ export async function GET(
   const outputs = taskStore.getOutputs(id)
   return NextResponse.json(outputs)
 }
+
+// Always run this route dynamically so every request gets the latest task output
+export const dynamic = 'force-dynamic'

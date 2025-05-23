@@ -1,0 +1,391 @@
+[
+  {
+    "test": "Node Version",
+    "status": "INFO",
+    "message": "Running Node.js v20.16.0",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.436Z"
+  },
+  {
+    "test": "OS Info",
+    "status": "INFO",
+    "message": "Platform: darwin, Release: 24.3.0",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.436Z"
+  },
+  {
+    "test": "Temp Directory",
+    "status": "PASS",
+    "message": "Temp dir accessible: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.437Z"
+  },
+  {
+    "test": "Worktree Base",
+    "status": "PASS",
+    "message": "Found 15 worktrees",
+    "details": [
+      "task-4wz7m",
+      "task-5txqe",
+      "task-5v7kzo",
+      "task-7q3fzs",
+      "task-8in8so",
+      "task-8vwds",
+      "task-94xbz",
+      "task-acvzgo",
+      "task-ap34a",
+      "task-fmah4k",
+      "task-m53e07",
+      "task-nj843f",
+      "task-pr1s9n",
+      "task-wv28dm",
+      "test-claude-spawn-1747984942369"
+    ],
+    "timestamp": "2025-05-23T15:54:36.437Z"
+  },
+  {
+    "test": "Git Available",
+    "status": "PASS",
+    "message": "Git found: git version 2.39.5 (Apple Git-154)",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.457Z"
+  },
+  {
+    "test": "Current Repo",
+    "status": "PASS",
+    "message": "Valid git repository: /Users/michaellee/Code/personal/claude-god/claude-god",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.472Z"
+  },
+  {
+    "test": "Git Branch",
+    "status": "PASS",
+    "message": "Current branch: main",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.487Z"
+  },
+  {
+    "test": "Git Status",
+    "status": "INFO",
+    "message": "Working tree status: M app/api/tasks/[id]/outputs/route.ts\n M app/api/tasks/[id]/route.ts\n M app/api/tasks/route.ts\n?? scripts/validate-system.js\n?? validation-results.json",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.507Z"
+  },
+  {
+    "test": "Worktree Creation",
+    "status": "PASS",
+    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748015676507",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.653Z"
+  },
+  {
+    "test": "Worktree Cleanup",
+    "status": "PASS",
+    "message": "Successfully cleaned up test worktree",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:36.700Z"
+  },
+  {
+    "test": "Claude Command",
+    "status": "PASS",
+    "message": "Claude CLI found: 1.0.2 (Claude Code)",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:37.091Z"
+  },
+  {
+    "test": "PATH Environment",
+    "status": "INFO",
+    "message": "PATH has 30 directories",
+    "details": [
+      "/opt/homebrew/share/google-cloud-sdk/bin",
+      "/Users/michaellee/Library/pnpm",
+      "/Users/michaellee/.nvm/versions/node/v20.16.0/bin",
+      "/Users/michaellee/miniforge3/bin",
+      "/Users/michaellee/miniforge3/condabin",
+      "/opt/homebrew/opt/openjdk/bin",
+      "/opt/local/bin",
+      "/opt/local/sbin",
+      "/opt/homebrew/bin",
+      "/opt/homebrew/sbin"
+    ],
+    "timestamp": "2025-05-23T15:54:37.092Z"
+  },
+  {
+    "test": "Data Directory",
+    "status": "PASS",
+    "message": "Data dir exists with 2 files",
+    "details": [
+      "outputs.json",
+      "tasks.json"
+    ],
+    "timestamp": "2025-05-23T15:54:37.093Z"
+  },
+  {
+    "test": "Config File",
+    "status": "PASS",
+    "message": "Config file exists and is valid JSON",
+    "details": {
+      "repoPath": "/Users/michaellee/Code/personal/claude-god/claude-god"
+    },
+    "timestamp": "2025-05-23T15:54:37.093Z"
+  },
+  {
+    "test": "Tasks File",
+    "status": "PASS",
+    "message": "Found 5 tasks in storage",
+    "details": [
+      {
+        "id": "5v7kzo",
+        "status": "finished"
+      },
+      {
+        "id": "5txqe",
+        "status": "interrupted"
+      },
+      {
+        "id": "8vwds",
+        "status": "finished"
+      },
+      {
+        "id": "ap34a",
+        "status": "interrupted"
+      },
+      {
+        "id": "fmah4k",
+        "status": "finished"
+      }
+    ],
+    "timestamp": "2025-05-23T15:54:37.094Z"
+  },
+  {
+    "test": "Outputs File",
+    "status": "PASS",
+    "message": "Found outputs for 5 tasks",
+    "details": [
+      "5v7kzo",
+      "5txqe",
+      "8vwds",
+      "ap34a",
+      "fmah4k"
+    ],
+    "timestamp": "2025-05-23T15:54:37.094Z"
+  },
+  {
+    "test": "Output Structure",
+    "status": "WARN",
+    "message": "Task 5v7kzo has no outputs or invalid structure",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:37.094Z"
+  },
+  {
+    "test": "Process Spawn",
+    "status": "PASS",
+    "message": "Successfully spawned process, output: test",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:37.098Z"
+  },
+  {
+    "test": "Claude Help",
+    "status": "PASS",
+    "message": "Claude --help works",
+    "details": {
+      "stdoutLength": 2602,
+      "stderrLength": 0
+    },
+    "timestamp": "2025-05-23T15:54:37.470Z"
+  },
+  {
+    "test": "Basic Claude Test",
+    "status": "FAIL",
+    "message": "Basic Claude command failed",
+    "details": "Command failed: claude -p echo \"test output\" && exit\n",
+    "timestamp": "2025-05-23T15:54:47.495Z"
+  },
+  {
+    "test": "Test Worktree",
+    "status": "PASS",
+    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748015687495",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:47.595Z"
+  },
+  {
+    "test": "Claude Test: Print Mode Basic",
+    "status": "INFO",
+    "message": "Testing: claude -p echo \"Hello World\"",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:47.595Z"
+  },
+  {
+    "test": "Claude Print Mode Basic",
+    "status": "FAIL",
+    "message": "TIMED OUT",
+    "details": {
+      "pid": 46529,
+      "outputReceived": false,
+      "stdoutLength": 0,
+      "stderrLength": 0,
+      "stdoutPreview": "",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T15:54:57.605Z"
+  },
+  {
+    "test": "Claude Test: Print Mode with Verbose After",
+    "status": "INFO",
+    "message": "Testing: claude -p echo \"Hello World\" --verbose",
+    "details": null,
+    "timestamp": "2025-05-23T15:54:57.605Z"
+  },
+  {
+    "test": "Claude Print Mode with Verbose After",
+    "status": "FAIL",
+    "message": "TIMED OUT",
+    "details": {
+      "pid": 47335,
+      "outputReceived": false,
+      "stdoutLength": 0,
+      "stderrLength": 0,
+      "stdoutPreview": "",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T15:55:07.608Z"
+  },
+  {
+    "test": "Claude Test: Verbose then Print",
+    "status": "INFO",
+    "message": "Testing: claude --verbose -p echo \"Hello World\"",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:07.609Z"
+  },
+  {
+    "test": "Claude Verbose then Print",
+    "status": "FAIL",
+    "message": "TIMED OUT",
+    "details": {
+      "pid": 48093,
+      "outputReceived": false,
+      "stdoutLength": 0,
+      "stderrLength": 0,
+      "stdoutPreview": "",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T15:55:17.615Z"
+  },
+  {
+    "test": "Claude Test: Print with Skip Permissions",
+    "status": "INFO",
+    "message": "Testing: claude -p echo \"Hello World\" --dangerously-skip-permissions",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:17.616Z"
+  },
+  {
+    "test": "Claude Print with Skip Permissions",
+    "status": "FAIL",
+    "message": "TIMED OUT",
+    "details": {
+      "pid": 48906,
+      "outputReceived": false,
+      "stdoutLength": 0,
+      "stderrLength": 0,
+      "stdoutPreview": "",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T15:55:27.625Z"
+  },
+  {
+    "test": "Test Cleanup",
+    "status": "PASS",
+    "message": "Cleaned up test worktree",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:27.683Z"
+  },
+  {
+    "test": "Env HOME",
+    "status": "PASS",
+    "message": "HOME=/Users/michaellee",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:27.683Z"
+  },
+  {
+    "test": "Env PATH",
+    "status": "PASS",
+    "message": "PATH=/opt/homebrew/share/google-cloud-sdk/bin:/Users/mi...",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:27.683Z"
+  },
+  {
+    "test": "Env USER",
+    "status": "PASS",
+    "message": "USER=michaellee",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:27.683Z"
+  },
+  {
+    "test": "API Server",
+    "status": "PASS",
+    "message": "API server responding (status: 200)",
+    "details": null,
+    "timestamp": "2025-05-23T15:55:27.700Z"
+  },
+  {
+    "test": "Tasks API",
+    "status": "PASS",
+    "message": "Tasks endpoint returned 5 tasks",
+    "details": [
+      {
+        "id": "5v7kzo",
+        "status": "finished"
+      },
+      {
+        "id": "5txqe",
+        "status": "interrupted"
+      },
+      {
+        "id": "8vwds",
+        "status": "finished"
+      },
+      {
+        "id": "ap34a",
+        "status": "interrupted"
+      },
+      {
+        "id": "fmah4k",
+        "status": "finished"
+      }
+    ],
+    "timestamp": "2025-05-23T15:55:27.703Z"
+  },
+  {
+    "test": "Outputs API (5v7kzo)",
+    "status": "PASS",
+    "message": "Task 5v7kzo has 0 outputs",
+    "details": {
+      "taskId": "5v7kzo",
+      "outputCount": 0,
+      "sampleOutput": null
+    },
+    "timestamp": "2025-05-23T15:55:27.707Z"
+  },
+  {
+    "test": "Outputs API (5txqe)",
+    "status": "PASS",
+    "message": "Task 5txqe has 0 outputs",
+    "details": {
+      "taskId": "5txqe",
+      "outputCount": 0,
+      "sampleOutput": null
+    },
+    "timestamp": "2025-05-23T15:55:27.710Z"
+  },
+  {
+    "test": "Outputs API (8vwds)",
+    "status": "PASS",
+    "message": "Task 8vwds has 0 outputs",
+    "details": {
+      "taskId": "8vwds",
+      "outputCount": 0,
+      "sampleOutput": null
+    },
+    "timestamp": "2025-05-23T15:55:27.712Z"
+  }
+]

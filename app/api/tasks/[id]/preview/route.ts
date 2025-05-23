@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { taskStore } from '@/lib/utils/task-store'
 
-export async function GET(
+export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
-  const task = taskStore.getTask(id)
-  
-  if (!task) {
+  try {
+    const { id } = await params
+    await taskStore.startPreview(id)
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Error starting preview:', error)
     return NextResponse.json(
-      { error: 'Task not found' },
-      { status: 404 }
+      { error: error.message || 'Failed to start preview' },
+      { status: 500 }
     )
   }
-  
-  return NextResponse.json(task)
 }
 
 export async function DELETE(
@@ -24,16 +24,13 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    await taskStore.removeTask(id)
+    await taskStore.stopPreview(id)
     return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Error removing task:', error)
+  } catch (error: any) {
+    console.error('Error stopping preview:', error)
     return NextResponse.json(
-      { error: 'Failed to remove task' },
+      { error: error.message || 'Failed to stop preview' },
       { status: 500 }
     )
   }
 }
-
-// Ensure this route is always executed on every request (no static caching)
-export const dynamic = 'force-dynamic'

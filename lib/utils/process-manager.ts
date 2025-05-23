@@ -13,7 +13,7 @@ export class ProcessManager extends EventEmitter {
   private currentPhase: 'starting' | 'editor' | 'reviewer' | 'finished' = 'starting'
   private lastOutputTime: number = 0
   private outputMonitorInterval: NodeJS.Timeout | null = null
-  private readonly IDLE_TIMEOUT = 20000 // 20 seconds of no output means done
+  private readonly IDLE_TIMEOUT = 600000 // 10 minutes - sanity timeout for stuck processes
   private outputBuffer: string = ''
   private readonly COMPLETION_PATTERNS = [
     /Task complete/i,
@@ -49,11 +49,11 @@ Start by running 'git diff' to see what was changed.`
       const claudeCommand = 'claude'
       
       console.log('Starting editor process with command:', claudeCommand)
-      console.log('Arguments:', ['-p', '--verbose', editorPrompt.substring(0, 50) + '...', '--dangerously-skip-permissions'])
+      console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
       
-      // Use print mode with verbose output
-      this.editorProcess = spawn(claudeCommand, ['-p', '--verbose', editorPrompt, '--dangerously-skip-permissions'], {
+      // Use print mode with stream-json output for real-time logs
+      this.editorProcess = spawn(claudeCommand, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
         cwd: worktreePath,
         env: { 
           ...process.env, 
@@ -73,8 +73,15 @@ Start by running 'git diff' to see what was changed.`
 
       this.setupEditorHandlers()
       
-      // Don't send prompt via stdin since we're passing it as argument
-      // Keep stdin open for additional prompts
+      // Send prompt via stdin
+      if (this.editorProcess.stdin) {
+        console.log('Writing prompt to editor stdin, length:', editorPrompt.length)
+        this.editorProcess.stdin.write(editorPrompt + '\n')
+        this.editorProcess.stdin.end()
+        console.log('Editor stdin closed')
+      } else {
+        console.error('Editor process stdin is not available')
+      }
       
       // Start sequential execution which will handle reviewer process
       this.startSequentialExecution(worktreePath, reviewerPrompt)
@@ -100,14 +107,118 @@ Start by running 'git diff' to see what was changed.`
         this.editorProcess.stdout.on('data', (data) => {
           console.log('Editor stdout data received:', data.substring(0, 100))
           this.lastOutputTime = Date.now()
-          const content = data
+          const content = data.toString()
           this.outputBuffer += content
           
-          this.emit('output', {
-            type: 'editor',
-            content: content,
-            timestamp: new Date()
-          })
+          // Try to parse stream-json format
+          try {
+            const lines = content.trim().split('\n')
+            for (const line of lines) {
+              if (line.trim()) {
+                const parsed = JSON.parse(line)
+                
+                // Handle different message types
+                if (parsed.type === 'assistant' && parsed.message?.content) {
+                  // Extract text from assistant messages
+                  for (const content of parsed.message.content) {
+                    if (content.type === 'text') {
+                      this.emit('output', {
+                        type: 'editor',
+                        content: content.text,
+                        timestamp: new Date()
+                      })
+                    }
+                  }
+                } else if (parsed.type === 'tool_use') {
+                  // Log detailed tool usage
+                  let toolInfo = `[Tool: ${parsed.name}]`
+                  
+                  // Add tool-specific details
+                  if (parsed.input) {
+                    switch (parsed.name) {
+                      case 'Read':
+                        if (parsed.input.file_path) {
+                          toolInfo = `[Reading file: ${parsed.input.file_path}]`
+                          if (parsed.input.offset || parsed.input.limit) {
+                            toolInfo += ` (lines ${parsed.input.offset || 0}-${(parsed.input.offset || 0) + (parsed.input.limit || 'end')})`
+                          }
+                        }
+                        break
+                      case 'Edit':
+                        if (parsed.input.file_path) {
+                          toolInfo = `[Editing file: ${parsed.input.file_path}]`
+                          if (parsed.input.old_string) {
+                            const preview = parsed.input.old_string.substring(0, 50).replace(/\n/g, '\\n')
+                            toolInfo += ` - replacing "${preview}${parsed.input.old_string.length > 50 ? '...' : ''}"`
+                          }
+                        }
+                        break
+                      case 'MultiEdit':
+                        if (parsed.input.file_path && parsed.input.edits) {
+                          toolInfo = `[Multi-editing file: ${parsed.input.file_path}] - ${parsed.input.edits.length} edits`
+                        }
+                        break
+                      case 'Write':
+                        if (parsed.input.file_path) {
+                          toolInfo = `[Writing file: ${parsed.input.file_path}]`
+                        }
+                        break
+                      case 'Grep':
+                        if (parsed.input.pattern) {
+                          toolInfo = `[Searching for: "${parsed.input.pattern}"]`
+                          if (parsed.input.path) {
+                            toolInfo += ` in ${parsed.input.path}`
+                          }
+                          if (parsed.input.include) {
+                            toolInfo += ` (${parsed.input.include})`
+                          }
+                        }
+                        break
+                      case 'Glob':
+                        if (parsed.input.pattern) {
+                          toolInfo = `[Finding files: ${parsed.input.pattern}]`
+                          if (parsed.input.path) {
+                            toolInfo += ` in ${parsed.input.path}`
+                          }
+                        }
+                        break
+                      case 'Bash':
+                        if (parsed.input.command) {
+                          const cmd = parsed.input.command.substring(0, 80)
+                          toolInfo = `[Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}]`
+                        }
+                        break
+                      case 'LS':
+                        if (parsed.input.path) {
+                          toolInfo = `[Listing: ${parsed.input.path}]`
+                        }
+                        break
+                    }
+                  }
+                  
+                  this.emit('output', {
+                    type: 'editor',
+                    content: toolInfo,
+                    timestamp: new Date()
+                  })
+                } else if (parsed.type === 'system' && parsed.subtype === 'init') {
+                  // Log initialization
+                  this.emit('output', {
+                    type: 'editor',
+                    content: `[System: Initialized with tools: ${parsed.tools?.join(', ') || 'none'}]`,
+                    timestamp: new Date()
+                  })
+                }
+              }
+            }
+          } catch (e) {
+            // Fallback to raw output if not valid JSON
+            this.emit('output', {
+              type: 'editor',
+              content: content,
+              timestamp: new Date()
+            })
+          }
           
           // Check for completion patterns
           this.checkForCompletion()
@@ -172,14 +283,121 @@ Start by running 'git diff' to see what was changed.`
         this.reviewerProcess.stdout.on('data', (data) => {
           console.log('Reviewer stdout data received:', data.substring(0, 100))
           this.lastOutputTime = Date.now()
-          const content = data
+          const content = data.toString()
           this.outputBuffer += content
           
-          this.emit('output', {
-            type: 'reviewer',
-            content: content,
-            timestamp: new Date()
-          })
+          // Try to parse stream-json format
+          try {
+            const lines = content.trim().split('\n')
+            for (const line of lines) {
+              if (line.trim()) {
+                const parsed = JSON.parse(line)
+                
+                // Handle different message types
+                if (parsed.type === 'assistant' && parsed.message?.content) {
+                  // Extract text from assistant messages
+                  for (const content of parsed.message.content) {
+                    if (content.type === 'text') {
+                      this.emit('output', {
+                        type: 'reviewer',
+                        content: content.text,
+                        timestamp: new Date()
+                      })
+                    }
+                  }
+                } else if (parsed.type === 'tool_use' && parsed.name) {
+                  // Log tool usage with details
+                  const toolName = parsed.name
+                  let toolInfo = `[Tool: ${toolName}]`
+                  
+                  // Add specific details based on tool type
+                  switch (toolName) {
+                    case 'Read':
+                      if (parsed.input.file_path) {
+                        toolInfo = `[Reading file: ${parsed.input.file_path}]`
+                        if (parsed.input.offset || parsed.input.limit) {
+                          toolInfo += ` (lines ${parsed.input.offset || 0}-${(parsed.input.offset || 0) + (parsed.input.limit || 'end')})`
+                        }
+                      }
+                      break
+                    case 'Edit':
+                      if (parsed.input.file_path) {
+                        toolInfo = `[Editing file: ${parsed.input.file_path}]`
+                        if (parsed.input.old_string && parsed.input.new_string) {
+                          const oldPreview = parsed.input.old_string.substring(0, 50).replace(/\n/g, '\\n')
+                          const newPreview = parsed.input.new_string.substring(0, 50).replace(/\n/g, '\\n')
+                          toolInfo += ` (replacing "${oldPreview}${parsed.input.old_string.length > 50 ? '...' : ''}" with "${newPreview}${parsed.input.new_string.length > 50 ? '...' : ''}")`
+                        }
+                      }
+                      break
+                    case 'MultiEdit':
+                      if (parsed.input.file_path && parsed.input.edits) {
+                        toolInfo = `[Multi-editing file: ${parsed.input.file_path}] (${parsed.input.edits.length} edits)`
+                      }
+                      break
+                    case 'Write':
+                      if (parsed.input.file_path) {
+                        toolInfo = `[Writing file: ${parsed.input.file_path}]`
+                        if (parsed.input.content) {
+                          toolInfo += ` (${parsed.input.content.length} characters)`
+                        }
+                      }
+                      break
+                    case 'Grep':
+                      if (parsed.input.pattern) {
+                        toolInfo = `[Searching for pattern: "${parsed.input.pattern}"]`
+                        if (parsed.input.path) {
+                          toolInfo += ` in ${parsed.input.path}`
+                        }
+                        if (parsed.input.include) {
+                          toolInfo += ` (files matching ${parsed.input.include})`
+                        }
+                      }
+                      break
+                    case 'Glob':
+                      if (parsed.input.pattern) {
+                        toolInfo = `[Finding files matching: ${parsed.input.pattern}]`
+                        if (parsed.input.path) {
+                          toolInfo += ` in ${parsed.input.path}`
+                        }
+                      }
+                      break
+                    case 'Bash':
+                      if (parsed.input.command) {
+                        const cmdPreview = parsed.input.command.substring(0, 100)
+                        toolInfo = `[Running command: ${cmdPreview}${parsed.input.command.length > 100 ? '...' : ''}]`
+                      }
+                      break
+                    case 'LS':
+                      if (parsed.input.path) {
+                        toolInfo = `[Listing directory: ${parsed.input.path}]`
+                      }
+                      break
+                  }
+                  
+                  this.emit('output', {
+                    type: 'reviewer',
+                    content: toolInfo,
+                    timestamp: new Date()
+                  })
+                } else if (parsed.type === 'system' && parsed.subtype === 'init') {
+                  // Log initialization
+                  this.emit('output', {
+                    type: 'reviewer',
+                    content: `[System: Initialized with tools: ${parsed.tools?.join(', ') || 'none'}]`,
+                    timestamp: new Date()
+                  })
+                }
+              }
+            }
+          } catch (e) {
+            // Fallback to raw output if not valid JSON
+            this.emit('output', {
+              type: 'reviewer',
+              content: content,
+              timestamp: new Date()
+            })
+          }
           
           // Check for completion patterns
           this.checkForCompletion()
@@ -226,9 +444,16 @@ Start by running 'git diff' to see what was changed.`
           timestamp: new Date()
         })
         
-        // If process exits with non-zero code and we're not already finished, mark as failed
-        if (code !== 0 && this.currentPhase === 'reviewer') {
+        // If reviewer exits cleanly and we're in reviewer phase, mark as completed
+        if (code === 0 && this.currentPhase === 'reviewer') {
+          console.log('Reviewer completed successfully, marking task as finished')
+          this.currentPhase = 'finished'
+          this.emit('status', 'finished')
+          this.emit('phase', 'done')
+          this.emit('completed', true) // Pass true to indicate successful completion
+        } else if (code !== 0 && this.currentPhase === 'reviewer') {
           console.error('Reviewer process failed with code:', code)
+          this.emit('status', 'failed')
         }
       })
     }
@@ -241,8 +466,8 @@ Start by running 'git diff' to see what was changed.`
     this.emit('phase', 'editor')
     this.lastOutputTime = Date.now()
     
-    // Monitor editor output
-    await this.monitorProcessCompletion('editor')
+    // Wait for editor to complete (it will exit on its own with -p mode)
+    await this.waitForProcessExit(this.editorProcess, 'editor')
     
     // Phase 2: Start and monitor reviewer
     this.currentPhase = 'reviewer'
@@ -253,11 +478,11 @@ Start by running 'git diff' to see what was changed.`
       const claudeCommand = 'claude'
       
       console.log('Starting reviewer process with command:', claudeCommand)
-      console.log('Arguments:', ['-p', '--verbose', reviewerPrompt.substring(0, 50) + '...', '--dangerously-skip-permissions'])
+      console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
         
-      // Use print mode with verbose output
-      this.reviewerProcess = spawn(claudeCommand, ['-p', '--verbose', reviewerPrompt, '--dangerously-skip-permissions'], {
+      // Use print mode with stream-json output for real-time logs
+      this.reviewerProcess = spawn(claudeCommand, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
         cwd: worktreePath,
         env: { 
           ...process.env, 
@@ -278,19 +503,20 @@ Start by running 'git diff' to see what was changed.`
       this.emit('reviewerPid', this.reviewerProcess.pid)
       this.setupReviewerHandlers()
       
-      // Don't send prompt via stdin since we're passing it as argument
-      // Keep stdin open for additional prompts
+      // Send prompt via stdin
+      if (this.reviewerProcess.stdin) {
+        this.reviewerProcess.stdin.write(reviewerPrompt + '\n')
+        this.reviewerProcess.stdin.end()
+      } else {
+        console.error('Reviewer process stdin is not available')
+      }
       
       this.lastOutputTime = Date.now()
       
-      // Monitor reviewer output
-      await this.monitorProcessCompletion('reviewer')
+      // Wait for reviewer to complete (it will exit on its own with -p mode)
+      await this.waitForProcessExit(this.reviewerProcess, 'reviewer')
       
-      // Phase 3: Complete
-      this.currentPhase = 'finished'
-      this.emit('status', 'finished')
-      this.emit('phase', 'done')
-      this.emit('completed')
+      // The exit handler will emit the completed event
     } catch (error) {
       this.emit('status', 'failed')
       this.emit('output', {
@@ -317,6 +543,35 @@ Start by running 'git diff' to see what was changed.`
         return
       }
     }
+  }
+
+  private waitForProcessExit(process: ChildProcess | null, processName: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!process) {
+        reject(new Error(`${processName} process not found`))
+        return
+      }
+
+      // Set up a sanity timeout
+      const timeout = setTimeout(() => {
+        console.warn(`${processName} process timed out after 10 minutes`)
+        process.kill()
+        resolve()
+      }, this.IDLE_TIMEOUT)
+
+      // Wait for process to exit
+      process.once('exit', (code) => {
+        clearTimeout(timeout)
+        console.log(`${processName} process exited with code:`, code)
+        resolve()
+      })
+
+      process.once('error', (error) => {
+        clearTimeout(timeout)
+        console.error(`${processName} process error:`, error)
+        reject(error)
+      })
+    })
   }
   
   private monitorProcessCompletion(phase: 'editor' | 'reviewer'): Promise<void> {
@@ -353,11 +608,9 @@ Start by running 'git diff' to see what was changed.`
   }
 
   async sendPrompt(prompt: string) {
-    const process = this.currentPhase === 'reviewer' ? this.reviewerProcess : this.editorProcess
-    if (process && process.stdin) {
-      process.stdin.write(prompt + '\n')
-      this.lastOutputTime = Date.now()
-    }
+    // Note: This won't work since we close stdin after sending initial prompt
+    // Would need to refactor to keep stdin open if we want to support additional prompts
+    console.warn('sendPrompt called but stdin is closed after initial prompt')
   }
 
   stopProcesses() {
