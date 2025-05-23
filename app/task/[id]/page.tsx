@@ -385,6 +385,16 @@ export default function TaskDetail() {
           <Card className="flex-1">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Additional Prompt</CardTitle>
+              {task.status !== 'finished' && (
+                <p className="text-sm text-muted-foreground">
+                  Available after task completion
+                </p>
+              )}
+              {task.status === 'finished' && (
+                <p className="text-sm text-muted-foreground">
+                  Request additional changes to the completed task
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -393,16 +403,20 @@ export default function TaskDetail() {
                   value={additionalPrompt}
                   onChange={(e) => setAdditionalPrompt(e.target.value)}
                   className="min-h-[200px]"
-                  placeholder="Add more instructions or feedback..."
-                  disabled={task.status === 'finished'}
+                  placeholder={
+                    task.status === 'finished' 
+                      ? "Describe additional changes you'd like..."
+                      : "Additional prompts available after completion..."
+                  }
+                  disabled={task.status !== 'finished'}
                 />
                 <Button
                   onClick={handleSendPrompt}
-                  disabled={isSendingPrompt || task.status === 'finished' || !additionalPrompt.trim()}
+                  disabled={isSendingPrompt || task.status !== 'finished' || !additionalPrompt.trim()}
                   className="w-full"
                   size="sm"
                 >
-                  {isSendingPrompt ? 'Sending...' : 'Send Prompt'}
+                  {isSendingPrompt ? 'Sending...' : 'Send Additional Prompt'}
                 </Button>
               </div>
             </CardContent>

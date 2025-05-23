@@ -12,6 +12,13 @@ export interface Task {
   isSelfModification?: boolean
   commitHash?: string
   isPreviewing?: boolean
+  promptHistory?: PromptCycle[]
+}
+
+export interface PromptCycle {
+  prompt: string
+  timestamp: Date
+  commitHash?: string
 }
 
 export interface TaskOutput {

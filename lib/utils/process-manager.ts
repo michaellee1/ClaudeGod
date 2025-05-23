@@ -22,6 +22,16 @@ export class ProcessManager extends EventEmitter {
     /All tests pass/i,
     /Successfully completed/i
   ]
+  private taskId: string
+  private worktreePath: string
+  private repoPath: string
+
+  constructor(taskId?: string, worktreePath?: string, repoPath?: string) {
+    super()
+    this.taskId = taskId || ''
+    this.worktreePath = worktreePath || ''
+    this.repoPath = repoPath || ''
+  }
 
   async startProcesses(
     worktreePath: string,
@@ -647,6 +657,22 @@ Start by running 'git diff' to see what was changed.`
     // Note: This won't work since we close stdin after sending initial prompt
     // Would need to refactor to keep stdin open if we want to support additional prompts
     console.warn('sendPrompt called but stdin is closed after initial prompt')
+  }
+
+  async start(prompt: string): Promise<void> {
+    // Use stored values or throw error if not set
+    if (!this.worktreePath || !this.taskId) {
+      throw new Error('ProcessManager not properly initialized with worktreePath and taskId')
+    }
+    
+    const { editorPid, reviewerPid } = await this.startProcesses(
+      this.worktreePath,
+      prompt,
+      this.taskId
+    )
+    
+    this.emit('editorPid', editorPid)
+    this.emit('reviewerPid', reviewerPid)
   }
 
   stopProcesses() {
