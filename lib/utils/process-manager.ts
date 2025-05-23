@@ -208,16 +208,34 @@ Start by running 'git diff' to see what was changed.`
                     content: `[System: Initialized with tools: ${parsed.tools?.join(', ') || 'none'}]`,
                     timestamp: new Date()
                   })
+                } else if (parsed.type === 'tool_result') {
+                  // Handle tool results - these often contain file contents
+                  if (parsed.content && typeof parsed.content === 'string') {
+                    // Check if it's file content (has line numbers)
+                    if (parsed.content.includes('\n') && /^\s*\d+\s+/.test(parsed.content)) {
+                      this.emit('output', {
+                        type: 'editor',
+                        content: parsed.content,
+                        timestamp: new Date()
+                      })
+                    }
+                  }
+                } else if (parsed.type === 'user' && parsed.message) {
+                  // Skip user messages - these are usually just echoing the prompt
+                  // Don't emit these
                 }
               }
             }
           } catch (e) {
             // Fallback to raw output if not valid JSON
-            this.emit('output', {
-              type: 'editor',
-              content: content,
-              timestamp: new Date()
-            })
+            // But try to filter out raw JSON that looks like message objects
+            if (!content.includes('{"type":"user"') && !content.includes('{"type":"assistant"') && !content.includes('{"type":"tool_use"')) {
+              this.emit('output', {
+                type: 'editor',
+                content: content,
+                timestamp: new Date()
+              })
+            }
           }
           
           // Check for completion patterns
@@ -387,16 +405,34 @@ Start by running 'git diff' to see what was changed.`
                     content: `[System: Initialized with tools: ${parsed.tools?.join(', ') || 'none'}]`,
                     timestamp: new Date()
                   })
+                } else if (parsed.type === 'tool_result') {
+                  // Handle tool results - these often contain file contents
+                  if (parsed.content && typeof parsed.content === 'string') {
+                    // Check if it's file content (has line numbers)
+                    if (parsed.content.includes('\n') && /^\s*\d+\s+/.test(parsed.content)) {
+                      this.emit('output', {
+                        type: 'reviewer',
+                        content: parsed.content,
+                        timestamp: new Date()
+                      })
+                    }
+                  }
+                } else if (parsed.type === 'user' && parsed.message) {
+                  // Skip user messages - these are usually just echoing the prompt
+                  // Don't emit these
                 }
               }
             }
           } catch (e) {
             // Fallback to raw output if not valid JSON
-            this.emit('output', {
-              type: 'reviewer',
-              content: content,
-              timestamp: new Date()
-            })
+            // But try to filter out raw JSON that looks like message objects
+            if (!content.includes('{"type":"user"') && !content.includes('{"type":"assistant"') && !content.includes('{"type":"tool_use"')) {
+              this.emit('output', {
+                type: 'reviewer',
+                content: content,
+                timestamp: new Date()
+              })
+            }
           }
           
           // Check for completion patterns

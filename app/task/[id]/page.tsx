@@ -332,16 +332,28 @@ export default function TaskDetail() {
 
         {/* Right side - full height process output */}
         <div ref={outputContainerRef} className="flex-1 bg-gray-50 text-gray-900 p-4 rounded-lg overflow-y-auto font-mono text-sm border border-gray-200">
-          {outputs.map((output) => (
-            <div key={output.id} className="mb-4">
-              <div className={`font-semibold ${
-                output.type === 'editor' ? 'text-green-700' : 'text-blue-700'
-              }`}>
-                [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
+          {outputs.map((output) => {
+            // Check if this is a tool use or file content
+            const isToolUse = output.content.startsWith('[') && (output.content.includes('[Tool:') || output.content.includes('[Reading file:') || output.content.includes('[Editing file:') || output.content.includes('[Writing file:') || output.content.includes('[Searching') || output.content.includes('[Finding') || output.content.includes('[Running:') || output.content.includes('[Listing:') || output.content.includes('[Multi-editing') || output.content.includes('[System:'))
+            const isFileContent = !isToolUse && output.content.includes('\n') && output.content.length > 100
+            
+            return (
+              <div key={output.id} className="mb-4">
+                <div className={`font-semibold ${
+                  output.type === 'editor' ? 'text-green-700' : 'text-blue-700'
+                }`}>
+                  [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
+                </div>
+                {isToolUse ? (
+                  <div className="text-gray-600 italic mt-1">{output.content}</div>
+                ) : isFileContent ? (
+                  <pre className="whitespace-pre-wrap text-gray-600 leading-relaxed text-xs mt-1 font-mono">{output.content}</pre>
+                ) : (
+                  <pre className="whitespace-pre-wrap text-gray-800 leading-relaxed mt-1">{output.content}</pre>
+                )}
               </div>
-              <pre className="whitespace-pre-wrap text-gray-800 leading-relaxed">{output.content}</pre>
-            </div>
-          ))}
+            )
+          })}
           <div ref={outputEndRef} />
         </div>
       </div>
