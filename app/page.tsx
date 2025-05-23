@@ -18,6 +18,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ChevronDown, Trash2 } from 'lucide-react'
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -227,8 +234,32 @@ export default function Home() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Active Tasks</CardTitle>
-          <CardDescription>View and manage your ongoing coding tasks</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Active Tasks</CardTitle>
+              <CardDescription>View and manage your ongoing coding tasks</CardDescription>
+            </div>
+            {tasks.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    Actions
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={handleDeleteAllTasks}
+                    disabled={isDeletingAll}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeletingAll ? 'Deleting All Tasks...' : 'Delete All Tasks'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {tasks.length === 0 ? (
@@ -372,19 +403,6 @@ export default function Home() {
                 ))}
               </TableBody>
             </Table>
-          )}
-          
-          {tasks.length > 0 && (
-            <div className="mt-4 pt-4 border-t">
-              <Button
-                onClick={handleDeleteAllTasks}
-                disabled={isDeletingAll}
-                variant="destructive"
-                className="w-full"
-              >
-                {isDeletingAll ? 'Deleting All Tasks...' : 'Delete All Tasks'}
-              </Button>
-            </div>
           )}
         </CardContent>
       </Card>
