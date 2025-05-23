@@ -374,6 +374,16 @@ export default function TaskDetail() {
             const isToolUse = output.content.startsWith('[') && (output.content.includes('[Tool:') || output.content.includes('[Reading file:') || output.content.includes('[Editing file:') || output.content.includes('[Writing file:') || output.content.includes('[Searching') || output.content.includes('[Finding') || output.content.includes('[Running:') || output.content.includes('[Listing:') || output.content.includes('[Multi-editing') || output.content.includes('[System:'))
             const isFileContent = !isToolUse && output.content.includes('\n') && output.content.length > 100
             
+            // Process content to handle escaped characters
+            let displayContent = output.content
+            
+            // If it contains escaped newlines and tabs, unescape them
+            if (displayContent.includes('\\n') || displayContent.includes('\\t')) {
+              displayContent = displayContent
+                .replace(/\\n/g, '\n')
+                .replace(/\\t/g, '\t')
+            }
+            
             return (
               <div key={output.id} className="mb-4">
                 <div className={`font-semibold ${
@@ -382,11 +392,11 @@ export default function TaskDetail() {
                   [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
                 </div>
                 {isToolUse ? (
-                  <div className="text-gray-600 italic mt-1">{output.content}</div>
+                  <div className="text-gray-600 italic mt-1">{displayContent}</div>
                 ) : isFileContent ? (
-                  <pre className="whitespace-pre-wrap text-gray-600 leading-relaxed text-xs mt-1 font-mono">{output.content}</pre>
+                  <pre className="whitespace-pre text-gray-600 leading-relaxed text-xs mt-1 font-mono overflow-x-auto bg-gray-100 p-2 rounded border border-gray-200">{displayContent}</pre>
                 ) : (
-                  <pre className="whitespace-pre-wrap text-gray-800 leading-relaxed mt-1">{output.content}</pre>
+                  <pre className="whitespace-pre-wrap text-gray-800 leading-relaxed mt-1">{displayContent}</pre>
                 )}
               </div>
             )
