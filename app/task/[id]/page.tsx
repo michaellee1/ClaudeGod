@@ -245,7 +245,7 @@ export default function TaskDetail() {
                     variant={
                       task.status === 'starting' ? 'outline' :
                       task.status === 'in_progress' ? 'default' :
-                      task.status === 'finished' ? 'secondary' :
+                      task.status === 'finished' ? 'success' :
                       task.status === 'interrupted' ? 'outline' :
                       'destructive'
                     }
