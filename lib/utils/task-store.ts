@@ -1,9 +1,11 @@
-import { Task, TaskOutput } from '@/lib/types/task'
+import { Task, TaskOutput, PromptCycle } from '@/lib/types/task'
 import { ProcessManager } from './process-manager'
 import { createWorktree, removeWorktree, commitChanges, cherryPickCommit, undoCherryPick, mergeWorktreeToMain } from './git'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 
 class TaskStore {
   private tasks: Map<string, Task> = new Map()
@@ -186,62 +188,10 @@ class TaskStore {
     this.outputs.set(taskId, [])
     this.debouncedSave() // Save after creating task
     
-    const processManager = new ProcessManager()
+    const processManager = new ProcessManager(taskId, worktreePath, this.repoPath)
     this.processManagers.set(taskId, processManager)
     
-    processManager.on('output', (output) => {
-      this.addOutput(taskId, output)
-    })
-    
-    processManager.on('status', (status) => {
-      const task = this.tasks.get(taskId)
-      if (task) {
-        task.status = status
-        this.debouncedSave() // Save after status change
-      }
-    })
-    
-    processManager.on('phase', (phase) => {
-      const task = this.tasks.get(taskId)
-      if (task) {
-        task.phase = phase
-        this.debouncedSave() // Save after phase change
-      }
-    })
-    
-    processManager.on('reviewerPid', (pid) => {
-      const task = this.tasks.get(taskId)
-      if (task) {
-        task.reviewerPid = pid
-        this.debouncedSave() // Save after pid update
-      }
-    })
-    
-    processManager.on('completed', async (shouldAutoCommit: boolean) => {
-      const task = this.tasks.get(taskId)
-      if (task) {
-        task.status = 'finished'
-        task.phase = 'done'
-        
-        // Auto-commit if reviewer completed successfully
-        if (shouldAutoCommit) {
-          try {
-            console.log(`Auto-committing task ${taskId} after successful completion`)
-            const commitHash = await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
-            task.commitHash = commitHash
-            console.log(`Task ${taskId} auto-committed with hash: ${commitHash}`)
-          } catch (error) {
-            console.error(`Failed to auto-commit task ${taskId}:`, error)
-            // Don't fail the task completion if commit fails
-          }
-        }
-        
-        // Save immediately on completion to avoid losing status
-        this.saveTasks().then(() => {
-          console.log(`Task ${taskId} marked as finished and saved`)
-        })
-      }
-    })
+    this.setupProcessManagerEvents(processManager, task)
     
     try {
       const { editorPid, reviewerPid } = await processManager.startProcesses(
@@ -332,9 +282,100 @@ class TaskStore {
   }
 
   async sendPromptToTask(taskId: string, prompt: string): Promise<void> {
-    const processManager = this.processManagers.get(taskId)
-    if (processManager) {
-      await processManager.sendPrompt(prompt)
+    const task = this.tasks.get(taskId)
+    if (!task) throw new Error('Task not found')
+    
+    // If task is finished, we need to restart the editor/reviewer cycle
+    if (task.status === 'finished') {
+      // Store the current state in prompt history
+      if (!task.promptHistory) {
+        task.promptHistory = []
+      }
+      
+      // Add the original prompt as the first entry if not already there
+      if (task.promptHistory.length === 0) {
+        task.promptHistory.push({
+          prompt: task.prompt,
+          timestamp: task.createdAt,
+          commitHash: task.commitHash
+        })
+      }
+      
+      // Get git diff of changes made in the previous cycle
+      let previousDiff = ''
+      if (task.commitHash) {
+        try {
+          const { stdout } = await promisify(execFile)(
+            'git', ['-C', task.worktree, 'show', '--format=', task.commitHash]
+          )
+          previousDiff = stdout
+        } catch (error) {
+          console.error('Failed to get git diff:', error)
+          previousDiff = '(Unable to retrieve git diff from previous commit)'
+        }
+      } else {
+        // If no commit hash, try to get uncommitted changes
+        try {
+          const { stdout } = await promisify(execFile)(
+            'git', ['-C', task.worktree, 'diff', 'HEAD']
+          )
+          previousDiff = stdout || '(No changes detected)'
+        } catch (error) {
+          console.error('Failed to get uncommitted changes:', error)
+          previousDiff = '(Unable to retrieve uncommitted changes)'
+        }
+      }
+      
+      // Build context for the new cycle
+      const contextPrompt = `# Previous Editor/Reviewer Cycles
+
+${task.promptHistory.map((cycle, index) => {
+  return `## Cycle ${index + 1} (${cycle.timestamp.toLocaleString()})
+**Previous prompt (don't work on this):** ${cycle.prompt}
+${cycle.commitHash ? `**Commit:** ${cycle.commitHash}` : ''}
+`
+}).join('\n')}
+
+## Git diff of changes from the last cycle:
+\`\`\`diff
+${previousDiff}
+\`\`\`
+
+## New prompt (work on this):
+${prompt}
+
+Please review the changes made in the previous cycle(s) and apply the new requested changes.`
+      
+      // Reset task status to restart the cycle
+      task.status = 'starting'
+      task.phase = 'editor'
+      delete task.editorPid
+      delete task.reviewerPid
+      
+      // Clean up old ProcessManager if it exists
+      const oldProcessManager = this.processManagers.get(taskId)
+      if (oldProcessManager) {
+        oldProcessManager.stopProcesses()
+      }
+      
+      // Create a new ProcessManager for this cycle
+      const newProcessManager = new ProcessManager(task.id, task.worktree, task.repoPath)
+      this.processManagers.set(taskId, newProcessManager)
+      
+      // Set up event handlers
+      this.setupProcessManagerEvents(newProcessManager, task)
+      
+      // Start the new cycle with the context prompt
+      await newProcessManager.start(contextPrompt)
+      
+      // Save the updated task
+      await this.saveTasks()
+    } else {
+      // Original behavior for in-progress tasks
+      const processManager = this.processManagers.get(taskId)
+      if (processManager) {
+        await processManager.sendPrompt(prompt)
+      }
     }
   }
 
@@ -391,6 +432,79 @@ class TaskStore {
     this.tasks.delete(taskId)
     this.outputs.delete(taskId)
     this.debouncedSave() // Save after removing task
+  }
+
+  private setupProcessManagerEvents(processManager: ProcessManager, task: Task) {
+    processManager.on('output', (output) => {
+      this.addOutput(task.id, output)
+    })
+    
+    processManager.on('status', (status) => {
+      task.status = status
+      this.debouncedSave()
+    })
+    
+    processManager.on('phase', (phase) => {
+      task.phase = phase
+      this.debouncedSave()
+    })
+    
+    processManager.on('editorPid', (pid) => {
+      task.editorPid = pid
+      this.debouncedSave()
+    })
+    
+    processManager.on('reviewerPid', (pid) => {
+      task.reviewerPid = pid
+      this.debouncedSave()
+    })
+    
+    processManager.on('completed', async (shouldAutoCommit: boolean) => {
+      task.status = 'finished'
+      task.phase = 'done'
+      
+      // Store the current prompt in history before committing
+      if (!task.promptHistory) {
+        task.promptHistory = []
+      }
+      
+      // Auto-commit if reviewer completed successfully
+      if (shouldAutoCommit) {
+        try {
+          console.log(`Auto-committing task ${task.id} after successful completion`)
+          const commitHash = await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+          task.commitHash = commitHash
+          console.log(`Task ${task.id} auto-committed with hash: ${commitHash}`)
+          
+          // Add to prompt history after successful commit
+          task.promptHistory.push({
+            prompt: task.prompt,
+            timestamp: new Date(),
+            commitHash: commitHash
+          })
+        } catch (error) {
+          console.error(`Failed to auto-commit task ${task.id}:`, error)
+          // Still add to history even if commit fails
+          task.promptHistory.push({
+            prompt: task.prompt,
+            timestamp: new Date(),
+            commitHash: undefined
+          })
+        }
+      } else {
+        // Add to history even without auto-commit
+        task.promptHistory.push({
+          prompt: task.prompt,
+          timestamp: new Date(),
+          commitHash: undefined
+        })
+      }
+      
+      // Save immediately on completion
+      this.saveTasks().then(() => {
+        console.log(`Task ${task.id} marked as finished and saved`)
+      })
+    })
   }
 }
 
