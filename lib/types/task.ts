@@ -4,6 +4,7 @@ export interface Task {
   status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'interrupted'
   phase: 'editor' | 'reviewer' | 'done' | 'interrupted'
   worktree: string
+  repoPath: string
   createdAt: Date
   editorPid?: number
   reviewerPid?: number
