@@ -297,12 +297,12 @@ class TaskStore {
         task.promptHistory = []
       }
       
-      // Add the current completed state to history if not already added
-      const lastHistoryEntry = task.promptHistory[task.promptHistory.length - 1]
-      if (!lastHistoryEntry || lastHistoryEntry.commitHash !== task.commitHash) {
+      // On first additional prompt request, we need to capture the original task completion
+      if (task.promptHistory.length === 0 && task.commitHash) {
+        // Store the original task completion
         task.promptHistory.push({
-          prompt: task.promptHistory.length === 0 ? task.prompt : lastHistoryEntry?.prompt || task.prompt,
-          timestamp: new Date(),
+          prompt: task.prompt,
+          timestamp: task.createdAt,
           commitHash: task.commitHash
         })
       }
@@ -331,9 +331,23 @@ ${gitDiff}
 \`\`\``
       } else {
         // Multiple prompts - stack the context
-        const allPrompts = [task.prompt, ...task.promptHistory.slice(1).map(h => h.prompt || '')].filter(p => p)
-        contextPrompt = `The first ${allPrompts.length} prompts were:
-${allPrompts.map((p, i) => `${i + 1}. "${p}"`).join('\n')}
+        // Collect all previous prompts in order
+        const previousPrompts: string[] = []
+        
+        // First prompt is always the original task prompt
+        previousPrompts.push(task.prompt)
+        
+        // Add any additional prompts from history (excluding the one we just stored)
+        for (let i = 0; i < task.promptHistory.length - 1; i++) {
+          const historyPrompt = task.promptHistory[i].prompt
+          // Skip if it's the original prompt (already added) or empty
+          if (historyPrompt && historyPrompt !== task.prompt) {
+            previousPrompts.push(historyPrompt)
+          }
+        }
+        
+        contextPrompt = `The first ${previousPrompts.length} prompts were:
+${previousPrompts.map((p, i) => `${i + 1}. "${p}"`).join('\n')}
 
 You can see what we built in response to these prompts by using git diff. Now, you are being asked to make changes to this work, with the new request for changes being "${prompt}" (work on this). Make those changes.
 
