@@ -290,66 +290,65 @@ class TaskStore {
     const task = this.tasks.get(taskId)
     if (!task) throw new Error('Task not found')
     
-    // If task is finished, we need to restart the editor/reviewer cycle
-    if (task.status === 'finished') {
+    // If task is finished or merged, we need to restart the editor/reviewer cycle
+    if (task.status === 'finished' || task.status === 'merged') {
       // Store the current state in prompt history
       if (!task.promptHistory) {
         task.promptHistory = []
       }
       
-      // Add the original prompt as the first entry if not already there
-      if (task.promptHistory.length === 0) {
+      // Add the current completed state to history if not already added
+      const lastHistoryEntry = task.promptHistory[task.promptHistory.length - 1]
+      if (!lastHistoryEntry || lastHistoryEntry.commitHash !== task.commitHash) {
         task.promptHistory.push({
-          prompt: task.prompt,
-          timestamp: task.createdAt,
+          prompt: task.promptHistory.length === 0 ? task.prompt : lastHistoryEntry?.prompt || task.prompt,
+          timestamp: new Date(),
           commitHash: task.commitHash
         })
       }
       
-      // Get git diff of changes made in the previous cycle
-      let previousDiff = ''
-      if (task.commitHash) {
-        try {
-          const { stdout } = await promisify(execFile)(
-            'git', ['-C', task.worktree, 'show', '--format=', task.commitHash]
-          )
-          previousDiff = stdout
-        } catch (error) {
-          console.error('Failed to get git diff:', error)
-          previousDiff = '(Unable to retrieve git diff from previous commit)'
-        }
-      } else {
-        // If no commit hash, try to get uncommitted changes
-        try {
-          const { stdout } = await promisify(execFile)(
-            'git', ['-C', task.worktree, 'diff', 'HEAD']
-          )
-          previousDiff = stdout || '(No changes detected)'
-        } catch (error) {
-          console.error('Failed to get uncommitted changes:', error)
-          previousDiff = '(Unable to retrieve uncommitted changes)'
-        }
+      // Get git diff to see what we built
+      let gitDiff = ''
+      try {
+        const { stdout } = await promisify(execFile)(
+          'git', ['-C', task.worktree, 'diff', 'main...HEAD']
+        )
+        gitDiff = stdout || '(No changes detected)'
+      } catch (error) {
+        console.error('Failed to get git diff:', error)
+        gitDiff = '(Unable to retrieve git diff)'
       }
       
-      // Build context for the new cycle
-      const contextPrompt = `# Previous Editor/Reviewer Cycles
+      // Build context message based on number of prompts
+      let contextPrompt = ''
+      if (task.promptHistory.length === 1) {
+        // First additional prompt
+        contextPrompt = `The first prompt was "${task.prompt}" (don't work on this), and you can see what we built in response to that prompt by using git diff. Now, you are being asked to make changes to this initial work, with the new request for changes being "${prompt}" (work on this). Make those changes.
 
-${task.promptHistory.map((cycle, index) => {
-  return `## Cycle ${index + 1} (${cycle.timestamp.toLocaleString()})
-**Previous prompt (don't work on this):** ${cycle.prompt}
-${cycle.commitHash ? `**Commit:** ${cycle.commitHash}` : ''}
-`
-}).join('\n')}
-
-## Git diff of changes from the last cycle:
+## Git diff showing what was built:
 \`\`\`diff
-${previousDiff}
-\`\`\`
+${gitDiff}
+\`\`\``
+      } else {
+        // Multiple prompts - stack the context
+        const allPrompts = [task.prompt, ...task.promptHistory.slice(1).map(h => h.prompt || '')].filter(p => p)
+        contextPrompt = `The first ${allPrompts.length} prompts were:
+${allPrompts.map((p, i) => `${i + 1}. "${p}"`).join('\n')}
 
-## New prompt (work on this):
-${prompt}
+You can see what we built in response to these prompts by using git diff. Now, you are being asked to make changes to this work, with the new request for changes being "${prompt}" (work on this). Make those changes.
 
-Please review the changes made in the previous cycle(s) and apply the new requested changes.`
+## Git diff showing what was built:
+\`\`\`diff
+${gitDiff}
+\`\`\``
+      }
+      
+      // Add the new prompt to history for future reference
+      task.promptHistory.push({
+        prompt: prompt,
+        timestamp: new Date(),
+        commitHash: undefined // Will be set when this cycle completes
+      })
       
       // Reset task status to restart the cycle
       task.status = 'starting'
@@ -497,11 +496,6 @@ Please review the changes made in the previous cycle(s) and apply the new reques
       task.status = 'finished'
       task.phase = 'done'
       
-      // Store the current prompt in history before committing
-      if (!task.promptHistory) {
-        task.promptHistory = []
-      }
-      
       // Auto-commit if reviewer completed successfully
       if (shouldAutoCommit) {
         try {
@@ -510,28 +504,16 @@ Please review the changes made in the previous cycle(s) and apply the new reques
           task.commitHash = commitHash
           console.log(`Task ${task.id} auto-committed with hash: ${commitHash}`)
           
-          // Add to prompt history after successful commit
-          task.promptHistory.push({
-            prompt: task.prompt,
-            timestamp: new Date(),
-            commitHash: commitHash
-          })
+          // Update the last prompt history entry with the commit hash
+          if (task.promptHistory && task.promptHistory.length > 0) {
+            const lastEntry = task.promptHistory[task.promptHistory.length - 1]
+            if (!lastEntry.commitHash) {
+              lastEntry.commitHash = commitHash
+            }
+          }
         } catch (error) {
           console.error(`Failed to auto-commit task ${task.id}:`, error)
-          // Still add to history even if commit fails
-          task.promptHistory.push({
-            prompt: task.prompt,
-            timestamp: new Date(),
-            commitHash: undefined
-          })
         }
-      } else {
-        // Add to history even without auto-commit
-        task.promptHistory.push({
-          prompt: task.prompt,
-          timestamp: new Date(),
-          commitHash: undefined
-        })
       }
       
       // Save immediately on completion

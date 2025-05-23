@@ -387,12 +387,12 @@ export default function TaskDetail() {
           <Card className="flex-1">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Additional Prompt</CardTitle>
-              {task.status !== 'finished' && (
+              {task.status !== 'finished' && task.status !== 'merged' && (
                 <p className="text-sm text-muted-foreground">
                   Available after task completion
                 </p>
               )}
-              {task.status === 'finished' && (
+              {(task.status === 'finished' || task.status === 'merged') && (
                 <p className="text-sm text-muted-foreground">
                   Request additional changes to the completed task
                 </p>
@@ -406,19 +406,19 @@ export default function TaskDetail() {
                   onChange={(e) => setAdditionalPrompt(e.target.value)}
                   className="min-h-[200px]"
                   placeholder={
-                    task.status === 'finished' 
+                    task.status === 'finished' || task.status === 'merged'
                       ? "Describe additional changes you'd like..."
                       : "Additional prompts available after completion..."
                   }
-                  disabled={task.status !== 'finished'}
+                  disabled={task.status !== 'finished' && task.status !== 'merged'}
                 />
                 <Button
                   onClick={handleSendPrompt}
-                  disabled={isSendingPrompt || task.status === 'finished' || task.status === 'merged' || !additionalPrompt.trim()}
+                  disabled={isSendingPrompt || (task.status !== 'finished' && task.status !== 'merged') || !additionalPrompt.trim()}
                   className="w-full"
                   size="sm"
                 >
-                  {isSendingPrompt ? 'Sending...' : 'Send Additional Prompt'}
+                  {isSendingPrompt ? 'Sending...' : 'Send Additional Details'}
                 </Button>
               </div>
             </CardContent>

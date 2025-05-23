@@ -6,6 +6,7 @@ export interface Task {
   worktree: string
   repoPath: string
   createdAt: Date
+  mergedAt?: Date
   editorPid?: number
   reviewerPid?: number
   output: TaskOutput[]
