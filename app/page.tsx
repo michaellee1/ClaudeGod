@@ -110,7 +110,6 @@ export default function Home() {
 
   return (
     <div className="container mx-auto p-8">
-      <h1 className="text-4xl font-bold mb-8">Claude Task Manager</h1>
       
       {error && (
         <Alert variant="destructive" className="mb-6">
