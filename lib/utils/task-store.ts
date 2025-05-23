@@ -176,6 +176,7 @@ class TaskStore {
       status: 'starting',
       phase: 'editor',
       worktree: worktreePath,
+      repoPath: this.repoPath,
       createdAt: new Date(),
       output: [],
       isSelfModification
@@ -324,7 +325,7 @@ class TaskStore {
     }
     
     // Merge the worktree branch to main
-    await mergeWorktreeToMain(this.repoPath, task.worktree)
+    await mergeWorktreeToMain(task.repoPath, task.worktree)
     
     // Remove the task after successful merge
     await this.removeTask(taskId)
@@ -344,7 +345,7 @@ class TaskStore {
     if (task.isPreviewing) throw new Error('Task is already being previewed')
     
     // Cherry-pick the commit to main repo
-    await cherryPickCommit(this.repoPath, task.commitHash)
+    await cherryPickCommit(task.repoPath, task.commitHash)
     task.isPreviewing = true
     await this.saveTasks()
   }
@@ -355,7 +356,7 @@ class TaskStore {
     if (!task.isPreviewing) throw new Error('Task is not being previewed')
     
     // Undo the cherry-pick
-    await undoCherryPick(this.repoPath)
+    await undoCherryPick(task.repoPath)
     task.isPreviewing = false
     await this.saveTasks()
   }
@@ -382,7 +383,7 @@ class TaskStore {
     }
     
     try {
-      await removeWorktree(this.repoPath, task.worktree)
+      await removeWorktree(task.repoPath, task.worktree)
     } catch (error) {
       console.error('Error removing worktree:', error)
     }
