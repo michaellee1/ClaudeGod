@@ -172,6 +172,7 @@ export default function TaskDetail() {
                   task.status === 'starting' ? 'outline' :
                   task.status === 'in_progress' ? 'default' :
                   task.status === 'finished' ? 'secondary' :
+                  task.status === 'interrupted' ? 'outline' :
                   'destructive'
                 }
               >

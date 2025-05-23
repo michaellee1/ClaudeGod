@@ -45,17 +45,36 @@ Start by running 'git diff' to see what was changed.`
 
     try {
       // Start editor process first
-      this.editorProcess = spawn('claude-code', ['--ask', editorPrompt, '--dangerously-skip-permissions'], {
+      // Use 'claude' command instead of 'claude-code'
+      const claudeCommand = 'claude'
+      
+      console.log('Starting editor process with command:', claudeCommand)
+      console.log('Arguments:', ['-p', '--verbose', editorPrompt.substring(0, 50) + '...', '--dangerously-skip-permissions'])
+      console.log('Working directory:', worktreePath)
+      
+      // Use print mode with verbose output
+      this.editorProcess = spawn(claudeCommand, ['-p', '--verbose', editorPrompt, '--dangerously-skip-permissions'], {
         cwd: worktreePath,
-        env: { ...process.env },
-        shell: false // Disable shell to prevent injection
+        env: { 
+          ...process.env, 
+          PATH: process.env.PATH + ':/usr/local/bin:/opt/homebrew/bin:/Users/michaellee/.nvm/versions/node/v20.16.0/bin',
+          FORCE_COLOR: '0',
+          NO_COLOR: '1'
+        },
+        shell: false,
+        stdio: ['pipe', 'pipe', 'pipe']
       })
 
       if (!this.editorProcess.pid) {
         throw new Error('Failed to start editor process')
       }
+      
+      console.log('Editor process started with PID:', this.editorProcess.pid)
 
       this.setupEditorHandlers()
+      
+      // Don't send prompt via stdin since we're passing it as argument
+      // Keep stdin open for additional prompts
       
       // Start sequential execution which will handle reviewer process
       this.startSequentialExecution(worktreePath, reviewerPrompt)
@@ -73,74 +92,144 @@ Start by running 'git diff' to see what was changed.`
 
   private setupEditorHandlers() {
     if (this.editorProcess) {
-      this.editorProcess.stdout?.on('data', (data) => {
-        this.lastOutputTime = Date.now()
-        const content = data.toString()
-        this.outputBuffer += content
-        
-        this.emit('output', {
-          type: 'editor',
-          content: content,
-          timestamp: new Date()
+      console.log('Setting up editor handlers, PID:', this.editorProcess.pid)
+      
+      if (this.editorProcess.stdout) {
+        console.log('Editor stdout is available')
+        this.editorProcess.stdout.setEncoding('utf8')
+        this.editorProcess.stdout.on('data', (data) => {
+          console.log('Editor stdout data received:', data.substring(0, 100))
+          this.lastOutputTime = Date.now()
+          const content = data
+          this.outputBuffer += content
+          
+          this.emit('output', {
+            type: 'editor',
+            content: content,
+            timestamp: new Date()
+          })
+          
+          // Check for completion patterns
+          this.checkForCompletion()
         })
-        
-        // Check for completion patterns
-        this.checkForCompletion()
-      })
+      } else {
+        console.log('Editor stdout is NOT available')
+      }
 
-      this.editorProcess.stderr?.on('data', (data) => {
-        this.lastOutputTime = Date.now()
-        this.emit('output', {
-          type: 'editor',
-          content: `ERROR: ${data.toString()}`,
-          timestamp: new Date()
+      if (this.editorProcess.stderr) {
+        console.log('Editor stderr is available')
+        this.editorProcess.stderr.setEncoding('utf8')
+        this.editorProcess.stderr.on('data', (data) => {
+          console.log('Editor stderr data received:', data.substring(0, 100))
+          this.lastOutputTime = Date.now()
+          this.emit('output', {
+            type: 'editor',
+            content: data,
+            timestamp: new Date()
+          })
         })
-      })
+      } else {
+        console.log('Editor stderr is NOT available')
+      }
 
       this.editorProcess.on('error', (error) => {
+        console.log('Editor process error:', error)
         this.emit('output', {
           type: 'editor',
           content: `PROCESS ERROR: ${error.message}`,
           timestamp: new Date()
         })
         this.emit('status', 'failed')
+      })
+      
+      this.editorProcess.on('exit', (code, signal) => {
+        console.log('Editor process exited with code:', code, 'signal:', signal)
+        const exitMessage = code === 0 
+          ? `Process completed successfully (code: ${code})`
+          : `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+        
+        this.emit('output', {
+          type: 'editor',
+          content: exitMessage,
+          timestamp: new Date()
+        })
+        
+        // If process exits with non-zero code and we're not already finished, mark as failed
+        if (code !== 0 && this.currentPhase === 'editor') {
+          console.error('Editor process failed with code:', code)
+        }
       })
     }
   }
 
   private setupReviewerHandlers() {
     if (this.reviewerProcess) {
-      this.reviewerProcess.stdout?.on('data', (data) => {
-        this.lastOutputTime = Date.now()
-        const content = data.toString()
-        this.outputBuffer += content
-        
-        this.emit('output', {
-          type: 'reviewer',
-          content: content,
-          timestamp: new Date()
+      console.log('Setting up reviewer handlers, PID:', this.reviewerProcess.pid)
+      
+      if (this.reviewerProcess.stdout) {
+        console.log('Reviewer stdout is available')
+        this.reviewerProcess.stdout.setEncoding('utf8')
+        this.reviewerProcess.stdout.on('data', (data) => {
+          console.log('Reviewer stdout data received:', data.substring(0, 100))
+          this.lastOutputTime = Date.now()
+          const content = data
+          this.outputBuffer += content
+          
+          this.emit('output', {
+            type: 'reviewer',
+            content: content,
+            timestamp: new Date()
+          })
+          
+          // Check for completion patterns
+          this.checkForCompletion()
         })
-        
-        // Check for completion patterns
-        this.checkForCompletion()
-      })
+      } else {
+        console.log('Reviewer stdout is NOT available')
+      }
 
-      this.reviewerProcess.stderr?.on('data', (data) => {
-        this.lastOutputTime = Date.now()
-        this.emit('output', {
-          type: 'reviewer',
-          content: `ERROR: ${data.toString()}`,
-          timestamp: new Date()
+      if (this.reviewerProcess.stderr) {
+        console.log('Reviewer stderr is available')
+        this.reviewerProcess.stderr.setEncoding('utf8')
+        this.reviewerProcess.stderr.on('data', (data) => {
+          console.log('Reviewer stderr data received:', data.substring(0, 100))
+          this.lastOutputTime = Date.now()
+          this.emit('output', {
+            type: 'reviewer',
+            content: data,
+            timestamp: new Date()
+          })
         })
-      })
+      } else {
+        console.log('Reviewer stderr is NOT available')
+      }
 
       this.reviewerProcess.on('error', (error) => {
+        console.log('Reviewer process error:', error)
         this.emit('output', {
           type: 'reviewer',
           content: `PROCESS ERROR: ${error.message}`,
           timestamp: new Date()
         })
         this.emit('status', 'failed')
+      })
+      
+      this.reviewerProcess.on('exit', (code, signal) => {
+        console.log('Reviewer process exited with code:', code, 'signal:', signal)
+        const exitMessage = code === 0 
+          ? `Process completed successfully (code: ${code})`
+          : `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+        
+        this.emit('output', {
+          type: 'reviewer',
+          content: exitMessage,
+          timestamp: new Date()
+        })
+        
+        // If process exits with non-zero code and we're not already finished, mark as failed
+        if (code !== 0 && this.currentPhase === 'reviewer') {
+          console.error('Reviewer process failed with code:', code)
+        }
       })
     }
   }
@@ -161,18 +250,36 @@ Start by running 'git diff' to see what was changed.`
     
     try {
       // Now start the reviewer process
-      this.reviewerProcess = spawn('claude-code', ['--ask', reviewerPrompt, '--dangerously-skip-permissions'], {
+      const claudeCommand = 'claude'
+      
+      console.log('Starting reviewer process with command:', claudeCommand)
+      console.log('Arguments:', ['-p', '--verbose', reviewerPrompt.substring(0, 50) + '...', '--dangerously-skip-permissions'])
+      console.log('Working directory:', worktreePath)
+        
+      // Use print mode with verbose output
+      this.reviewerProcess = spawn(claudeCommand, ['-p', '--verbose', reviewerPrompt, '--dangerously-skip-permissions'], {
         cwd: worktreePath,
-        env: { ...process.env },
-        shell: false
+        env: { 
+          ...process.env, 
+          PATH: process.env.PATH + ':/usr/local/bin:/opt/homebrew/bin:/Users/michaellee/.nvm/versions/node/v20.16.0/bin',
+          FORCE_COLOR: '0',
+          NO_COLOR: '1'
+        },
+        shell: false,
+        stdio: ['pipe', 'pipe', 'pipe']
       })
 
       if (!this.reviewerProcess.pid) {
         throw new Error('Failed to start reviewer process')
       }
+      
+      console.log('Reviewer process started with PID:', this.reviewerProcess.pid)
 
       this.emit('reviewerPid', this.reviewerProcess.pid)
       this.setupReviewerHandlers()
+      
+      // Don't send prompt via stdin since we're passing it as argument
+      // Keep stdin open for additional prompts
       
       this.lastOutputTime = Date.now()
       

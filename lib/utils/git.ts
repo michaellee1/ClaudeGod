@@ -36,13 +36,41 @@ export async function createWorktree(repoPath: string, branchName: string): Prom
   const worktreePath = path.join(worktreeBase, safeBranchName)
   
   try {
+    // First fetch the latest changes to ensure we're up to date
+    await execFileAsync('git', ['-C', repoPath, 'fetch', '--all'])
+    
+    // Get the current branch name
+    const { stdout: currentBranch } = await execFileAsync('git', [
+      '-C', repoPath,
+      'rev-parse', '--abbrev-ref', 'HEAD'
+    ])
+    
     // Use execFile to prevent shell injection
     await execFileAsync('git', [
       '-C', repoPath,
       'worktree', 'add',
       worktreePath,
-      '-b', safeBranchName
+      '-b', safeBranchName,
+      currentBranch.trim() // Branch from current branch
     ])
+    
+    // If this is self-modification, ensure package dependencies are available
+    const packageJsonPath = path.join(worktreePath, 'package.json')
+    try {
+      await fs.access(packageJsonPath)
+      // Copy node_modules symlink for faster startup (if it exists)
+      const sourceModules = path.join(repoPath, 'node_modules')
+      const targetModules = path.join(worktreePath, 'node_modules')
+      try {
+        await fs.access(sourceModules)
+        await execFileAsync('ln', ['-s', sourceModules, targetModules])
+      } catch {
+        // node_modules doesn't exist or can't create symlink, that's ok
+      }
+    } catch {
+      // No package.json, not a Node.js project
+    }
+    
     return worktreePath
   } catch (error) {
     console.error('Error creating worktree:', error)

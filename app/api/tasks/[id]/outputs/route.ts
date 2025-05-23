@@ -3,8 +3,9 @@ import { taskStore } from '@/lib/utils/task-store'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const outputs = taskStore.getOutputs(params.id)
+  const { id } = await params
+  const outputs = taskStore.getOutputs(id)
   return NextResponse.json(outputs)
 }

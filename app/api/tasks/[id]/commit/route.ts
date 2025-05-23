@@ -3,10 +3,11 @@ import { taskStore } from '@/lib/utils/task-store'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await taskStore.commitTask(params.id)
+    const { id } = await params
+    await taskStore.commitTask(id)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error committing task:', error)

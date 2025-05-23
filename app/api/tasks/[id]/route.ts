@@ -3,9 +3,10 @@ import { taskStore } from '@/lib/utils/task-store'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const task = taskStore.getTask(params.id)
+  const { id } = await params
+  const task = taskStore.getTask(id)
   
   if (!task) {
     return NextResponse.json(
@@ -19,10 +20,11 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await taskStore.removeTask(params.id)
+    const { id } = await params
+    await taskStore.removeTask(id)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error removing task:', error)

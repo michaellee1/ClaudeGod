@@ -25,7 +25,6 @@ export default function Home() {
   const [repoPath, setRepoPath] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showSelfModWarning, setShowSelfModWarning] = useState(false)
 
   useEffect(() => {
     fetchTasks()
@@ -60,24 +59,9 @@ export default function Home() {
     }
   }
 
-  const checkSelfModification = async (path: string): Promise<boolean> => {
-    // Simple check if the repo path matches current working directory
-    const currentPath = window.location.pathname
-    const normalizedPath = path.replace(/\/$/, '')
-    return normalizedPath === process.cwd() || normalizedPath.includes('claude-god')
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!prompt.trim() || !repoPath.trim()) return
-
-    // Check for self-modification
-    const isSelfMod = await checkSelfModification(repoPath)
-    if (isSelfMod && !showSelfModWarning) {
-      setShowSelfModWarning(true)
-      setError('Warning: You are about to modify the Claude Task Manager itself. The changes will create a git worktree and won\'t affect the running instance until restart. Click submit again to proceed.')
-      return
-    }
 
     setIsSubmitting(true)
     try {
@@ -90,7 +74,6 @@ export default function Home() {
       if (response.ok) {
         setPrompt('')
         setError(null)
-        setShowSelfModWarning(false)
         fetchTasks()
       } else {
         const errorData = await response.json()
@@ -187,6 +170,7 @@ export default function Home() {
                           task.status === 'starting' ? 'outline' :
                           task.status === 'in_progress' ? 'default' :
                           task.status === 'finished' ? 'secondary' :
+                          task.status === 'interrupted' ? 'outline' :
                           'destructive'
                         }
                       >

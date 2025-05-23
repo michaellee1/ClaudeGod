@@ -1,13 +1,14 @@
 export interface Task {
   id: string
   prompt: string
-  status: 'starting' | 'in_progress' | 'finished' | 'failed'
-  phase: 'editor' | 'reviewer' | 'done'
+  status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'interrupted'
+  phase: 'editor' | 'reviewer' | 'done' | 'interrupted'
   worktree: string
   createdAt: Date
   editorPid?: number
   reviewerPid?: number
   output: TaskOutput[]
+  isSelfModification?: boolean
 }
 
 export interface TaskOutput {

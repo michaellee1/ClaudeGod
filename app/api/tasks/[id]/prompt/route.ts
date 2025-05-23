@@ -3,9 +3,10 @@ import { taskStore } from '@/lib/utils/task-store'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const { prompt } = await request.json()
     
     if (!prompt) {
@@ -15,7 +16,7 @@ export async function POST(
       )
     }
     
-    await taskStore.sendPromptToTask(params.id, prompt)
+    await taskStore.sendPromptToTask(id, prompt)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error sending prompt:', error)
