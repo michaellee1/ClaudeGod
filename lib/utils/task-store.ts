@@ -263,6 +263,7 @@ class TaskStore {
 
   getTasks(): Task[] {
     return Array.from(this.tasks.values())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   }
 
   getTask(id: string): Task | undefined {
