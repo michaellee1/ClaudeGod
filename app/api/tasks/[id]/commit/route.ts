@@ -7,12 +7,21 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const commitHash = await taskStore.commitTask(id)
+    let message: string | undefined
+    
+    try {
+      const body = await request.json()
+      message = body.message
+    } catch {
+      // Body parsing is optional, continue without message
+    }
+    
+    const commitHash = await taskStore.commitTask(id, message)
     return NextResponse.json({ success: true, commitHash })
   } catch (error) {
     console.error('Error committing task:', error)
     return NextResponse.json(
-      { error: 'Failed to commit task' },
+      { error: error instanceof Error ? error.message : 'Failed to commit task' },
       { status: 500 }
     )
   }

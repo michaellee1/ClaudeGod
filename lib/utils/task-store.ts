@@ -301,6 +301,19 @@ class TaskStore {
     this.debouncedSave() // Save after adding output
   }
 
+  async commitTask(taskId: string, message?: string): Promise<string> {
+    const task = this.tasks.get(taskId)
+    if (!task) throw new Error('Task not found')
+    
+    const commitMessage = message || `Complete task: ${task.prompt}`
+    const commitHash = await commitChanges(task.worktree, commitMessage)
+    
+    task.commitHash = commitHash
+    await this.saveTasks()
+    
+    return commitHash
+  }
+
   async mergeTask(taskId: string): Promise<void> {
     const task = this.tasks.get(taskId)
     if (!task) throw new Error('Task not found')

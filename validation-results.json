@@ -4,93 +4,94 @@
     "status": "INFO",
     "message": "Running Node.js v20.16.0",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.436Z"
+    "timestamp": "2025-05-23T18:26:13.344Z"
   },
   {
     "test": "OS Info",
     "status": "INFO",
     "message": "Platform: darwin, Release: 24.3.0",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.436Z"
+    "timestamp": "2025-05-23T18:26:13.344Z"
   },
   {
     "test": "Temp Directory",
     "status": "PASS",
     "message": "Temp dir accessible: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.437Z"
+    "timestamp": "2025-05-23T18:26:13.344Z"
   },
   {
     "test": "Worktree Base",
     "status": "PASS",
-    "message": "Found 15 worktrees",
+    "message": "Found 16 worktrees",
     "details": [
+      "task-14a3ui",
+      "task-2exki",
       "task-4wz7m",
-      "task-5txqe",
-      "task-5v7kzo",
       "task-7q3fzs",
       "task-8in8so",
-      "task-8vwds",
       "task-94xbz",
       "task-acvzgo",
-      "task-ap34a",
-      "task-fmah4k",
       "task-m53e07",
+      "task-najhgo",
       "task-nj843f",
+      "task-ompqor",
       "task-pr1s9n",
+      "task-s20zvm",
       "task-wv28dm",
+      "task-xjrefv",
       "test-claude-spawn-1747984942369"
     ],
-    "timestamp": "2025-05-23T15:54:36.437Z"
+    "timestamp": "2025-05-23T18:26:13.345Z"
   },
   {
     "test": "Git Available",
     "status": "PASS",
     "message": "Git found: git version 2.39.5 (Apple Git-154)",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.457Z"
+    "timestamp": "2025-05-23T18:26:13.394Z"
   },
   {
     "test": "Current Repo",
     "status": "PASS",
     "message": "Valid git repository: /Users/michaellee/Code/personal/claude-god/claude-god",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.472Z"
+    "timestamp": "2025-05-23T18:26:13.411Z"
   },
   {
     "test": "Git Branch",
     "status": "PASS",
     "message": "Current branch: main",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.487Z"
+    "timestamp": "2025-05-23T18:26:13.426Z"
   },
   {
     "test": "Git Status",
     "status": "INFO",
-    "message": "Working tree status: M app/api/tasks/[id]/outputs/route.ts\n M app/api/tasks/[id]/route.ts\n M app/api/tasks/route.ts\n?? scripts/validate-system.js\n?? validation-results.json",
+    "message": "Working tree status: M lib/utils/process-manager.ts\n M scripts/validate-system.js",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.507Z"
+    "timestamp": "2025-05-23T18:26:13.444Z"
   },
   {
     "test": "Worktree Creation",
     "status": "PASS",
-    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748015676507",
+    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748024773444",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.653Z"
+    "timestamp": "2025-05-23T18:26:13.531Z"
   },
   {
     "test": "Worktree Cleanup",
     "status": "PASS",
     "message": "Successfully cleaned up test worktree",
     "details": null,
-    "timestamp": "2025-05-23T15:54:36.700Z"
+    "timestamp": "2025-05-23T18:26:13.574Z"
   },
   {
     "test": "Claude Command",
     "status": "PASS",
     "message": "Claude CLI found: 1.0.2 (Claude Code)",
     "details": null,
-    "timestamp": "2025-05-23T15:54:37.091Z"
+    "timestamp": "2025-05-23T18:26:14.026Z"
   },
   {
     "test": "PATH Environment",
@@ -108,7 +109,7 @@
       "/opt/homebrew/bin",
       "/opt/homebrew/sbin"
     ],
-    "timestamp": "2025-05-23T15:54:37.092Z"
+    "timestamp": "2025-05-23T18:26:14.026Z"
   },
   {
     "test": "Data Directory",
@@ -118,7 +119,7 @@
       "outputs.json",
       "tasks.json"
     ],
-    "timestamp": "2025-05-23T15:54:37.093Z"
+    "timestamp": "2025-05-23T18:26:14.028Z"
   },
   {
     "test": "Config File",
@@ -127,12 +128,12 @@
     "details": {
       "repoPath": "/Users/michaellee/Code/personal/claude-god/claude-god"
     },
-    "timestamp": "2025-05-23T15:54:37.093Z"
+    "timestamp": "2025-05-23T18:26:14.029Z"
   },
   {
     "test": "Tasks File",
     "status": "PASS",
-    "message": "Found 5 tasks in storage",
+    "message": "Found 18 tasks in storage",
     "details": [
       {
         "id": "5v7kzo",
@@ -153,36 +154,101 @@
       {
         "id": "fmah4k",
         "status": "finished"
+      },
+      {
+        "id": "jud65j",
+        "status": "finished"
+      },
+      {
+        "id": "yria5l",
+        "status": "finished"
+      },
+      {
+        "id": "fdqt9",
+        "status": "interrupted"
+      },
+      {
+        "id": "2hos2e",
+        "status": "finished"
+      },
+      {
+        "id": "16udwn",
+        "status": "finished"
+      },
+      {
+        "id": "3i59m6",
+        "status": "finished"
+      },
+      {
+        "id": "obmh3s",
+        "status": "finished"
+      },
+      {
+        "id": "89a5im",
+        "status": "interrupted"
+      },
+      {
+        "id": "q4bgz",
+        "status": "interrupted"
+      },
+      {
+        "id": "dry4",
+        "status": "finished"
+      },
+      {
+        "id": "xjrefv",
+        "status": "finished"
+      },
+      {
+        "id": "14a3ui",
+        "status": "in_progress"
+      },
+      {
+        "id": "s20zvm",
+        "status": "in_progress"
       }
     ],
-    "timestamp": "2025-05-23T15:54:37.094Z"
+    "timestamp": "2025-05-23T18:26:14.029Z"
   },
   {
     "test": "Outputs File",
     "status": "PASS",
-    "message": "Found outputs for 5 tasks",
+    "message": "Found outputs for 18 tasks",
     "details": [
       "5v7kzo",
       "5txqe",
       "8vwds",
       "ap34a",
-      "fmah4k"
+      "fmah4k",
+      "jud65j",
+      "yria5l",
+      "fdqt9",
+      "2hos2e",
+      "16udwn",
+      "3i59m6",
+      "obmh3s",
+      "89a5im",
+      "q4bgz",
+      "dry4",
+      "xjrefv",
+      "14a3ui",
+      "s20zvm"
     ],
-    "timestamp": "2025-05-23T15:54:37.094Z"
+    "timestamp": "2025-05-23T18:26:14.031Z"
   },
   {
     "test": "Output Structure",
     "status": "WARN",
     "message": "Task 5v7kzo has no outputs or invalid structure",
     "details": null,
-    "timestamp": "2025-05-23T15:54:37.094Z"
+    "timestamp": "2025-05-23T18:26:14.031Z"
   },
   {
     "test": "Process Spawn",
     "status": "PASS",
     "message": "Successfully spawned process, output: test",
     "details": null,
-    "timestamp": "2025-05-23T15:54:37.098Z"
+    "timestamp": "2025-05-23T18:26:14.035Z"
   },
   {
     "test": "Claude Help",
@@ -192,200 +258,130 @@
       "stdoutLength": 2602,
       "stderrLength": 0
     },
-    "timestamp": "2025-05-23T15:54:37.470Z"
+    "timestamp": "2025-05-23T18:26:14.479Z"
   },
   {
-    "test": "Basic Claude Test",
-    "status": "FAIL",
-    "message": "Basic Claude command failed",
-    "details": "Command failed: claude -p echo \"test output\" && exit\n",
-    "timestamp": "2025-05-23T15:54:47.495Z"
+    "test": "Claude Echo Pipe",
+    "status": "PASS",
+    "message": "Claude with echo pipe works",
+    "details": {
+      "stdoutLength": 8,
+      "stderrLength": 0,
+      "stdoutPreview": "test123\n",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T18:26:21.710Z"
   },
   {
     "test": "Test Worktree",
     "status": "PASS",
-    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748015687495",
+    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748024781711",
     "details": null,
-    "timestamp": "2025-05-23T15:54:47.595Z"
+    "timestamp": "2025-05-23T18:26:21.793Z"
+  },
+  {
+    "test": "Claude Test: Print Mode File Path",
+    "status": "INFO",
+    "message": "Testing: claude -p /tmp/test-prompt.txt",
+    "details": null,
+    "timestamp": "2025-05-23T18:26:21.794Z"
+  },
+  {
+    "test": "Claude Print Mode File Path",
+    "status": "FAIL",
+    "message": "TIMED OUT",
+    "details": {
+      "pid": 55521,
+      "outputReceived": false,
+      "stdoutLength": 0,
+      "stderrLength": 0,
+      "stdoutPreview": "",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T18:26:31.798Z"
+  },
+  {
+    "test": "Claude Test: Print Mode Stdin",
+    "status": "INFO",
+    "message": "Testing: claude -p",
+    "details": null,
+    "timestamp": "2025-05-23T18:26:31.799Z"
+  },
+  {
+    "test": "Claude Print Mode Stdin",
+    "status": "PASS",
+    "message": "Exited: 0",
+    "details": {
+      "pid": 56330,
+      "outputReceived": true,
+      "stdoutLength": 17,
+      "stderrLength": 0,
+      "stdoutPreview": "Hello from stdin\n",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-05-23T18:26:40.906Z"
   },
   {
     "test": "Claude Test: Print Mode Basic",
     "status": "INFO",
     "message": "Testing: claude -p echo \"Hello World\"",
     "details": null,
-    "timestamp": "2025-05-23T15:54:47.595Z"
+    "timestamp": "2025-05-23T18:26:40.907Z"
   },
   {
     "test": "Claude Print Mode Basic",
     "status": "FAIL",
     "message": "TIMED OUT",
     "details": {
-      "pid": 46529,
+      "pid": 57204,
       "outputReceived": false,
       "stdoutLength": 0,
       "stderrLength": 0,
       "stdoutPreview": "",
       "stderrPreview": ""
     },
-    "timestamp": "2025-05-23T15:54:57.605Z"
-  },
-  {
-    "test": "Claude Test: Print Mode with Verbose After",
-    "status": "INFO",
-    "message": "Testing: claude -p echo \"Hello World\" --verbose",
-    "details": null,
-    "timestamp": "2025-05-23T15:54:57.605Z"
-  },
-  {
-    "test": "Claude Print Mode with Verbose After",
-    "status": "FAIL",
-    "message": "TIMED OUT",
-    "details": {
-      "pid": 47335,
-      "outputReceived": false,
-      "stdoutLength": 0,
-      "stderrLength": 0,
-      "stdoutPreview": "",
-      "stderrPreview": ""
-    },
-    "timestamp": "2025-05-23T15:55:07.608Z"
-  },
-  {
-    "test": "Claude Test: Verbose then Print",
-    "status": "INFO",
-    "message": "Testing: claude --verbose -p echo \"Hello World\"",
-    "details": null,
-    "timestamp": "2025-05-23T15:55:07.609Z"
-  },
-  {
-    "test": "Claude Verbose then Print",
-    "status": "FAIL",
-    "message": "TIMED OUT",
-    "details": {
-      "pid": 48093,
-      "outputReceived": false,
-      "stdoutLength": 0,
-      "stderrLength": 0,
-      "stdoutPreview": "",
-      "stderrPreview": ""
-    },
-    "timestamp": "2025-05-23T15:55:17.615Z"
-  },
-  {
-    "test": "Claude Test: Print with Skip Permissions",
-    "status": "INFO",
-    "message": "Testing: claude -p echo \"Hello World\" --dangerously-skip-permissions",
-    "details": null,
-    "timestamp": "2025-05-23T15:55:17.616Z"
-  },
-  {
-    "test": "Claude Print with Skip Permissions",
-    "status": "FAIL",
-    "message": "TIMED OUT",
-    "details": {
-      "pid": 48906,
-      "outputReceived": false,
-      "stdoutLength": 0,
-      "stderrLength": 0,
-      "stdoutPreview": "",
-      "stderrPreview": ""
-    },
-    "timestamp": "2025-05-23T15:55:27.625Z"
+    "timestamp": "2025-05-23T18:26:50.916Z"
   },
   {
     "test": "Test Cleanup",
     "status": "PASS",
     "message": "Cleaned up test worktree",
     "details": null,
-    "timestamp": "2025-05-23T15:55:27.683Z"
+    "timestamp": "2025-05-23T18:26:51.011Z"
   },
   {
     "test": "Env HOME",
     "status": "PASS",
     "message": "HOME=/Users/michaellee",
     "details": null,
-    "timestamp": "2025-05-23T15:55:27.683Z"
+    "timestamp": "2025-05-23T18:26:51.011Z"
   },
   {
     "test": "Env PATH",
     "status": "PASS",
     "message": "PATH=/opt/homebrew/share/google-cloud-sdk/bin:/Users/mi...",
     "details": null,
-    "timestamp": "2025-05-23T15:55:27.683Z"
+    "timestamp": "2025-05-23T18:26:51.011Z"
   },
   {
     "test": "Env USER",
     "status": "PASS",
     "message": "USER=michaellee",
     "details": null,
-    "timestamp": "2025-05-23T15:55:27.683Z"
+    "timestamp": "2025-05-23T18:26:51.011Z"
   },
   {
     "test": "API Server",
     "status": "PASS",
     "message": "API server responding (status: 200)",
     "details": null,
-    "timestamp": "2025-05-23T15:55:27.700Z"
+    "timestamp": "2025-05-23T18:26:51.288Z"
   },
   {
     "test": "Tasks API",
-    "status": "PASS",
-    "message": "Tasks endpoint returned 5 tasks",
-    "details": [
-      {
-        "id": "5v7kzo",
-        "status": "finished"
-      },
-      {
-        "id": "5txqe",
-        "status": "interrupted"
-      },
-      {
-        "id": "8vwds",
-        "status": "finished"
-      },
-      {
-        "id": "ap34a",
-        "status": "interrupted"
-      },
-      {
-        "id": "fmah4k",
-        "status": "finished"
-      }
-    ],
-    "timestamp": "2025-05-23T15:55:27.703Z"
-  },
-  {
-    "test": "Outputs API (5v7kzo)",
-    "status": "PASS",
-    "message": "Task 5v7kzo has 0 outputs",
-    "details": {
-      "taskId": "5v7kzo",
-      "outputCount": 0,
-      "sampleOutput": null
-    },
-    "timestamp": "2025-05-23T15:55:27.707Z"
-  },
-  {
-    "test": "Outputs API (5txqe)",
-    "status": "PASS",
-    "message": "Task 5txqe has 0 outputs",
-    "details": {
-      "taskId": "5txqe",
-      "outputCount": 0,
-      "sampleOutput": null
-    },
-    "timestamp": "2025-05-23T15:55:27.710Z"
-  },
-  {
-    "test": "Outputs API (8vwds)",
-    "status": "PASS",
-    "message": "Task 8vwds has 0 outputs",
-    "details": {
-      "taskId": "8vwds",
-      "outputCount": 0,
-      "sampleOutput": null
-    },
-    "timestamp": "2025-05-23T15:55:27.712Z"
+    "status": "FAIL",
+    "message": "Tasks endpoint returned status 500",
+    "details": "<!DOCTYPE html><html><head><meta charSet=\"utf-8\" data-next-head=\"\"/><meta name=\"viewport\" content=\"width=device-width\" data-next-head=\"\"/><style data-next-hide-fouc=\"true\">body{display:none}</style><noscript data-next-hide-fouc=\"true\"><style>body{display:block}</style></noscript><noscript data-n-css=\"\"></noscript><script defer=\"\" noModule=\"\" src=\"/_next/static/chunks/polyfills.js\"></script><script src=\"/_next/static/chunks/webpack.js\" defer=\"\"></script><script src=\"/_next/static/chunks/main.js\" defer=\"\"></script><script src=\"/_next/static/chunks/pages/_app.js\" defer=\"\"></script><script src=\"/_next/static/chunks/pages/_error.js\" defer=\"\"></script><script src=\"/_next/static/development/_buildManifest.js\" defer=\"\"></script><script src=\"/_next/static/development/_ssgManifest.js\" defer=\"\"></script><noscript id=\"__next_css__DO_NOT_USE__\"></noscript></head><body><div id=\"__next\"></div><script src=\"/_next/static/chunks/react-refresh.js\"></script><script id=\"__NEXT_DATA__\" type=\"application/json\">{\"props\":{\"pageProps\":{\"statusCode\":500}},\"page\":\"/_error\",\"query\":{},\"buildId\":\"development\",\"isFallback\":false,\"err\":{\"name\":\"Error\",\"source\":\"server\",\"message\":\"Cannot find module './638.js'\\nRequire stack:\\n- /Users/michaellee/Code/personal/claude-god/claude-god/.next/server/webpack-runtime.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/.next/server/app/api/config/route.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/require.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/load-components.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/utils.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/swc/options.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/swc/index.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/analysis/parse-module.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/analysis/get-page-static-info.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-server.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/start-server.js\",\"stack\":\"Error: Cannot find module './638.js'\\nRequire stack:\\n- /Users/michaellee/Code/personal/claude-god/claude-god/.next/server/webpack-runtime.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/.next/server/app/api/config/route.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/require.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/load-components.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/utils.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/swc/options.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/swc/index.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/analysis/parse-module.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/build/analysis/get-page-static-info.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-server.js\\n- /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/start-server.js\\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1145:15)\\n    at /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/require-hook.js:55:36\\n    at Module._load (node:internal/modules/cjs/loader:986:27)\\n    at Module.require (node:internal/modules/cjs/loader:1233:19)\\n    at mod.require (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/require-hook.js:65:28)\\n    at require (node:internal/modules/helpers:179:18)\\n    at __webpack_require__.f.require (/Users/michaellee/Code/personal/claude-god/claude-god/.next/server/webpack-runtime.js:203:28)\\n    at /Users/michaellee/Code/personal/claude-god/claude-god/.next/server/webpack-runtime.js:116:40\\n    at Array.reduce (\\u003canonymous\\u003e)\\n    at __webpack_require__.e (/Users/michaellee/Code/personal/claude-god/claude-god/.next/server/webpack-runtime.js:115:67)\\n    at Array.map (\\u003canonymous\\u003e)\\n    at __webpack_require__.X (/Users/michaellee/Code/personal/claude-god/claude-god/.next/server/webpack-runtime.js:167:22)\\n    at /Users/michaellee/Code/personal/claude-god/claude-god/.next/server/app/api/tasks/route.js:1:2267\\n    at Object.\\u003canonymous\\u003e (/Users/michaellee/Code/personal/claude-god/claude-god/.next/server/app/api/tasks/route.js:1:2316)\\n    at Module._compile (node:internal/modules/cjs/loader:1358:14)\\n    at Module._extensions..js (node:internal/modules/cjs/loader:1416:10)\\n    at Module.load (node:internal/modules/cjs/loader:1208:32)\\n    at Module._load (node:internal/modules/cjs/loader:1024:12)\\n    at Module.require (node:internal/modules/cjs/loader:1233:19)\\n    at mod.require (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/require-hook.js:65:28)\\n    at require (node:internal/modules/helpers:179:18)\\n    at requirePage (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/require.js:103:84)\\n    at loadComponentsImpl (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/load-components.js:107:57)\\n    at async DevServer.findPageComponentsImpl (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/next-server.js:745:36)\\n    at async DevServer.findPageComponents (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/dev/next-dev-server.js:610:20)\\n    at async DevServer.renderPageComponent (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/base-server.js:2244:24)\\n    at async DevServer.renderToResponseImpl (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/base-server.js:2295:32)\\n    at async DevServer.pipeImpl (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/base-server.js:959:25)\\n    at async NextNodeServer.handleCatchallRenderRequest (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/next-server.js:281:17)\\n    at async DevServer.handleRequestImpl (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/base-server.js:853:17)\\n    at async /Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/dev/next-dev-server.js:371:20\\n    at async Span.traceAsyncFn (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/trace/trace.js:153:20)\\n    at async DevServer.handleRequest (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/dev/next-dev-server.js:368:24)\\n    at async invokeRender (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-server.js:230:21)\\n    at async handleRequest (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-server.js:408:24)\\n    at async requestHandlerImpl (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/router-server.js:432:13)\\n    at async Server.requestListener (/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/next/dist/server/lib/start-server.js:146:13)\"},\"gip\":true,\"scriptLoader\":[]}</script></body></html>",
+    "timestamp": "2025-05-23T18:26:51.557Z"
   }
 ]

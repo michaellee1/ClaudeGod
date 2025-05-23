@@ -3,10 +3,10 @@ import { taskStore } from '@/lib/utils/task-store'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const taskId = params.id
+    const { id: taskId } = await params
     await taskStore.mergeTask(taskId)
     return NextResponse.json({ success: true })
   } catch (error: any) {

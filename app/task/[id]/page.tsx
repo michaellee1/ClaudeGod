@@ -22,6 +22,7 @@ export default function TaskDetail() {
   const [isSendingPrompt, setIsSendingPrompt] = useState(false)
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isCommitting, setIsCommitting] = useState(false)
   const outputEndRef = useRef<HTMLDivElement>(null)
   const hasScrolledToBottom = useRef(false)
   const outputContainerRef = useRef<HTMLDivElement>(null)
@@ -189,6 +190,30 @@ export default function TaskDetail() {
     }
   }
 
+  const handleManualCommit = async () => {
+    setIsCommitting(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `Complete task: ${task?.prompt}` }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        setError(`Failed to commit: ${errorData.error || 'Unknown error'}`)
+      } else {
+        // Refresh task data to get the new commit hash
+        await fetchTask()
+      }
+    } catch (error: any) {
+      console.error('Error committing:', error)
+      setError(`Failed to commit: ${error.message || 'Network error'}`)
+    } finally {
+      setIsCommitting(false)
+    }
+  }
+
   if (!task) {
     return (
       <div className="container mx-auto p-8">
@@ -298,6 +323,18 @@ export default function TaskDetail() {
                   size="sm"
                 >
                   {isPreviewing ? 'Stop Preview' : 'Preview Changes'}
+                </Button>
+              )}
+              
+              {task.status === 'finished' && !task.commitHash && (
+                <Button
+                  onClick={handleManualCommit}
+                  disabled={isCommitting}
+                  variant="secondary"
+                  className="w-full"
+                  size="sm"
+                >
+                  {isCommitting ? 'Committing...' : 'Commit Changes'}
                 </Button>
               )}
             </CardContent>

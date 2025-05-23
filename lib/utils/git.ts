@@ -111,11 +111,21 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
 
 export async function commitChanges(worktreePath: string, message: string): Promise<string> {
   try {
-    // Sanitize commit message
-    const safeMessage = message.replace(/"/g, '\\"').substring(0, 1000)
+    // Check if there are any changes to commit
+    const { stdout: status } = await execFileAsync('git', ['-C', worktreePath, 'status', '--porcelain'])
     
-    await execFileAsync('git', ['-C', worktreePath, 'add', '.'])
-    await execFileAsync('git', ['-C', worktreePath, 'commit', '-m', safeMessage])
+    if (!status.trim()) {
+      // No changes to commit - create an empty commit
+      console.log('No changes detected, creating empty commit')
+      const safeMessage = message.replace(/"/g, '\\"').substring(0, 1000)
+      await execFileAsync('git', ['-C', worktreePath, 'commit', '--allow-empty', '-m', safeMessage])
+    } else {
+      // Sanitize commit message
+      const safeMessage = message.replace(/"/g, '\\"').substring(0, 1000)
+      
+      await execFileAsync('git', ['-C', worktreePath, 'add', '.'])
+      await execFileAsync('git', ['-C', worktreePath, 'commit', '-m', safeMessage])
+    }
     
     // Get the commit hash
     const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'rev-parse', 'HEAD'])
@@ -157,10 +167,12 @@ export async function getLastCommitHash(repoPath: string): Promise<string> {
 }
 
 export async function mergeWorktreeToMain(repoPath: string, worktreePath: string): Promise<void> {
+  let cleanBranchName = ''
+  
   try {
     // Get the current branch name from the worktree
     const { stdout: branchName } = await execFileAsync('git', ['-C', worktreePath, 'branch', '--show-current'])
-    const cleanBranchName = branchName.trim()
+    cleanBranchName = branchName.trim()
     
     // Switch to main branch in the main repo
     await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
