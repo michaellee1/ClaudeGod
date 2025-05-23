@@ -1,7 +1,7 @@
 export interface Task {
   id: string
   prompt: string
-  status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'interrupted'
+  status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'interrupted' | 'merged'
   phase: 'editor' | 'reviewer' | 'done' | 'interrupted'
   worktree: string
   repoPath: string
@@ -19,6 +19,7 @@ export interface PromptCycle {
   prompt: string
   timestamp: Date
   commitHash?: string
+  mergedAt?: Date
 }
 
 export interface TaskOutput {
