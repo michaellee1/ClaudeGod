@@ -84,7 +84,8 @@ export default function TaskDetail() {
         method: 'POST',
       })
       if (response.ok) {
-        router.push('/')
+        await fetchTask() // Refresh task to show merged status
+        setError(null)
       } else {
         const errorData = await response.json()
         const errorMessage = errorData.error || 'Unknown error'
@@ -272,6 +273,7 @@ export default function TaskDetail() {
                       task.status === 'in_progress' ? 'default' :
                       task.status === 'finished' ? 'success' :
                       task.status === 'interrupted' ? 'outline' :
+                      task.status === 'merged' ? 'secondary' :
                       'destructive'
                     }
                   >
@@ -306,18 +308,18 @@ export default function TaskDetail() {
             <CardContent className="pt-0 space-y-2">
               <Button
                 onClick={() => setShowMergeConfirm(true)}
-                disabled={isMerging || !task.commitHash}
+                disabled={isMerging || !task.commitHash || task.status === 'merged'}
                 variant="default"
                 className="w-full"
                 size="sm"
               >
-                {isMerging ? 'Merging...' : 'Merge to Main'}
+                {isMerging ? 'Merging...' : task.status === 'merged' ? 'Already Merged' : 'Merge to Main'}
               </Button>
               
               {task.commitHash && (
                 <Button
                   onClick={isPreviewing ? handleStopPreview : handleStartPreview}
-                  disabled={task.status !== 'finished' || isMerging}
+                  disabled={(task.status !== 'finished' && task.status !== 'merged') || isMerging}
                   variant={isPreviewing ? "destructive" : "secondary"}
                   className="w-full"
                   size="sm"
@@ -352,11 +354,11 @@ export default function TaskDetail() {
                   onChange={(e) => setAdditionalPrompt(e.target.value)}
                   className="min-h-[200px]"
                   placeholder="Add more instructions or feedback..."
-                  disabled={task.status === 'finished'}
+                  disabled={task.status === 'finished' || task.status === 'merged'}
                 />
                 <Button
                   onClick={handleSendPrompt}
-                  disabled={isSendingPrompt || task.status === 'finished' || !additionalPrompt.trim()}
+                  disabled={isSendingPrompt || task.status === 'finished' || task.status === 'merged' || !additionalPrompt.trim()}
                   className="w-full"
                   size="sm"
                 >
@@ -411,7 +413,7 @@ export default function TaskDetail() {
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-2">Merge to Main</h3>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to merge this task to the main branch? This will apply the changes permanently and remove the task.
+              Are you sure you want to merge this task to the main branch? This will apply the changes permanently. The worktree will be preserved for reference.
             </p>
             <div className="flex justify-end space-x-2">
               <Button

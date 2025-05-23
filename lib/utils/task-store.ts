@@ -52,6 +52,9 @@ class TaskStore {
       // Convert array back to Map and restore Date objects
       for (const task of tasks) {
         task.createdAt = new Date(task.createdAt)
+        if (task.mergedAt) {
+          task.mergedAt = new Date(task.mergedAt)
+        }
         this.tasks.set(task.id, task)
         
         // Note: We can't restore process managers for running tasks
@@ -327,8 +330,10 @@ class TaskStore {
     // Merge the worktree branch to main
     await mergeWorktreeToMain(task.repoPath, task.worktree)
     
-    // Remove the task after successful merge
-    await this.removeTask(taskId)
+    // Mark task as merged instead of removing it
+    task.status = 'merged' as any
+    task.mergedAt = new Date()
+    await this.saveTasks()
   }
 
   async sendPromptToTask(taskId: string, prompt: string): Promise<void> {
