@@ -1,5 +1,7 @@
 # ClaudeGod
 
+![ClaudeGod](./assets/claudegod.png)
+
 **Run Multiple Autonomous Claude Tasks Locally**
 
 Spin off multiple Claude agents to work on different coding tasks simultaneously, each in their own isolated environment.
