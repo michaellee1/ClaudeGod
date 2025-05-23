@@ -121,11 +121,16 @@ Start by running 'git diff' to see what was changed.`
           this.outputBuffer += content
           
           // Try to parse stream-json format
-          try {
-            const lines = content.trim().split('\n')
-            for (const line of lines) {
-              if (line.trim()) {
+          const lines = content.trim().split('\n')
+          const processedLines = new Set<string>()
+          
+          for (const line of lines) {
+            if (line.trim()) {
+              let isJsonLine = false
+              try {
                 const parsed = JSON.parse(line)
+                isJsonLine = true
+                processedLines.add(line)
                 
                 // Handle different message types
                 if (parsed.type === 'assistant' && parsed.message?.content) {
@@ -234,17 +239,19 @@ Start by running 'git diff' to see what was changed.`
                   // Skip user messages - these are usually just echoing the prompt
                   // Don't emit these
                 }
+              } catch (e) {
+                // Not JSON - continue to check if it should be emitted
               }
-            }
-          } catch (e) {
-            // Fallback to raw output if not valid JSON
-            // But try to filter out raw JSON that looks like message objects
-            if (!content.includes('{"type":"user"') && !content.includes('{"type":"assistant"') && !content.includes('{"type":"tool_use"')) {
-              this.emit('output', {
-                type: 'editor',
-                content: content,
-                timestamp: new Date()
-              })
+              
+              // Emit non-JSON lines that aren't raw JSON strings
+              if (!isJsonLine && !processedLines.has(line) && !line.includes('{"type":')) {
+                this.emit('output', {
+                  type: 'editor',
+                  content: line,
+                  timestamp: new Date()
+                })
+                processedLines.add(line)
+              }
             }
           }
           
@@ -315,11 +322,16 @@ Start by running 'git diff' to see what was changed.`
           this.outputBuffer += content
           
           // Try to parse stream-json format
-          try {
-            const lines = content.trim().split('\n')
-            for (const line of lines) {
-              if (line.trim()) {
+          const lines = content.trim().split('\n')
+          const processedLines = new Set<string>()
+          
+          for (const line of lines) {
+            if (line.trim()) {
+              let isJsonLine = false
+              try {
                 const parsed = JSON.parse(line)
+                isJsonLine = true
+                processedLines.add(line)
                 
                 // Handle different message types
                 if (parsed.type === 'assistant' && parsed.message?.content) {
@@ -431,17 +443,19 @@ Start by running 'git diff' to see what was changed.`
                   // Skip user messages - these are usually just echoing the prompt
                   // Don't emit these
                 }
+              } catch (e) {
+                // Not JSON - continue to check if it should be emitted
               }
-            }
-          } catch (e) {
-            // Fallback to raw output if not valid JSON
-            // But try to filter out raw JSON that looks like message objects
-            if (!content.includes('{"type":"user"') && !content.includes('{"type":"assistant"') && !content.includes('{"type":"tool_use"')) {
-              this.emit('output', {
-                type: 'reviewer',
-                content: content,
-                timestamp: new Date()
-              })
+              
+              // Emit non-JSON lines that aren't raw JSON strings
+              if (!isJsonLine && !processedLines.has(line) && !line.includes('{"type":')) {
+                this.emit('output', {
+                  type: 'reviewer',
+                  content: line,
+                  timestamp: new Date()
+                })
+                processedLines.add(line)
+              }
             }
           }
           

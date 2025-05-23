@@ -13,6 +13,7 @@ export interface Task {
   commitHash?: string
   isPreviewing?: boolean
   promptHistory?: PromptCycle[]
+  mergedAt?: Date
 }
 
 export interface PromptCycle {
