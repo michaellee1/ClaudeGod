@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Select } from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -34,6 +35,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [isDeletingAll, setIsDeletingAll] = useState(false)
   const [previewingTaskId, setPreviewingTaskId] = useState<string | null>(null)
+  const [thinkMode, setThinkMode] = useState('level1')
 
   useEffect(() => {
     fetchTasks()
@@ -161,12 +163,20 @@ export default function Home() {
     e.preventDefault()
     if (!prompt.trim() || !repoPath.trim()) return
 
+    let finalPrompt = prompt
+    if (thinkMode !== 'none') {
+      const thinkModeText = thinkMode === 'level1' ? 'Think hard' : 
+                           thinkMode === 'level2' ? 'Think harder' : 
+                           'Ultrathink'
+      finalPrompt = `${prompt}. ${thinkModeText}`
+    }
+
     setIsSubmitting(true)
     try {
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, repoPath }),
+        body: JSON.stringify({ prompt: finalPrompt, repoPath }),
       })
 
       if (response.ok) {
@@ -223,6 +233,20 @@ export default function Home() {
                 placeholder="Describe your task..."
                 required
               />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="thinkMode">Think Mode</Label>
+              <Select
+                id="thinkMode"
+                value={thinkMode}
+                onChange={(e) => setThinkMode(e.target.value)}
+              >
+                <option value="none">None</option>
+                <option value="level1">Think hard (level 1)</option>
+                <option value="level2">Think harder (level 2)</option>
+                <option value="level3">Ultrathink (level 3)</option>
+              </Select>
             </div>
             
             <Button type="submit" disabled={isSubmitting}>
