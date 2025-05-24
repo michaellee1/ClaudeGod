@@ -386,7 +386,6 @@ export default function Home() {
                           task.status === 'starting' ? 'outline' :
                           task.status === 'in_progress' ? 'default' :
                           task.status === 'finished' ? 'success' :
-                          task.status === 'interrupted' ? 'outline' :
                           task.status === 'merged' ? 'purple' :
                           'destructive'
                         }
