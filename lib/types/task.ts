@@ -1,8 +1,8 @@
 export interface Task {
   id: string
   prompt: string
-  status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'interrupted' | 'merged'
-  phase: 'editor' | 'reviewer' | 'done' | 'interrupted'
+  status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'merged'
+  phase: 'editor' | 'reviewer' | 'done'
   worktree: string
   repoPath: string
   createdAt: Date
