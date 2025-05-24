@@ -60,15 +60,7 @@ class TaskStore {
         this.tasks.set(task.id, task)
         
         // Note: We can't restore process managers for running tasks
-        // Only mark as interrupted if the task is old enough (more than 5 minutes)
-        // This helps avoid marking recently started tasks as interrupted on page reload
-        const taskAge = Date.now() - new Date(task.createdAt).getTime()
-        const FIVE_MINUTES = 5 * 60 * 1000
-        
-        if ((task.status === 'in_progress' || task.status === 'starting') && taskAge > FIVE_MINUTES) {
-          task.status = 'interrupted'
-          task.phase = 'interrupted'
-        }
+        // Tasks will remain in their current status even after reload
       }
       
       console.log(`Loaded ${this.tasks.size} tasks from disk`)
