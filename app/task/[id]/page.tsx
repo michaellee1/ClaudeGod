@@ -27,6 +27,8 @@ export default function TaskDetail() {
   const [conflictBranchName, setConflictBranchName] = useState<string | null>(null)
   const [showMergeConflict, setShowMergeConflict] = useState(false)
   const [mergeConflictBranchName, setMergeConflictBranchName] = useState<string | null>(null)
+  const [showFailedTaskPreviewConfirm, setShowFailedTaskPreviewConfirm] = useState(false)
+  const [showFailedTaskCommitConfirm, setShowFailedTaskCommitConfirm] = useState(false)
   const outputEndRef = useRef<HTMLDivElement>(null)
   const hasScrolledToBottom = useRef(false)
   const outputContainerRef = useRef<HTMLDivElement>(null)
@@ -160,6 +162,16 @@ export default function TaskDetail() {
   }
 
   const handleStartPreview = async () => {
+    // If task failed, show confirmation first
+    if (task?.status === 'failed') {
+      setShowFailedTaskPreviewConfirm(true)
+      return
+    }
+    
+    await startPreview()
+  }
+
+  const startPreview = async () => {
     setIsPreviewing(true)
     setError(null)
     try {
@@ -207,13 +219,27 @@ export default function TaskDetail() {
   }
 
   const handleManualCommit = async () => {
+    // If task failed, show confirmation first
+    if (task?.status === 'failed') {
+      setShowFailedTaskCommitConfirm(true)
+      return
+    }
+    
+    await performCommit()
+  }
+
+  const performCommit = async () => {
     setIsCommitting(true)
     setError(null)
     try {
+      const commitMessage = task?.status === 'failed' 
+        ? `Failed task: ${task?.prompt}` 
+        : `Complete task: ${task?.prompt}`
+      
       const response = await fetch(`/api/tasks/${taskId}/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `Complete task: ${task?.prompt}` }),
+        body: JSON.stringify({ message: commitMessage }),
       })
       if (!response.ok) {
         const errorData = await response.json()
@@ -361,7 +387,7 @@ export default function TaskDetail() {
               {task.commitHash && (
                 <Button
                   onClick={isPreviewing ? handleStopPreview : handleStartPreview}
-                  disabled={(task.status !== 'finished' && task.status !== 'merged') || isMerging}
+                  disabled={(task.status !== 'finished' && task.status !== 'merged' && task.status !== 'failed') || isMerging}
                   variant={isPreviewing ? "destructive" : "secondary"}
                   className="w-full"
                   size="sm"
@@ -370,7 +396,7 @@ export default function TaskDetail() {
                 </Button>
               )}
               
-              {task.status === 'finished' && !task.commitHash && (
+              {(task.status === 'finished' || task.status === 'failed') && !task.commitHash && (
                 <Button
                   onClick={handleManualCommit}
                   disabled={isCommitting}
@@ -468,6 +494,14 @@ export default function TaskDetail() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-2">Merge to Main</h3>
+            {task?.status === 'failed' && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+                <p className="text-red-700 text-sm font-medium">⚠️ Warning: This task failed</p>
+                <p className="text-red-600 text-sm mt-1">
+                  This task did not complete successfully. Merging failed tasks may introduce bugs or incomplete features.
+                </p>
+              </div>
+            )}
             <p className="text-gray-600 mb-4">
               Are you sure you want to merge this task to the main branch? This will apply the changes permanently. The worktree will be preserved for reference.
             </p>
@@ -603,6 +637,80 @@ git commit`}
                 size="sm"
               >
                 Resubmit Task
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Failed Task Preview Confirmation Dialog */}
+      {showFailedTaskPreviewConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2">Preview Failed Task</h3>
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+              <p className="text-red-700 text-sm font-medium">⚠️ This task failed</p>
+              <p className="text-red-600 text-sm mt-1">
+                The task did not complete successfully. Previewing may show incomplete or broken changes.
+              </p>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to preview the changes from this failed task?
+            </p>
+            <div className="flex justify-end space-x-2">
+              <Button
+                onClick={() => setShowFailedTaskPreviewConfirm(false)}
+                variant="outline"
+                size="sm"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  setShowFailedTaskPreviewConfirm(false)
+                  await startPreview()
+                }}
+                variant="default"
+                size="sm"
+              >
+                Preview Anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Failed Task Commit Confirmation Dialog */}
+      {showFailedTaskCommitConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2">Commit Failed Task</h3>
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+              <p className="text-red-700 text-sm font-medium">⚠️ This task failed</p>
+              <p className="text-red-600 text-sm mt-1">
+                The task did not complete successfully. Committing may preserve incomplete or broken code.
+              </p>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to commit the changes from this failed task?
+            </p>
+            <div className="flex justify-end space-x-2">
+              <Button
+                onClick={() => setShowFailedTaskCommitConfirm(false)}
+                variant="outline"
+                size="sm"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  setShowFailedTaskCommitConfirm(false)
+                  await performCommit()
+                }}
+                variant="default"
+                size="sm"
+              >
+                Commit Anyway
               </Button>
             </div>
           </div>
