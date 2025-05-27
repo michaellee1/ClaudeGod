@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import os from 'os'
+import crypto from 'crypto'
 import fs from 'fs/promises'
 
 const execFileAsync = promisify(execFile)
@@ -205,64 +206,95 @@ export async function getLastCommitHash(repoPath: string): Promise<string> {
 
 export async function mergeWorktreeToMain(repoPath: string, worktreePath: string): Promise<void> {
   let cleanBranchName = ''
+  let tempClonePath = ''
   
   try {
     // Get the current branch name from the worktree
     const { stdout: branchName } = await execFileAsync('git', ['-C', worktreePath, 'branch', '--show-current'])
     cleanBranchName = branchName.trim()
     
-    // Switch to main branch in the main repo
-    await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
+    // Validate branch name to prevent command injection
+    if (!/^[a-zA-Z0-9_\-\/\.]+$/.test(cleanBranchName)) {
+      throw new Error(`Invalid branch name: ${cleanBranchName}`)
+    }
+    
+    // Create a temporary clone to avoid disrupting other tasks
+    const tempDir = os.tmpdir()
+    tempClonePath = path.join(tempDir, `claude-god-merge-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`)
+    
+    // Clone the repository to a temporary location
+    await execFileAsync('git', ['clone', repoPath, tempClonePath])
+    
+    // Switch to main branch in the temp clone
+    await execFileAsync('git', ['-C', tempClonePath, 'checkout', 'main'])
     
     // Pull latest changes to avoid conflicts
     try {
-      await execFileAsync('git', ['-C', repoPath, 'pull'])
+      await execFileAsync('git', ['-C', tempClonePath, 'pull'])
     } catch (pullError) {
       console.warn('Failed to pull latest changes, continuing with merge attempt')
     }
     
+    // Add the worktree as a remote to access its branch
+    await execFileAsync('git', ['-C', tempClonePath, 'remote', 'add', 'worktree', worktreePath])
+    await execFileAsync('git', ['-C', tempClonePath, 'fetch', 'worktree'])
+    
     // Attempt to merge the worktree branch
-    await execFileAsync('git', ['-C', repoPath, 'merge', cleanBranchName])
+    await execFileAsync('git', ['-C', tempClonePath, 'merge', `worktree/${cleanBranchName}`])
+    
+    // If merge succeeded, push back to the original repo
+    await execFileAsync('git', ['-C', tempClonePath, 'push', 'origin', 'main'])
   } catch (error: any) {
     console.error('Error merging worktree to main:', error)
     
     // Check if this is a merge conflict
     if (error.message && error.message.includes('CONFLICT')) {
-      // Abort the merge to clean up
-      try {
-        await execFileAsync('git', ['-C', repoPath, 'merge', '--abort'])
-      } catch (abortError) {
-        console.error('Failed to abort merge:', abortError)
+      // Abort the merge to clean up in temp clone
+      if (tempClonePath) {
+        try {
+          await execFileAsync('git', ['-C', tempClonePath, 'merge', '--abort'])
+        } catch (abortError) {
+          console.error('Failed to abort merge:', abortError)
+        }
       }
       throw new Error(`MERGE_CONFLICT:${cleanBranchName}`)
     }
     
     // For other git errors, try to abort merge if in progress
-    try {
-      const { stdout: status } = await execFileAsync('git', ['-C', repoPath, 'status', '--porcelain'])
-      if (status.includes('UU') || status.includes('AA') || status.includes('DD')) {
-        // There are unmerged paths, abort the merge
-        await execFileAsync('git', ['-C', repoPath, 'merge', '--abort'])
+    if (tempClonePath) {
+      try {
+        const { stdout: status } = await execFileAsync('git', ['-C', tempClonePath, 'status', '--porcelain'])
+        if (status.includes('UU') || status.includes('AA') || status.includes('DD')) {
+          // There are unmerged paths, abort the merge
+          await execFileAsync('git', ['-C', tempClonePath, 'merge', '--abort'])
+        }
+      } catch (cleanupError) {
+        console.error('Failed to cleanup merge state:', cleanupError)
       }
-    } catch (cleanupError) {
-      console.error('Failed to cleanup merge state:', cleanupError)
     }
     
     throw new Error(`Merge failed: ${error.message || 'Unknown error during merge'}`)
+  } finally {
+    // Clean up temporary clone
+    if (tempClonePath) {
+      try {
+        await fs.rm(tempClonePath, { recursive: true, force: true })
+      } catch (cleanupError) {
+        console.error('Failed to clean up temporary clone:', cleanupError)
+      }
+    }
   }
 }
 
 export async function rebaseWorktreeOnMain(repoPath: string, worktreePath: string): Promise<void> {
   try {
-    // Fetch latest changes in main repo
-    await execFileAsync('git', ['-C', repoPath, 'fetch'])
+    // Fetch latest changes directly in the worktree without switching branches in main repo
+    await execFileAsync('git', ['-C', worktreePath, 'fetch', 'origin'])
     
-    // Switch to main and pull latest
-    await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
-    await execFileAsync('git', ['-C', repoPath, 'pull'])
+    // Get the latest main branch commits
+    await execFileAsync('git', ['-C', worktreePath, 'fetch', 'origin', 'main:refs/remotes/origin/main'])
     
     // In the worktree, rebase on the updated main
-    await execFileAsync('git', ['-C', worktreePath, 'fetch', 'origin', 'main'])
     await execFileAsync('git', ['-C', worktreePath, 'rebase', 'origin/main'])
   } catch (error: any) {
     console.error('Error rebasing worktree on main:', error)

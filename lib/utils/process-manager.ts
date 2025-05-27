@@ -1,5 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import os from 'os'
+import path from 'path'
 
 export interface ProcessOutput {
   type: 'editor' | 'reviewer'
@@ -13,7 +15,10 @@ export class ProcessManager extends EventEmitter {
   private currentPhase: 'starting' | 'editor' | 'reviewer' | 'finished' = 'starting'
   private lastOutputTime: number = 0
   private outputMonitorInterval: NodeJS.Timeout | null = null
-  private readonly IDLE_TIMEOUT = 600000 // 10 minutes - sanity timeout for stuck processes
+  private readonly IDLE_TIMEOUT = 1800000 // 30 minutes - increased timeout for long-running tasks
+  private readonly GRACEFUL_SHUTDOWN_TIMEOUT = 5000 // 5 seconds for graceful shutdown
+  private isShuttingDown = false
+  private processExitCode: number | null = null
   private outputBuffer: string = ''
   private readonly COMPLETION_PATTERNS = [
     /Task complete/i,
@@ -67,7 +72,7 @@ Start by running 'git diff' to see what was changed.`
         cwd: worktreePath,
         env: { 
           ...process.env, 
-          PATH: process.env.PATH + ':/usr/local/bin:/opt/homebrew/bin:/Users/michaellee/.nvm/versions/node/v20.16.0/bin',
+          PATH: this.getEnhancedPath(),
           FORCE_COLOR: '0',
           NO_COLOR: '1'
         },
@@ -290,9 +295,19 @@ Start by running 'git diff' to see what was changed.`
       
       this.editorProcess.on('exit', (code, signal) => {
         console.log('Editor process exited with code:', code, 'signal:', signal)
-        const exitMessage = code === 0 
-          ? `Process completed successfully (code: ${code})`
-          : `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+        this.processExitCode = code
+        
+        let exitMessage: string
+        if (code === 0) {
+          exitMessage = `Process completed successfully (code: ${code})`
+        } else if (code === 143 && !this.isShuttingDown) {
+          exitMessage = `Process terminated (SIGTERM). This may be due to timeout or system resource limits.`
+          this.emit('error', new Error(exitMessage))
+        } else if (!this.isShuttingDown) {
+          exitMessage = `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+        } else {
+          exitMessage = `Process stopped (code: ${code})`
+        }
         
         this.emit('output', {
           type: 'editor',
@@ -300,8 +315,8 @@ Start by running 'git diff' to see what was changed.`
           timestamp: new Date()
         })
         
-        // If process exits with non-zero code and we're not already finished, mark as failed
-        if (code !== 0 && this.currentPhase === 'editor') {
+        // If process exits with non-zero code and we're not already finished or shutting down, mark as failed
+        if (code !== 0 && this.currentPhase === 'editor' && !this.isShuttingDown) {
           console.error('Editor process failed with code:', code)
         }
       })
@@ -494,9 +509,19 @@ Start by running 'git diff' to see what was changed.`
       
       this.reviewerProcess.on('exit', (code, signal) => {
         console.log('Reviewer process exited with code:', code, 'signal:', signal)
-        const exitMessage = code === 0 
-          ? `Process completed successfully (code: ${code})`
-          : `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+        this.processExitCode = code
+        
+        let exitMessage: string
+        if (code === 0) {
+          exitMessage = `Process completed successfully (code: ${code})`
+        } else if (code === 143 && !this.isShuttingDown) {
+          exitMessage = `Process terminated (SIGTERM). This may be due to timeout or system resource limits.`
+          this.emit('error', new Error(exitMessage))
+        } else if (!this.isShuttingDown) {
+          exitMessage = `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+        } else {
+          exitMessage = `Process stopped (code: ${code})`
+        }
         
         this.emit('output', {
           type: 'reviewer',
@@ -511,7 +536,7 @@ Start by running 'git diff' to see what was changed.`
           this.emit('status', 'finished')
           this.emit('phase', 'done')
           this.emit('completed', true) // Pass true to indicate successful completion
-        } else if (code !== 0 && this.currentPhase === 'reviewer') {
+        } else if (code !== 0 && this.currentPhase === 'reviewer' && !this.isShuttingDown) {
           console.error('Reviewer process failed with code:', code)
           this.emit('status', 'failed')
         }
@@ -546,7 +571,7 @@ Start by running 'git diff' to see what was changed.`
         cwd: worktreePath,
         env: { 
           ...process.env, 
-          PATH: process.env.PATH + ':/usr/local/bin:/opt/homebrew/bin:/Users/michaellee/.nvm/versions/node/v20.16.0/bin',
+          PATH: this.getEnhancedPath(),
           FORCE_COLOR: '0',
           NO_COLOR: '1'
         },
@@ -614,8 +639,11 @@ Start by running 'git diff' to see what was changed.`
 
       // Set up a sanity timeout
       const timeout = setTimeout(() => {
-        console.warn(`${processName} process timed out after 10 minutes`)
-        process.kill()
+        console.warn(`${processName} process timed out after 30 minutes`)
+        if (!this.isShuttingDown) {
+          this.emit('timeout', { processName, pid: process.pid })
+        }
+        process.kill('SIGTERM')
         resolve()
       }, this.IDLE_TIMEOUT)
 
@@ -690,18 +718,70 @@ Start by running 'git diff' to see what was changed.`
   }
 
   stopProcesses() {
+    this.isShuttingDown = true
+    
     if (this.outputMonitorInterval) {
       clearInterval(this.outputMonitorInterval)
     }
     
-    if (this.editorProcess) {
-      this.editorProcess.kill('SIGTERM')
-      this.editorProcess = null
+    // Give processes time to gracefully shutdown
+    const gracefulShutdown = async (process: ChildProcess | null, name: string) => {
+      if (!process || !process.pid) return
+      
+      try {
+        // Send SIGTERM for graceful shutdown
+        process.kill('SIGTERM')
+        
+        // Wait up to 5 seconds for graceful exit
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn(`${name} did not exit gracefully, sending SIGKILL`)
+            try {
+              process.kill('SIGKILL')
+            } catch (e) {
+              // Process may already be dead
+            }
+            resolve()
+          }, this.GRACEFUL_SHUTDOWN_TIMEOUT)
+          
+          process.once('exit', () => {
+            clearTimeout(timeout)
+            resolve()
+          })
+        })
+      } catch (error) {
+        console.error(`Error stopping ${name}:`, error)
+      }
     }
     
-    if (this.reviewerProcess) {
-      this.reviewerProcess.kill('SIGTERM')
+    // Stop both processes gracefully
+    Promise.all([
+      gracefulShutdown(this.editorProcess, 'editor'),
+      gracefulShutdown(this.reviewerProcess, 'reviewer')
+    ]).then(() => {
+      this.editorProcess = null
       this.reviewerProcess = null
-    }
+      this.isShuttingDown = false
+    })
+  }
+  
+  isProcessRunning(): boolean {
+    return !!(this.editorProcess || this.reviewerProcess)
+  }
+  
+  private getEnhancedPath(): string {
+    const PATH = process.env.PATH || ''
+    const pathComponents = [
+      '/usr/local/bin',
+      '/opt/homebrew/bin'
+    ]
+    
+    // Add nvm node path if it exists
+    const homeDir = os.homedir()
+    const nvmPath = path.join(homeDir, '.nvm', 'versions', 'node')
+    
+    // Don't add user-specific paths, just common system paths
+    pathComponents.push(PATH)
+    return pathComponents.join(path.delimiter)
   }
 }

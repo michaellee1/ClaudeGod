@@ -1,6 +1,7 @@
 import { Task, TaskOutput, PromptCycle } from '@/lib/types/task'
 import { ProcessManager } from './process-manager'
 import { createWorktree, removeWorktree, commitChanges, cherryPickCommit, undoCherryPick, mergeWorktreeToMain } from './git'
+import { gitLock } from './git-lock'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -252,7 +253,11 @@ class TaskStore {
     if (!task) throw new Error('Task not found')
     
     const commitMessage = message || `Complete task: ${task.prompt}`
-    const commitHash = await commitChanges(task.worktree, commitMessage)
+    
+    // Commit changes with lock (using repo path as lock key for consistency)
+    const commitHash = await gitLock.withLock(task.repoPath, async () => {
+      return await commitChanges(task.worktree, commitMessage)
+    })
     
     task.commitHash = commitHash
     await this.saveTasks()
@@ -269,8 +274,10 @@ class TaskStore {
       await this.stopPreview(taskId)
     }
     
-    // Merge the worktree branch to main
-    await mergeWorktreeToMain(task.repoPath, task.worktree)
+    // Merge the worktree branch to main with lock
+    await gitLock.withLock(task.repoPath, async () => {
+      await mergeWorktreeToMain(task.repoPath, task.worktree)
+    })
     
     // Mark task as merged instead of removing it
     task.status = 'merged' as any
@@ -395,8 +402,10 @@ ${gitDiff}
     if (!task.commitHash) throw new Error('Task has no commit to preview')
     if (task.isPreviewing) throw new Error('Task is already being previewed')
     
-    // Cherry-pick the commit to main repo
-    await cherryPickCommit(task.repoPath, task.commitHash)
+    // Cherry-pick the commit to main repo with lock
+    await gitLock.withLock(task.repoPath, async () => {
+      await cherryPickCommit(task.repoPath, task.commitHash!)
+    })
     task.isPreviewing = true
     await this.saveTasks()
   }
@@ -406,8 +415,10 @@ ${gitDiff}
     if (!task) throw new Error('Task not found')
     if (!task.isPreviewing) throw new Error('Task is not being previewed')
     
-    // Undo the cherry-pick
-    await undoCherryPick(task.repoPath)
+    // Undo the cherry-pick with lock
+    await gitLock.withLock(task.repoPath, async () => {
+      await undoCherryPick(task.repoPath)
+    })
     task.isPreviewing = false
     await this.saveTasks()
   }
@@ -498,6 +509,30 @@ ${gitDiff}
       this.debouncedSave()
     })
     
+    processManager.on('error', (error: Error) => {
+      console.error(`Process error for task ${task.id}:`, error)
+      this.addOutput(task.id, {
+        type: 'system',
+        content: `⚠️ ${error.message}`,
+        timestamp: new Date()
+      })
+      
+      // Don't automatically mark as failed for SIGTERM errors
+      if (!error.message.includes('SIGTERM')) {
+        task.status = 'failed'
+        this.debouncedSave()
+      }
+    })
+    
+    processManager.on('timeout', ({ processName, pid }) => {
+      console.warn(`Process timeout for task ${task.id}: ${processName} (PID: ${pid})`)
+      this.addOutput(task.id, {
+        type: 'system',
+        content: `⏱️ ${processName} process timed out after 30 minutes and was terminated`,
+        timestamp: new Date()
+      })
+    })
+    
     processManager.on('completed', async (shouldAutoCommit: boolean) => {
       task.status = 'finished'
       task.phase = 'done'
@@ -506,7 +541,9 @@ ${gitDiff}
       if (shouldAutoCommit) {
         try {
           console.log(`Auto-committing task ${task.id} after successful completion`)
-          const commitHash = await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+          const commitHash = await gitLock.withLock(task.repoPath, async () => {
+            return await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+          })
           task.commitHash = commitHash
           console.log(`Task ${task.id} auto-committed with hash: ${commitHash}`)
           
