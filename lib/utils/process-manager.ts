@@ -60,15 +60,26 @@ Start by running 'git diff' to see what was changed.`
 
     try {
       // Start editor process first
-      // Use direct path to Claude executable with correct Node version
-      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/claude')
+      // Create a wrapper command that ensures ReadableStream is available
+      const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
       
-      console.log('Starting editor process with command:', claudePath)
+      console.log('Starting editor process with Node executable:', nodeExecutable)
+      console.log('Claude CLI path:', claudePath)
       console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
       
-      // Use direct path to Claude executable
-      this.editorProcess = spawn(claudePath, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
+      // Use node directly with the CLI script and required flags
+      this.editorProcess = spawn(nodeExecutable, [
+        '--no-warnings',
+        '--enable-source-maps',
+        claudePath,
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions'
+      ], {
         cwd: worktreePath,
         env: { 
           ...process.env, 
@@ -560,14 +571,25 @@ Start by running 'git diff' to see what was changed.`
     
     try {
       // Now start the reviewer process
-      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/claude')
+      const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
       
-      console.log('Starting reviewer process with command:', claudePath)
+      console.log('Starting reviewer process with Node executable:', nodeExecutable)
+      console.log('Claude CLI path:', claudePath)
       console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
         
-      // Use direct path to Claude executable
-      this.reviewerProcess = spawn(claudePath, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
+      // Use node directly with the CLI script and required flags
+      this.reviewerProcess = spawn(nodeExecutable, [
+        '--no-warnings',
+        '--enable-source-maps',
+        claudePath,
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions'
+      ], {
         cwd: worktreePath,
         env: { 
           ...process.env, 
