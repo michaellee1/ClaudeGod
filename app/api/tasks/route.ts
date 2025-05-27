@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const prompt = formData.get('prompt') as string
     const repoPath = formData.get('repoPath') as string
+    const thinkMode = formData.get('thinkMode') as string
     const imageFile = formData.get('image') as File | null
     
     if (!prompt || !repoPath) {
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    const task = await taskStore.createTask(finalPrompt, repoPath)
+    const task = await taskStore.createTask(finalPrompt, repoPath, thinkMode)
     return NextResponse.json(task)
   } catch (error: any) {
     console.error('Error creating task:', error)

@@ -142,7 +142,7 @@ class TaskStore {
     await this.saveConfig()
   }
 
-  async createTask(prompt: string, repoPath: string): Promise<Task> {
+  async createTask(prompt: string, repoPath: string, thinkMode?: string): Promise<Task> {
     // Check concurrent task limit
     const activeTasks = Array.from(this.tasks.values()).filter(
       t => t.status !== 'finished' && t.status !== 'failed'
@@ -177,7 +177,8 @@ class TaskStore {
       repoPath: this.repoPath,
       createdAt: new Date(),
       output: [],
-      isSelfModification
+      isSelfModification,
+      thinkMode
     }
     
     this.tasks.set(taskId, task)
@@ -193,7 +194,8 @@ class TaskStore {
       const { editorPid, reviewerPid } = await processManager.startProcesses(
         worktreePath,
         prompt,
-        taskId
+        taskId,
+        thinkMode
       )
       
       task.editorPid = editorPid
@@ -383,7 +385,7 @@ ${gitDiff}
       this.setupProcessManagerEvents(newProcessManager, task)
       
       // Start the new cycle with the context prompt
-      await newProcessManager.start(contextPrompt)
+      await newProcessManager.start(contextPrompt, task.thinkMode)
       
       // Save the updated task
       await this.saveTasks()

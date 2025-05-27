@@ -14,6 +14,7 @@ export interface Task {
   commitHash?: string
   isPreviewing?: boolean
   promptHistory?: PromptCycle[]
+  thinkMode?: string
 }
 
 export interface PromptCycle {

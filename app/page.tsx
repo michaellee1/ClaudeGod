@@ -35,7 +35,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [isDeletingAll, setIsDeletingAll] = useState(false)
   const [previewingTaskId, setPreviewingTaskId] = useState<string | null>(null)
-  const [thinkMode, setThinkMode] = useState('level1')
+  const [thinkMode, setThinkMode] = useState('no_review')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
 
@@ -196,7 +196,7 @@ export default function Home() {
     let finalPrompt = prompt
     
     // Add think mode first (it will be moved after image ref on backend)
-    if (thinkMode !== 'none') {
+    if (thinkMode !== 'none' && thinkMode !== 'no_review') {
       const thinkModeText = thinkMode === 'level1' ? 'Think hard' : 
                            thinkMode === 'level2' ? 'Think harder' : 
                            'Ultrathink'
@@ -208,6 +208,7 @@ export default function Home() {
       const formData = new FormData()
       formData.append('prompt', finalPrompt)
       formData.append('repoPath', repoPath)
+      formData.append('thinkMode', thinkMode)
       if (selectedImage) {
         formData.append('image', selectedImage)
       }
@@ -313,6 +314,7 @@ export default function Home() {
                 value={thinkMode}
                 onChange={(e) => setThinkMode(e.target.value)}
               >
+                <option value="no_review">No Review</option>
                 <option value="none">None</option>
                 <option value="level1">Think hard (level 1)</option>
                 <option value="level2">Think harder (level 2)</option>
