@@ -27,6 +27,15 @@ export async function POST(request: NextRequest) {
       )
     }
     
+    // Validate thinkMode if provided
+    const validThinkModes = ['no_review', 'none', 'level1', 'level2', 'level3']
+    if (thinkMode && !validThinkModes.includes(thinkMode)) {
+      return NextResponse.json(
+        { error: 'Invalid think mode' },
+        { status: 400 }
+      )
+    }
+    
     // Validate the repo path
     const isValidRepo = await validateGitRepo(repoPath)
     if (!isValidRepo) {
