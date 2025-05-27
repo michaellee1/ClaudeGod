@@ -310,3 +310,44 @@ export async function rebaseWorktreeOnMain(repoPath: string, worktreePath: strin
     throw new Error(`Failed to update worktree: ${error.message || 'Unknown error during rebase'}`)
   }
 }
+
+export async function getTaskDiff(worktreePath: string, baseBranch: string = 'main'): Promise<string> {
+  try {
+    // Validate the worktree exists
+    await fs.access(worktreePath)
+    
+    // Validate it's a git repository
+    const isValid = await validateGitRepo(worktreePath)
+    if (!isValid) {
+      throw new Error(`Invalid git repository: ${worktreePath}`)
+    }
+    
+    // Get the diff between the worktree and the base branch
+    const { stdout: diff } = await execFileAsync('git', [
+      '-C', worktreePath,
+      'diff',
+      `origin/${baseBranch}...HEAD`
+    ])
+    
+    return diff
+  } catch (error: any) {
+    console.error('Error getting task diff:', error)
+    
+    // If the base branch doesn't exist remotely, try without origin/
+    if (error.message && error.message.includes('unknown revision')) {
+      try {
+        const { stdout: diff } = await execFileAsync('git', [
+          '-C', worktreePath,
+          'diff',
+          `${baseBranch}...HEAD`
+        ])
+        return diff
+      } catch (fallbackError) {
+        console.error('Error getting task diff with fallback:', fallbackError)
+        throw new Error(`Failed to generate diff: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`)
+      }
+    }
+    
+    throw new Error(`Failed to generate diff: ${error.message || 'Unknown error'}`)
+  }
+}
