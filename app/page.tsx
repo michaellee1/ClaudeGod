@@ -418,7 +418,7 @@ export default function Home() {
   }
 
   return (
-    <div className="container mx-auto p-8">
+    <div className="w-full px-8 py-8">
       
       {error && (
         <Alert variant="destructive" className="mb-6">
@@ -426,154 +426,156 @@ export default function Home() {
         </Alert>
       )}
       
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Submit New Task</CardTitle>
-          <CardDescription>Create a new coding task for Claude to work on</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="repoPath">Repository Path</Label>
-              <Input
-                id="repoPath"
-                type="text"
-                value={repoPath}
-                onChange={(e) => setRepoPath(e.target.value)}
-                placeholder="/path/to/your/repo"
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="prompt">Task Description</Label>
-              <Textarea
-                id="prompt"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="Describe your task..."
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="image">Attach Image (Optional)</Label>
-              <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Submit New Task</CardTitle>
+            <CardDescription>Create a new coding task for Claude to work on</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="repoPath">Repository Path</Label>
                 <Input
-                  id="image"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="cursor-pointer"
+                  id="repoPath"
+                  type="text"
+                  value={repoPath}
+                  onChange={(e) => setRepoPath(e.target.value)}
+                  placeholder="/path/to/your/repo"
+                  required
                 />
-                {imagePreview && (
-                  <div className="mt-2 relative inline-block">
-                    <img 
-                      src={imagePreview} 
-                      alt="Preview" 
-                      className="max-w-xs max-h-40 rounded border border-gray-200"
-                    />
-                    <Button
-                      type="button"
-                      onClick={handleClearImage}
-                      className="absolute top-1 right-1 p-1 h-6 w-6"
-                      variant="destructive"
-                      size="sm"
-                    >
-                      ×
-                    </Button>
-                  </div>
-                )}
               </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="thinkMode">Think Mode</Label>
-              <Select
-                id="thinkMode"
-                value={thinkMode}
-                onChange={(e) => setThinkMode(e.target.value)}
-              >
-                <option value="no_review">No Review</option>
-                <option value="none">None</option>
-                <option value="level1">Think hard (level 1)</option>
-                <option value="level2">Think harder (level 2)</option>
-                <option value="level3">Ultrathink (level 3)</option>
-              </Select>
-            </div>
-            
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Submitting...' : 'Submit Task'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              
+              <div className="space-y-2">
+                <Label htmlFor="prompt">Task Description</Label>
+                <Textarea
+                  id="prompt"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="min-h-[120px]"
+                  placeholder="Describe your task..."
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="image">Attach Image (Optional)</Label>
+                <div className="flex flex-col gap-2">
+                  <Input
+                    id="image"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="cursor-pointer"
+                  />
+                  {imagePreview && (
+                    <div className="mt-2 relative inline-block">
+                      <img 
+                        src={imagePreview} 
+                        alt="Preview" 
+                        className="max-w-xs max-h-40 rounded border border-gray-200"
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleClearImage}
+                        className="absolute top-1 right-1 p-1 h-6 w-6"
+                        variant="destructive"
+                        size="sm"
+                      >
+                        ×
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="thinkMode">Think Mode</Label>
+                <Select
+                  id="thinkMode"
+                  value={thinkMode}
+                  onChange={(e) => setThinkMode(e.target.value)}
+                >
+                  <option value="no_review">No Review</option>
+                  <option value="none">None</option>
+                  <option value="level1">Think hard (level 1)</option>
+                  <option value="level2">Think harder (level 2)</option>
+                  <option value="level3">Ultrathink (level 3)</option>
+                </Select>
+              </div>
+              
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Submitting...' : 'Submit Task'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Active Tasks</CardTitle>
-              <CardDescription>View and manage your ongoing coding tasks</CardDescription>
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Active Tasks</CardTitle>
+                <CardDescription>View and manage your ongoing coding tasks</CardDescription>
+              </div>
+              {tasks.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      Actions
+                      <ChevronDown className="ml-2 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={handleDeleteNonInProgressTasks}
+                      disabled={isDeletingAll}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
-            {tasks.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    Actions
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={handleDeleteNonInProgressTasks}
-                    disabled={isDeletingAll}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+          </CardHeader>
+          <CardContent>
+            {tasks.length === 0 ? (
+              <p className="text-muted-foreground">No active tasks</p>
+            ) : (
+              <Tabs defaultValue="active" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="active">
+                    Active ({tasks.filter(t => t.status === 'in_progress' || t.status === 'finished').length})
+                  </TabsTrigger>
+                  <TabsTrigger value="other">
+                    Other ({tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished').length})
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="active">
+                  <TaskTable 
+                    tasks={tasks.filter(t => t.status === 'in_progress' || t.status === 'finished')}
+                    onPreview={handlePreview}
+                    onMerge={handleMerge}
+                    onDelete={handleDeleteTask}
+                    previewingTaskId={previewingTaskId}
+                  />
+                </TabsContent>
+                <TabsContent value="other">
+                  <TaskTable 
+                    tasks={tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished')}
+                    onPreview={handlePreview}
+                    onMerge={handleMerge}
+                    onDelete={handleDeleteTask}
+                    previewingTaskId={previewingTaskId}
+                  />
+                </TabsContent>
+              </Tabs>
             )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {tasks.length === 0 ? (
-            <p className="text-muted-foreground">No active tasks</p>
-          ) : (
-            <Tabs defaultValue="in-progress" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="in-progress">
-                  In Progress ({tasks.filter(t => t.status === 'in_progress').length})
-                </TabsTrigger>
-                <TabsTrigger value="other">
-                  Other ({tasks.filter(t => t.status !== 'in_progress').length})
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="in-progress">
-                <TaskTable 
-                  tasks={tasks.filter(t => t.status === 'in_progress')}
-                  onPreview={handlePreview}
-                  onMerge={handleMerge}
-                  onDelete={handleDeleteTask}
-                  previewingTaskId={previewingTaskId}
-                />
-              </TabsContent>
-              <TabsContent value="other">
-                <TaskTable 
-                  tasks={tasks.filter(t => t.status !== 'in_progress')}
-                  onPreview={handlePreview}
-                  onMerge={handleMerge}
-                  onDelete={handleDeleteTask}
-                  previewingTaskId={previewingTaskId}
-                />
-              </TabsContent>
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
