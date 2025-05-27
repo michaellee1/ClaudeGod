@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DiffViewer } from '@/components/DiffViewer'
 
 export default function TaskDetail() {
   const params = useParams()
@@ -30,6 +32,9 @@ export default function TaskDetail() {
   const [mergeConflictBranchName, setMergeConflictBranchName] = useState<string | null>(null)
   const [showFailedTaskPreviewConfirm, setShowFailedTaskPreviewConfirm] = useState(false)
   const [showFailedTaskCommitConfirm, setShowFailedTaskCommitConfirm] = useState(false)
+  const [showDiffModal, setShowDiffModal] = useState(false)
+  const [diffContent, setDiffContent] = useState<string>('')
+  const [isLoadingDiff, setIsLoadingDiff] = useState(false)
   const outputEndRef = useRef<HTMLDivElement>(null)
   const hasScrolledToBottom = useRef(false)
   const outputContainerRef = useRef<HTMLDivElement>(null)
@@ -306,6 +311,27 @@ export default function TaskDetail() {
     }
   }
 
+  const handleViewDiff = async () => {
+    setIsLoadingDiff(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/diff`)
+      if (response.ok) {
+        const data = await response.json()
+        setDiffContent(data.diff)
+        setShowDiffModal(true)
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to load diff: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error loading diff:', error)
+      setError(`Failed to load diff: ${error.message || 'Network error'}`)
+    } finally {
+      setIsLoadingDiff(false)
+    }
+  }
+
   if (!task) {
     return (
       <div className="container mx-auto p-8">
@@ -429,6 +455,16 @@ export default function TaskDetail() {
                   {isCommitting ? 'Committing...' : 'Commit Changes'}
                 </Button>
               )}
+              
+              <Button
+                onClick={handleViewDiff}
+                disabled={isLoadingDiff || !task.worktree}
+                variant="outline"
+                className="w-full"
+                size="sm"
+              >
+                {isLoadingDiff ? 'Loading Diff...' : 'View Diff'}
+              </Button>
             </CardContent>
           </Card>
 
@@ -738,6 +774,18 @@ git commit`}
           </div>
         </div>
       )}
+
+      {/* Diff Viewer Modal */}
+      <Dialog open={showDiffModal} onOpenChange={setShowDiffModal}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Task Diff</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
+            <DiffViewer diff={diffContent} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

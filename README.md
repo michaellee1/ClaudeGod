@@ -121,9 +121,20 @@ Task 3: "Refactor the notification system"
 
 After tasks complete:
 - Review changes in each worktree
+- Use the **View Diff** button to see all modifications compared to the main branch
 - Cherry-pick the best solutions
 - Merge approved changes back to main
 - Discard experiments that didn't work out
+
+### Viewing Task Differences
+
+Each task page includes a **View Diff** button that allows you to:
+- See all file changes made by the task
+- Compare modifications against the main branch
+- Review changes with syntax highlighting
+- Understand the full scope of changes before merging
+
+This helps you make informed decisions about which changes to merge back to your main branch.
 
 ## Self-Modification
 
