@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Task } from '@/lib/types/task'
 import Link from 'next/link'
+import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -38,13 +39,26 @@ export default function Home() {
   const [thinkMode, setThinkMode] = useState('level1')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  
+  // Use WebSocket for real-time updates
+  const { lastMessage } = useWebSocket('/ws')
 
   useEffect(() => {
     fetchTasks()
     fetchRepoPath()
-    const interval = setInterval(fetchTasks, 2000)
-    return () => clearInterval(interval)
   }, [])
+
+  // Handle WebSocket messages
+  useEffect(() => {
+    if (!lastMessage) return
+
+    if (lastMessage.type === 'task-update' || 
+        lastMessage.type === 'task-output' ||
+        lastMessage.type === 'task-removed') {
+      // Refresh tasks when any update is received
+      fetchTasks()
+    }
+  }, [lastMessage])
 
   const fetchRepoPath = async () => {
     try {

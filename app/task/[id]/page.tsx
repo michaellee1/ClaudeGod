@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Task, TaskOutput } from '@/lib/types/task'
+import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -34,18 +35,40 @@ export default function TaskDetail() {
   const outputContainerRef = useRef<HTMLDivElement>(null)
 
   const taskId = params.id as string
+  
+  // Use WebSocket for real-time updates
+  const { lastMessage } = useWebSocket('/ws', taskId)
 
   useEffect(() => {
     if (taskId) {
       fetchTask()
       fetchOutputs()
-      const interval = setInterval(() => {
-        fetchTask()
-        fetchOutputs()
-      }, 1000)
-      return () => clearInterval(interval)
     }
   }, [taskId])
+
+  // Handle WebSocket messages
+  useEffect(() => {
+    if (!lastMessage || !taskId) return
+
+    if (lastMessage.type === 'task-update' && lastMessage.taskId === taskId) {
+      // Update task directly from WebSocket data
+      if (lastMessage.data) {
+        setTask(lastMessage.data)
+        // Sync preview state
+        if (lastMessage.data.isPreviewing !== undefined) {
+          setIsPreviewing(lastMessage.data.isPreviewing)
+        }
+      }
+    } else if (lastMessage.type === 'task-output' && lastMessage.taskId === taskId) {
+      // Add new output directly
+      if (lastMessage.data) {
+        setOutputs(prev => [...prev, lastMessage.data])
+      }
+    } else if (lastMessage.type === 'task-removed' && lastMessage.taskId === taskId) {
+      // Task was removed, redirect to home
+      router.push('/')
+    }
+  }, [lastMessage, taskId, router])
 
   // Only scroll to bottom on initial load when outputs first appear
   useEffect(() => {

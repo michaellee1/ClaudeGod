@@ -133,6 +133,27 @@ class TaskStore {
     }, 1000)
   }
 
+  private broadcastTaskUpdate(taskId: string, task: Task) {
+    // Broadcast via WebSocket if available
+    if (typeof global !== 'undefined' && (global as any).broadcastTaskUpdate) {
+      (global as any).broadcastTaskUpdate(taskId, task)
+    }
+  }
+
+  private broadcastTaskOutput(taskId: string, output: TaskOutput) {
+    // Broadcast via WebSocket if available
+    if (typeof global !== 'undefined' && (global as any).broadcastTaskOutput) {
+      (global as any).broadcastTaskOutput(taskId, output)
+    }
+  }
+
+  private cleanupTaskConnections(taskId: string) {
+    // Clean up WebSocket connections if available
+    if (typeof global !== 'undefined' && (global as any).cleanupTaskConnections) {
+      (global as any).cleanupTaskConnections(taskId)
+    }
+  }
+
   getRepoPath(): string {
     return this.repoPath
   }
@@ -183,6 +204,7 @@ class TaskStore {
     this.tasks.set(taskId, task)
     this.outputs.set(taskId, [])
     this.debouncedSave() // Save after creating task
+    this.broadcastTaskUpdate(taskId, task)
     
     const processManager = new ProcessManager(taskId, worktreePath, this.repoPath)
     this.processManagers.set(taskId, processManager)
@@ -199,10 +221,12 @@ class TaskStore {
       task.editorPid = editorPid
       task.reviewerPid = reviewerPid
       this.debouncedSave() // Save after PIDs are set
+      this.broadcastTaskUpdate(taskId, task)
     } catch (error) {
       task.status = 'failed'
       console.error('Error starting processes:', error)
       this.debouncedSave() // Save failed status
+      this.broadcastTaskUpdate(taskId, task)
     }
     
     return task
@@ -246,6 +270,7 @@ class TaskStore {
     this.outputs.set(taskId, outputs)
     console.log(`[TaskStore] Output count for task ${taskId}: ${outputs.length}`)
     this.debouncedSave() // Save after adding output
+    this.broadcastTaskOutput(taskId, newOutput)
   }
 
   async commitTask(taskId: string, message?: string): Promise<string> {
@@ -261,6 +286,7 @@ class TaskStore {
     
     task.commitHash = commitHash
     await this.saveTasks()
+    this.broadcastTaskUpdate(taskId, task)
     
     return commitHash
   }
@@ -283,6 +309,7 @@ class TaskStore {
     task.status = 'merged' as any
     task.mergedAt = new Date()
     await this.saveTasks()
+    this.broadcastTaskUpdate(taskId, task)
   }
 
   async sendPromptToTask(taskId: string, prompt: string): Promise<void> {
@@ -368,6 +395,7 @@ ${gitDiff}
       task.phase = 'editor'
       delete task.editorPid
       delete task.reviewerPid
+      this.broadcastTaskUpdate(taskId, task)
       
       // Clean up old ProcessManager if it exists
       const oldProcessManager = this.processManagers.get(taskId)
@@ -387,6 +415,7 @@ ${gitDiff}
       
       // Save the updated task
       await this.saveTasks()
+      this.broadcastTaskUpdate(taskId, task)
     } else {
       // Original behavior for in-progress tasks
       const processManager = this.processManagers.get(taskId)
@@ -408,6 +437,7 @@ ${gitDiff}
     })
     task.isPreviewing = true
     await this.saveTasks()
+    this.broadcastTaskUpdate(taskId, task)
   }
   
   async stopPreview(taskId: string): Promise<void> {
@@ -421,6 +451,7 @@ ${gitDiff}
     })
     task.isPreviewing = false
     await this.saveTasks()
+    this.broadcastTaskUpdate(taskId, task)
   }
 
   async removeTask(taskId: string): Promise<void> {
@@ -453,6 +484,7 @@ ${gitDiff}
     this.tasks.delete(taskId)
     this.outputs.delete(taskId)
     this.debouncedSave() // Save after removing task
+    this.cleanupTaskConnections(taskId)
   }
 
   async removeAllTasks(): Promise<void> {
@@ -492,21 +524,25 @@ ${gitDiff}
     processManager.on('status', (status) => {
       task.status = status
       this.debouncedSave()
+      this.broadcastTaskUpdate(task.id, task)
     })
     
     processManager.on('phase', (phase) => {
       task.phase = phase
       this.debouncedSave()
+      this.broadcastTaskUpdate(task.id, task)
     })
     
     processManager.on('editorPid', (pid) => {
       task.editorPid = pid
       this.debouncedSave()
+      this.broadcastTaskUpdate(task.id, task)
     })
     
     processManager.on('reviewerPid', (pid) => {
       task.reviewerPid = pid
       this.debouncedSave()
+      this.broadcastTaskUpdate(task.id, task)
     })
     
     processManager.on('error', (error: Error) => {
@@ -521,6 +557,7 @@ ${gitDiff}
       if (!error.message.includes('SIGTERM')) {
         task.status = 'failed'
         this.debouncedSave()
+        this.broadcastTaskUpdate(task.id, task)
       }
     })
     
@@ -562,6 +599,7 @@ ${gitDiff}
       // Save immediately on completion
       this.saveTasks().then(() => {
         console.log(`Task ${task.id} marked as finished and saved`)
+        this.broadcastTaskUpdate(task.id, task)
       })
     })
   }
