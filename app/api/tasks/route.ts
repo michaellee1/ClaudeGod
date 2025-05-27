@@ -17,11 +17,21 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const prompt = formData.get('prompt') as string
     const repoPath = formData.get('repoPath') as string
+    const thinkMode = formData.get('thinkMode') as string
     const imageFile = formData.get('image') as File | null
     
     if (!prompt || !repoPath) {
       return NextResponse.json(
         { error: 'Prompt and repoPath are required' },
+        { status: 400 }
+      )
+    }
+    
+    // Validate thinkMode if provided
+    const validThinkModes = ['no_review', 'none', 'level1', 'level2', 'level3']
+    if (thinkMode && !validThinkModes.includes(thinkMode)) {
+      return NextResponse.json(
+        { error: 'Invalid think mode' },
         { status: 400 }
       )
     }
@@ -103,7 +113,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    const task = await taskStore.createTask(finalPrompt, repoPath)
+    const task = await taskStore.createTask(finalPrompt, repoPath, thinkMode)
     return NextResponse.json(task)
   } catch (error: any) {
     console.error('Error creating task:', error)

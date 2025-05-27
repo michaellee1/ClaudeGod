@@ -41,7 +41,8 @@ export class ProcessManager extends EventEmitter {
   async startProcesses(
     worktreePath: string,
     prompt: string,
-    taskId: string
+    taskId: string,
+    thinkMode?: string
   ): Promise<{ editorPid: number, reviewerPid: number }> {
     this.emit('status', 'starting')
     
@@ -110,7 +111,7 @@ Start by running 'git diff' to see what was changed.`
       }
       
       // Start sequential execution which will handle reviewer process
-      this.startSequentialExecution(worktreePath, reviewerPrompt)
+      this.startSequentialExecution(worktreePath, reviewerPrompt, thinkMode)
 
       // Return PIDs (reviewer PID will be 0 initially)
       return {
@@ -330,6 +331,8 @@ Start by running 'git diff' to see what was changed.`
         if (code !== 0 && this.currentPhase === 'editor' && !this.isShuttingDown) {
           console.error('Editor process failed with code:', code)
         }
+        
+        // If editor exits cleanly in no_review mode, this will be handled in startSequentialExecution
       })
     }
   }
@@ -555,7 +558,7 @@ Start by running 'git diff' to see what was changed.`
     }
   }
 
-  private async startSequentialExecution(worktreePath: string, reviewerPrompt: string) {
+  private async startSequentialExecution(worktreePath: string, reviewerPrompt: string, thinkMode?: string) {
     // Phase 1: Editor
     this.currentPhase = 'editor'
     this.emit('status', 'in_progress')
@@ -564,6 +567,16 @@ Start by running 'git diff' to see what was changed.`
     
     // Wait for editor to complete (it will exit on its own with -p mode)
     await this.waitForProcessExit(this.editorProcess, 'editor')
+    
+    // Check if we should skip the reviewer
+    if (thinkMode === 'no_review') {
+      console.log('Skipping reviewer phase due to no_review mode')
+      this.currentPhase = 'finished'
+      this.emit('status', 'finished')
+      this.emit('phase', 'done')
+      this.emit('completed', true) // Pass true to indicate successful completion
+      return
+    }
     
     // Phase 2: Start and monitor reviewer
     this.currentPhase = 'reviewer'
@@ -723,7 +736,7 @@ Start by running 'git diff' to see what was changed.`
     console.warn('sendPrompt called but stdin is closed after initial prompt')
   }
 
-  async start(prompt: string): Promise<void> {
+  async start(prompt: string, thinkMode?: string): Promise<void> {
     // Use stored values or throw error if not set
     if (!this.worktreePath || !this.taskId) {
       throw new Error('ProcessManager not properly initialized with worktreePath and taskId')
@@ -732,7 +745,8 @@ Start by running 'git diff' to see what was changed.`
     const { editorPid, reviewerPid } = await this.startProcesses(
       this.worktreePath,
       prompt,
-      this.taskId
+      this.taskId,
+      thinkMode
     )
     
     this.emit('editorPid', editorPid)
