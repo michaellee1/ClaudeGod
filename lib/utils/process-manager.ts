@@ -60,15 +60,15 @@ Start by running 'git diff' to see what was changed.`
 
     try {
       // Start editor process first
-      // Use 'claude' command instead of 'claude-code'
-      const claudeCommand = 'claude'
+      // Use direct path to Claude executable with correct Node version
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/claude')
       
-      console.log('Starting editor process with command:', claudeCommand)
+      console.log('Starting editor process with command:', claudePath)
       console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
       
-      // Use print mode with stream-json output for real-time logs
-      this.editorProcess = spawn(claudeCommand, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
+      // Use direct path to Claude executable
+      this.editorProcess = spawn(claudePath, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
         cwd: worktreePath,
         env: { 
           ...process.env, 
@@ -560,14 +560,14 @@ Start by running 'git diff' to see what was changed.`
     
     try {
       // Now start the reviewer process
-      const claudeCommand = 'claude'
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/claude')
       
-      console.log('Starting reviewer process with command:', claudeCommand)
+      console.log('Starting reviewer process with command:', claudePath)
       console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
         
-      // Use print mode with stream-json output for real-time logs
-      this.reviewerProcess = spawn(claudeCommand, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
+      // Use direct path to Claude executable
+      this.reviewerProcess = spawn(claudePath, ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'], {
         cwd: worktreePath,
         env: { 
           ...process.env, 
