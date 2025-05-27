@@ -26,7 +26,163 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChevronDown, Trash2 } from 'lucide-react'
+
+interface TaskTableProps {
+  tasks: Task[]
+  onPreview: (taskId: string, isCurrentlyPreviewing: boolean) => void
+  onMerge: (taskId: string) => void
+  onDelete: (taskId: string) => void
+  previewingTaskId: string | null
+}
+
+function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: TaskTableProps) {
+  if (tasks.length === 0) {
+    return <p className="text-muted-foreground text-center py-4">No tasks in this category</p>
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>ID</TableHead>
+          <TableHead>Prompt</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Phase</TableHead>
+          <TableHead>Created</TableHead>
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tasks.map((task) => (
+          <TableRow key={task.id}>
+            <TableCell className="font-mono text-sm">
+              {task.id.substring(0, 8)}
+            </TableCell>
+            <TableCell className="max-w-xs truncate">
+              {task.prompt}
+            </TableCell>
+            <TableCell>
+              <Badge
+                variant={
+                  task.status === 'starting' ? 'outline' :
+                  task.status === 'in_progress' ? 'default' :
+                  task.status === 'finished' ? 'success' :
+                  task.status === 'merged' ? 'purple' :
+                  'destructive'
+                }
+              >
+                {task.status}
+              </Badge>
+            </TableCell>
+            <TableCell>
+              <span className="text-sm text-muted-foreground">
+                {task.phase}
+              </span>
+            </TableCell>
+            <TableCell>
+              {new Date(task.createdAt).toLocaleString()}
+            </TableCell>
+            <TableCell>
+              <div className="flex items-center gap-2">
+                <Button variant="link" asChild>
+                  <Link href={`/task/${task.id}`}>
+                    View Details
+                  </Link>
+                </Button>
+                <Button
+                  onClick={() => onPreview(task.id, previewingTaskId === task.id)}
+                  variant="ghost"
+                  size="icon"
+                  className={`h-8 w-8 ${previewingTaskId === task.id ? 'text-orange-500 hover:text-orange-600' : 'hover:text-primary'}`}
+                  title={previewingTaskId === task.id ? 'Stop Preview' : 'Preview Changes'}
+                >
+                  {previewingTaskId === task.id ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => onMerge(task.id)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-green-600 hover:text-green-700"
+                  title="Merge Task"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="18" cy="18" r="3" />
+                    <circle cx="6" cy="6" r="3" />
+                    <path d="M6 21V9a9 9 0 0 0 9 9" />
+                  </svg>
+                </Button>
+                <Button
+                  onClick={() => onDelete(task.id)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  title="Delete Task"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -107,8 +263,15 @@ export default function Home() {
     }
   }
 
-  const handleDeleteAllTasks = async () => {
-    if (!confirm('Are you sure you want to delete ALL tasks? This will remove all worktrees and changes permanently.')) {
+  const handleDeleteNonInProgressTasks = async () => {
+    const nonInProgressTasks = tasks.filter(task => task.status !== 'in_progress')
+    
+    if (nonInProgressTasks.length === 0) {
+      setError('No non-in-progress tasks to delete')
+      return
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${nonInProgressTasks.length} non-in-progress task(s)? This will remove their worktrees and changes permanently.`)) {
       return
     }
     
@@ -116,18 +279,22 @@ export default function Home() {
     setError(null)
     
     try {
-      const response = await fetch('/api/tasks', {
-        method: 'DELETE',
-      })
-      if (response.ok) {
-        fetchTasks()
+      // Delete each non-in-progress task
+      const deletePromises = nonInProgressTasks.map(task => 
+        fetch(`/api/tasks/${task.id}`, { method: 'DELETE' })
+      )
+      
+      const results = await Promise.all(deletePromises)
+      const failedDeletes = results.filter(r => !r.ok)
+      
+      if (failedDeletes.length > 0) {
+        setError(`Failed to delete ${failedDeletes.length} task(s)`)
       } else {
-        const errorData = await response.json()
-        setError(`Failed to delete all tasks: ${errorData.error || 'Unknown error'}`)
+        fetchTasks()
       }
     } catch (error: any) {
-      console.error('Error deleting all tasks:', error)
-      setError(`Failed to delete all tasks: ${error.message || 'Network error'}`)
+      console.error('Error deleting non-in-progress tasks:', error)
+      setError(`Failed to delete tasks: ${error.message || 'Network error'}`)
     } finally {
       setIsDeletingAll(false)
     }
@@ -358,12 +525,12 @@ export default function Home() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
-                    onClick={handleDeleteAllTasks}
+                    onClick={handleDeleteNonInProgressTasks}
                     disabled={isDeletingAll}
                     className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    {isDeletingAll ? 'Deleting All Tasks...' : 'Delete All Tasks'}
+                    {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -374,144 +541,34 @@ export default function Home() {
           {tasks.length === 0 ? (
             <p className="text-muted-foreground">No active tasks</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Prompt</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Phase</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell className="font-mono text-sm">
-                      {task.id.substring(0, 8)}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {task.prompt}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          task.status === 'starting' ? 'outline' :
-                          task.status === 'in_progress' ? 'default' :
-                          task.status === 'finished' ? 'success' :
-                          task.status === 'merged' ? 'purple' :
-                          'destructive'
-                        }
-                      >
-                        {task.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-muted-foreground">
-                        {task.phase}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(task.createdAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button variant="link" asChild>
-                          <Link href={`/task/${task.id}`}>
-                            View Details
-                          </Link>
-                        </Button>
-                        <Button
-                          onClick={() => handlePreview(task.id, previewingTaskId === task.id)}
-                          variant="ghost"
-                          size="icon"
-                          className={`h-8 w-8 ${previewingTaskId === task.id ? 'text-orange-500 hover:text-orange-600' : 'hover:text-primary'}`}
-                          title={previewingTaskId === task.id ? 'Stop Preview' : 'Preview Changes'}
-                        >
-                          {previewingTaskId === task.id ? (
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <rect x="6" y="4" width="4" height="16" />
-                              <rect x="14" y="4" width="4" height="16" />
-                            </svg>
-                          ) : (
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </svg>
-                          )}
-                        </Button>
-                        <Button
-                          onClick={() => handleMerge(task.id)}
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-green-600 hover:text-green-700"
-                          title="Merge Task"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <circle cx="18" cy="18" r="3" />
-                            <circle cx="6" cy="6" r="3" />
-                            <path d="M6 21V9a9 9 0 0 0 9 9" />
-                          </svg>
-                        </Button>
-                        <Button
-                          onClick={() => handleDeleteTask(task.id)}
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          title="Delete Task"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <Tabs defaultValue="in-progress" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="in-progress">
+                  In Progress ({tasks.filter(t => t.status === 'in_progress').length})
+                </TabsTrigger>
+                <TabsTrigger value="other">
+                  Other ({tasks.filter(t => t.status !== 'in_progress').length})
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="in-progress">
+                <TaskTable 
+                  tasks={tasks.filter(t => t.status === 'in_progress')}
+                  onPreview={handlePreview}
+                  onMerge={handleMerge}
+                  onDelete={handleDeleteTask}
+                  previewingTaskId={previewingTaskId}
+                />
+              </TabsContent>
+              <TabsContent value="other">
+                <TaskTable 
+                  tasks={tasks.filter(t => t.status !== 'in_progress')}
+                  onPreview={handlePreview}
+                  onMerge={handleMerge}
+                  onDelete={handleDeleteTask}
+                  previewingTaskId={previewingTaskId}
+                />
+              </TabsContent>
+            </Tabs>
           )}
         </CardContent>
       </Card>
