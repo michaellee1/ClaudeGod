@@ -127,6 +127,10 @@ export default function TaskDetail() {
           const branchName = errorMessage.split(':')[1]
           setMergeConflictBranchName(branchName)
           setShowMergeConflict(true)
+        } else if (errorMessage.startsWith('UNCOMMITTED_CHANGES:')) {
+          // Extract the descriptive error message after the prefix
+          const description = errorMessage.substring('UNCOMMITTED_CHANGES:'.length).trim()
+          setError(`Cannot merge: ${description}`)
         } else {
           setError(`Failed to merge: ${errorMessage}`)
         }

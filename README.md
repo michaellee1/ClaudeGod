@@ -136,6 +136,28 @@ Each task page includes a **View Diff** button that allows you to:
 
 This helps you make informed decisions about which changes to merge back to your main branch.
 
+### Merging Tasks
+
+When merging a task back to your main branch:
+- **Clean Working Tree Required**: Your main repository must have no uncommitted changes
+- If you have uncommitted changes, you'll see an error message
+- Either commit your current changes or stash them using `git stash` before merging
+- This ensures a clean merge without conflicts from uncommitted work
+
+```bash
+# Check for uncommitted changes
+git status
+
+# If you have changes, either commit them:
+git add .
+git commit -m "Save current work"
+
+# Or stash them:
+git stash
+
+# Then use the Merge button in ClaudeGod
+```
+
 ## Self-Modification
 
 ClaudeGod can even improve itself - just point it at its own directory:

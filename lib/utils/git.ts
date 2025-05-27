@@ -209,6 +209,13 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
   let originalBranch = ''
   
   try {
+    // Check if the main repository has uncommitted changes
+    const { stdout: status } = await execFileAsync('git', ['-C', repoPath, 'status', '--porcelain'])
+    
+    if (status.trim()) {
+      throw new Error('UNCOMMITTED_CHANGES: The main repository has uncommitted changes. Please commit or stash them before merging.')
+    }
+    
     // Get the current branch name from the worktree
     const { stdout: branchName } = await execFileAsync('git', ['-C', worktreePath, 'branch', '--show-current'])
     cleanBranchName = branchName.trim()
