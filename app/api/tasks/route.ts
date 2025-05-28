@@ -19,6 +19,9 @@ export async function POST(request: NextRequest) {
     const repoPath = formData.get('repoPath') as string
     const thinkMode = formData.get('thinkMode') as string
     const imageFile = formData.get('image') as File | null
+    const initiativeId = formData.get('initiativeId') as string | null
+    const stepNumber = formData.get('stepNumber') as string | null
+    const globalContext = formData.get('globalContext') as string | null
     
     if (!prompt || !repoPath) {
       return NextResponse.json(
@@ -113,7 +116,14 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    const task = await taskStore.createTask(finalPrompt, repoPath, thinkMode)
+    // Build initiative parameters if provided
+    const initiativeParams = (initiativeId || stepNumber !== null || globalContext) ? {
+      ...(initiativeId && { initiativeId }),
+      ...(stepNumber !== null && { stepNumber: parseInt(stepNumber, 10) }),
+      ...(globalContext && { globalContext })
+    } : undefined
+    
+    const task = await taskStore.createTask(finalPrompt, repoPath, thinkMode, initiativeParams)
     return NextResponse.json(task)
   } catch (error: any) {
     console.error('Error creating task:', error)

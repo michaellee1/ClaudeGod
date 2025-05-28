@@ -16,6 +16,9 @@ export interface Task {
   isPreviewing?: boolean
   promptHistory?: PromptCycle[]
   thinkMode?: string
+  initiativeId?: string
+  stepNumber?: number
+  globalContext?: string
 }
 
 export interface PromptCycle {

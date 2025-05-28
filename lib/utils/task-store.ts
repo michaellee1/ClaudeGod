@@ -163,7 +163,16 @@ class TaskStore {
     await this.saveConfig()
   }
 
-  async createTask(prompt: string, repoPath: string, thinkMode?: string): Promise<Task> {
+  async createTask(
+    prompt: string, 
+    repoPath: string, 
+    thinkMode?: string,
+    initiativeParams?: {
+      initiativeId?: string
+      stepNumber?: number
+      globalContext?: string
+    }
+  ): Promise<Task> {
     // Check concurrent task limit
     const activeTasks = Array.from(this.tasks.values()).filter(
       t => t.status !== 'finished' && t.status !== 'failed'
@@ -199,7 +208,11 @@ class TaskStore {
       createdAt: new Date(),
       output: [],
       isSelfModification,
-      thinkMode
+      thinkMode,
+      // Add initiative parameters if provided
+      ...(initiativeParams?.initiativeId && { initiativeId: initiativeParams.initiativeId }),
+      ...(initiativeParams?.stepNumber !== undefined && { stepNumber: initiativeParams.stepNumber }),
+      ...(initiativeParams?.globalContext && { globalContext: initiativeParams.globalContext })
     }
     
     this.tasks.set(taskId, task)
@@ -245,6 +258,19 @@ class TaskStore {
 
   getOutputs(taskId: string): TaskOutput[] {
     return this.outputs.get(taskId) || []
+  }
+
+  getTasksByInitiative(initiativeId: string): Task[] {
+    return Array.from(this.tasks.values())
+      .filter(task => task.initiativeId === initiativeId)
+      .sort((a, b) => {
+        // Sort by step number first if available
+        if (a.stepNumber !== undefined && b.stepNumber !== undefined) {
+          return a.stepNumber - b.stepNumber
+        }
+        // Fall back to creation date
+        return a.createdAt.getTime() - b.createdAt.getTime()
+      })
   }
 
   private addOutput(taskId: string, output: any) {
