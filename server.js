@@ -16,6 +16,9 @@ let wss = null
 // Store active connections by task ID
 const taskConnections = new Map()
 
+// Store active connections by initiative ID
+const initiativeConnections = new Map()
+
 // Broadcast task update to all connected clients
 function broadcastTaskUpdate(taskId, update) {
   if (!wss) return
@@ -79,10 +82,76 @@ function cleanupTaskConnections(taskId) {
   }
 }
 
+// Broadcast initiative update to all connected clients
+function broadcastInitiativeUpdate(initiative) {
+  if (!wss) return
+
+  const message = JSON.stringify({
+    type: 'initiative-update',
+    initiativeId: initiative.id,
+    data: initiative
+  })
+
+  // Broadcast to all clients (for initiative list)
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      try {
+        client.send(message)
+      } catch (error) {
+        console.error('Error sending initiative update to client:', error)
+      }
+    }
+  })
+}
+
+// Broadcast output to initiative-specific connections
+function broadcastInitiativeOutput(initiativeId, output) {
+  if (!wss) return
+
+  const message = JSON.stringify({
+    type: 'initiative-output',
+    initiativeId,
+    data: output
+  })
+
+  // Send to initiative-specific connections only
+  const connections = initiativeConnections.get(initiativeId)
+  if (connections) {
+    connections.forEach((client) => {
+      if (client.readyState === 1) { // WebSocket.OPEN
+        try {
+          client.send(message)
+        } catch (error) {
+          console.error(`Error sending output to client for initiative ${initiativeId}:`, error)
+        }
+      }
+    })
+  }
+}
+
+// Clean up connections for a removed initiative
+function cleanupInitiativeConnections(initiativeId) {
+  const connections = initiativeConnections.get(initiativeId)
+  if (connections) {
+    connections.forEach((client) => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({
+          type: 'initiative-removed',
+          initiativeId
+        }))
+      }
+    })
+    initiativeConnections.delete(initiativeId)
+  }
+}
+
 // Export functions for use in other modules
 global.broadcastTaskUpdate = broadcastTaskUpdate
 global.broadcastTaskOutput = broadcastTaskOutput
 global.cleanupTaskConnections = cleanupTaskConnections
+global.broadcastInitiativeUpdate = broadcastInitiativeUpdate
+global.broadcastInitiativeOutput = broadcastInitiativeOutput
+global.cleanupInitiativeConnections = cleanupInitiativeConnections
 
 // Enable merge protection
 mergeProtectionMiddleware()
@@ -111,6 +180,7 @@ app.prepare().then(() => {
     // Parse task ID from query params if provided
     const url = new URL(req.url || '', `http://${req.headers.host}`)
     const taskId = url.searchParams.get('taskId')
+    const initiativeId = url.searchParams.get('initiativeId')
     
     // Validate taskId format (basic validation)
     if (taskId && /^[a-zA-Z0-9-_]+$/.test(taskId)) {
@@ -120,6 +190,16 @@ app.prepare().then(() => {
       }
       taskConnections.get(taskId).add(ws)
       console.log(`Client subscribed to task ${taskId}`)
+    }
+    
+    // Validate initiativeId format (basic validation)
+    if (initiativeId && /^[a-zA-Z0-9-_]+$/.test(initiativeId)) {
+      // Add to initiative-specific connections
+      if (!initiativeConnections.has(initiativeId)) {
+        initiativeConnections.set(initiativeId, new Set())
+      }
+      initiativeConnections.get(initiativeId).add(ws)
+      console.log(`Client subscribed to initiative ${initiativeId}`)
     }
 
     ws.on('message', (message) => {
@@ -147,6 +227,27 @@ app.prepare().then(() => {
           console.log(`Client unsubscribed from task ${data.taskId}`)
           // Send acknowledgment
           ws.send(JSON.stringify({ type: 'unsubscribed', taskId: data.taskId }))
+        } else if (data.type === 'subscribe' && data.initiativeId && /^[a-zA-Z0-9-_]+$/.test(data.initiativeId)) {
+          // Subscribe to a specific initiative
+          if (!initiativeConnections.has(data.initiativeId)) {
+            initiativeConnections.set(data.initiativeId, new Set())
+          }
+          initiativeConnections.get(data.initiativeId).add(ws)
+          console.log(`Client subscribed to initiative ${data.initiativeId}`)
+          // Send acknowledgment
+          ws.send(JSON.stringify({ type: 'subscribed', initiativeId: data.initiativeId }))
+        } else if (data.type === 'unsubscribe' && data.initiativeId && /^[a-zA-Z0-9-_]+$/.test(data.initiativeId)) {
+          // Unsubscribe from an initiative
+          const connections = initiativeConnections.get(data.initiativeId)
+          if (connections) {
+            connections.delete(ws)
+            if (connections.size === 0) {
+              initiativeConnections.delete(data.initiativeId)
+            }
+          }
+          console.log(`Client unsubscribed from initiative ${data.initiativeId}`)
+          // Send acknowledgment
+          ws.send(JSON.stringify({ type: 'unsubscribed', initiativeId: data.initiativeId }))
         }
       } catch (error) {
         console.error('Error processing WebSocket message:', error)
@@ -159,6 +260,13 @@ app.prepare().then(() => {
         connections.delete(ws)
         if (connections.size === 0) {
           taskConnections.delete(taskId)
+        }
+      }
+      // Remove from all initiative connections
+      for (const [initiativeId, connections] of initiativeConnections) {
+        connections.delete(ws)
+        if (connections.size === 0) {
+          initiativeConnections.delete(initiativeId)
         }
       }
       console.log('WebSocket connection closed')
@@ -181,6 +289,13 @@ app.prepare().then(() => {
           connections.delete(ws)
           if (connections.size === 0) {
             taskConnections.delete(taskId)
+          }
+        }
+        // Remove from all initiative connections before terminating
+        for (const [initiativeId, connections] of initiativeConnections) {
+          connections.delete(ws)
+          if (connections.size === 0) {
+            initiativeConnections.delete(initiativeId)
           }
         }
         return ws.terminate()
