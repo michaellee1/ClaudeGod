@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
+import { validateResearch, VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
+import { InitiativeResearch } from '@/lib/types/initiative'
 
 export async function POST(
   request: NextRequest,
@@ -26,10 +28,26 @@ export async function POST(
       )
     }
 
-    // Validate research length (1MB limit)
-    if (research.length > 1000000) {
+    // Validate research using validation utility
+    const researchData: InitiativeResearch = {
+      id: 'temp',
+      topic: 'User Research',
+      description: research.trim(),
+      findings: research.trim(),
+      createdAt: new Date()
+    }
+    const researchErrors = validateResearch(researchData)
+    if (researchErrors.length > 0) {
       return NextResponse.json(
-        { error: 'Research content too large (maximum 1MB)' },
+        { 
+          error: 'Research validation failed',
+          errors: researchErrors.map(err => ({
+            field: err.field,
+            message: err.message,
+            constraint: err.constraint,
+            details: err.details
+          }))
+        },
         { status: 400 }
       )
     }

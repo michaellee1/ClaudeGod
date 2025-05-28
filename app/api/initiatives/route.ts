@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
+import { validateObjective } from '@/lib/utils/initiative-validation'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,10 +15,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate objective length
-    if (objective.length > 5000) {
+    // Validate objective using validation utility
+    const objectiveError = validateObjective(objective)
+    if (objectiveError) {
       return NextResponse.json(
-        { error: 'Objective must be less than 5000 characters' },
+        { 
+          error: objectiveError.message,
+          field: objectiveError.field,
+          constraint: objectiveError.constraint,
+          details: objectiveError.details
+        },
         { status: 400 }
       )
     }

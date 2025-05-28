@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
+import { validateAnswers, VALIDATION_LIMITS, InitiativeAnswer } from '@/lib/utils/initiative-validation'
 
 export async function POST(
   request: NextRequest,
@@ -26,7 +27,8 @@ export async function POST(
       )
     }
 
-    // Validate all answers are strings
+    // Validate all answers are strings and convert to InitiativeAnswer format
+    const answerArray: InitiativeAnswer[] = []
     for (const [key, value] of Object.entries(answers)) {
       if (typeof key !== 'string' || typeof value !== 'string') {
         return NextResponse.json(
@@ -34,14 +36,24 @@ export async function POST(
           { status: 400 }
         )
       }
-      
-      // Validate answer length
-      if (value.length > 10000) {
-        return NextResponse.json(
-          { error: `Answer for question "${key}" is too long (max 10000 characters)` },
-          { status: 400 }
-        )
-      }
+      answerArray.push({ questionId: key, text: value })
+    }
+
+    // Validate answers using validation utility
+    const answerErrors = validateAnswers(answerArray)
+    if (answerErrors.length > 0) {
+      return NextResponse.json(
+        { 
+          error: 'Answer validation failed',
+          errors: answerErrors.map(err => ({
+            field: err.field,
+            message: err.message,
+            constraint: err.constraint,
+            details: err.details
+          }))
+        },
+        { status: 400 }
+      )
     }
 
     const initiative = initiativeStore.get(id)

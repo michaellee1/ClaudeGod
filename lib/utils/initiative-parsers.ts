@@ -1,4 +1,10 @@
-import { InitiativeQuestion, InitiativeTaskStep } from '@/lib/types/initiative'
+import { InitiativeQuestion, InitiativeTaskStep, InitiativeTask } from '@/lib/types/initiative'
+import { 
+  validateQuestions, 
+  validateTasks,
+  VALIDATION_LIMITS,
+  ValidationError 
+} from './initiative-validation'
 
 /**
  * Parse questions from exploration phase markdown output
@@ -52,7 +58,13 @@ export function parseQuestions(content: string): InitiativeQuestion[] {
         const questionText = match[1].trim()
         
         // Skip if it's too short or doesn't look like a real question
-        if (questionText.length < 10) continue
+        if (questionText.length < VALIDATION_LIMITS.QUESTION_MIN_LENGTH) continue
+        
+        // Skip if it's too long
+        if (questionText.length > VALIDATION_LIMITS.QUESTION_MAX_LENGTH) {
+          console.warn(`[parseQuestions] Question too long (${questionText.length} chars), skipping: ${questionText.substring(0, 50)}...`)
+          continue
+        }
         
         // Determine priority based on keywords or position
         let priority: 'high' | 'medium' | 'low' = 'medium'
@@ -76,6 +88,22 @@ export function parseQuestions(content: string): InitiativeQuestion[] {
         break // Found a match, move to next line
       }
     }
+    
+    // Stop if we've reached max questions
+    if (questions.length >= VALIDATION_LIMITS.MAX_QUESTIONS) {
+      console.warn(`[parseQuestions] Reached maximum questions limit (${VALIDATION_LIMITS.MAX_QUESTIONS})`)
+      break
+    }
+  }
+  
+  // Validate parsed questions
+  const validationErrors = validateQuestions(questions)
+  if (validationErrors.length > 0) {
+    console.error('[parseQuestions] Validation errors:', validationErrors)
+    // Return only valid questions
+    return questions.filter((q, idx) => 
+      !validationErrors.some(err => err.field.includes(`questions[${idx}]`))
+    )
   }
   
   // Log results for debugging
@@ -149,24 +177,47 @@ function validateAndTransformSteps(steps: any[]): InitiativeTaskStep[] {
     }
     
     // Transform tasks if present
-    let tasks = []
+    let tasks: InitiativeTask[] = []
     if (step.tasks && Array.isArray(step.tasks)) {
       tasks = step.tasks.map((task: any, taskIndex: number) => {
         if (!task.title || !task.description) {
           console.warn(`Task ${taskIndex + 1} in step "${step.name}" missing required fields`)
         }
         
+        // Create step structure for task
+        const taskSteps = task.steps || [{
+          description: task.description || 'Complete task',
+          completed: false
+        }]
+        
         return {
           id: task.id || `task-${index}-${taskIndex}`,
           title: task.title || 'Untitled Task',
           description: task.description || '',
           priority: validatePriority(task.priority),
+          steps: taskSteps,
           dependencies: Array.isArray(task.dependencies) ? task.dependencies : [],
           estimatedEffort: task.estimatedEffort || task.effort || undefined,
           status: 'pending' as const,
           createdAt: new Date()
         }
       })
+      
+      // Validate tasks
+      const taskErrors = validateTasks(tasks)
+      if (taskErrors.length > 0) {
+        console.error(`[validateAndTransformSteps] Task validation errors in step "${step.name}":`, taskErrors)
+        // Filter out invalid tasks
+        tasks = tasks.filter((t, idx) => 
+          !taskErrors.some(err => err.field.includes(`tasks[${idx}]`))
+        )
+      }
+      
+      // Enforce max tasks limit
+      if (tasks.length > VALIDATION_LIMITS.MAX_TASKS) {
+        console.warn(`[validateAndTransformSteps] Step "${step.name}" has ${tasks.length} tasks, limiting to ${VALIDATION_LIMITS.MAX_TASKS}`)
+        tasks = tasks.slice(0, VALIDATION_LIMITS.MAX_TASKS)
+      }
     }
     
     return {
@@ -253,17 +304,39 @@ export function extractJSON(content: string): any {
 /**
  * Validate output for completeness
  */
-export function validateOutput(output: string, phase: string): { valid: boolean, error?: string } {
+export function validateOutput(output: string, phase: string): { valid: boolean, error?: string, warnings?: string[] } {
   if (!output || output.trim().length === 0) {
     return { valid: false, error: 'Output is empty' }
   }
   
+  const warnings: string[] = []
+  
   // Phase-specific validation
   switch (phase) {
     case 'exploration':
-      const questions = parseQuestions(output)
-      if (questions.length === 0) {
-        return { valid: false, error: 'No questions found in exploration output' }
+      try {
+        const questions = parseQuestions(output)
+        if (questions.length === 0) {
+          return { valid: false, error: 'No questions found in exploration output' }
+        }
+        if (questions.length < 3) {
+          warnings.push(`Only ${questions.length} questions generated, consider regenerating for better coverage`)
+        }
+        if (questions.length > VALIDATION_LIMITS.MAX_QUESTIONS - 2) {
+          warnings.push(`${questions.length} questions generated, approaching limit of ${VALIDATION_LIMITS.MAX_QUESTIONS}`)
+        }
+      } catch (error) {
+        return { valid: false, error: error instanceof Error ? error.message : 'Failed to parse questions' }
+      }
+      break
+      
+    case 'research_prep':
+      const researchNeeds = parseResearchNeeds(output)
+      if (!researchNeeds || researchNeeds.length < VALIDATION_LIMITS.RESEARCH_MIN_LENGTH) {
+        return { valid: false, error: 'Research needs document is too short or empty' }
+      }
+      if (researchNeeds.length > VALIDATION_LIMITS.RESEARCH_MAX_LENGTH) {
+        warnings.push('Research needs document is very long, consider summarizing key points')
       }
       break
       
@@ -273,11 +346,18 @@ export function validateOutput(output: string, phase: string): { valid: boolean,
         if (steps.length === 0) {
           return { valid: false, error: 'No task steps found in output' }
         }
+        const totalTasks = steps.reduce((sum, step) => sum + (step.tasks?.length || 0), 0)
+        if (totalTasks === 0) {
+          return { valid: false, error: 'No tasks found in any step' }
+        }
+        if (totalTasks > VALIDATION_LIMITS.MAX_TASKS - 10) {
+          warnings.push(`${totalTasks} tasks generated, approaching limit of ${VALIDATION_LIMITS.MAX_TASKS}`)
+        }
       } catch (error) {
         return { valid: false, error: error instanceof Error ? error.message : 'Invalid task plan format' }
       }
       break
   }
   
-  return { valid: true }
+  return { valid: true, warnings: warnings.length > 0 ? warnings : undefined }
 }

@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { InitiativeValidation, InlineValidation } from '@/components/InitiativeValidation'
+import { VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
 
 export default function InitiativeDetail() {
   const params = useParams()
@@ -51,7 +53,13 @@ export default function InitiativeDetail() {
       const response = await fetch(`/api/initiatives/${initiativeId}`)
       if (response.ok) {
         const data = await response.json()
-        setInitiative(data)
+        // Map API response to UI initiative
+        const mappedInitiative: Initiative = {
+          ...data,
+          currentPhase: data.phase || data.currentPhase,
+          status: data.status || InitiativeStatus.EXPLORING
+        }
+        setInitiative(mappedInitiative)
         // Initialize state from fetched data
         if (data.userAnswers) {
           setAnswers(data.userAnswers)
@@ -87,7 +95,7 @@ export default function InitiativeDetail() {
 
   // Use WebSocket for real-time updates
   const { subscribeToInitiative, unsubscribeFromInitiative } = useInitiativeWebSocket('/ws', {
-    onInitiativeUpdate: handleInitiativeUpdate,
+    onInitiativeUpdate: handleInitiativeUpdate as any,
     onInitiativeOutput: handleInitiativeOutput,
     onPhaseComplete: handlePhaseComplete,
     onError: handleError,
@@ -510,6 +518,13 @@ export default function InitiativeDetail() {
           {initiative.lastError && (
             <Badge variant="destructive">Error</Badge>
           )}
+        </div>
+        <div className="mt-4">
+          <InitiativeValidation 
+            initiativeId={initiativeId} 
+            phase={initiative.currentPhase}
+            showDetails={false}
+          />
         </div>
       </div>
 

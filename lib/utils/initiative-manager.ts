@@ -5,6 +5,7 @@ import { InitiativePhase, InitiativeTaskStep } from '../types/initiative'
 import { readFile } from 'fs/promises'
 import { join, normalize } from 'path'
 import { homedir } from 'os'
+import { performPreflightChecks, validatePhaseTransition } from './initiative-validation'
 
 interface ProcessInfo {
   initiativeId: string
@@ -363,6 +364,27 @@ export class InitiativeManager extends EventEmitter {
       throw new Error(`Invalid phase transition: Cannot process research from phase ${initiative.phase}`)
     }
 
+    // Validate phase transition
+    const transitionError = validatePhaseTransition(
+      initiative.phase as InitiativePhase,
+      InitiativePhase.TASK_GENERATION,
+      initiative as any
+    )
+    if (transitionError) {
+      throw new Error(`Phase transition validation failed: ${transitionError.message}`)
+    }
+
+    // Perform pre-flight checks for task generation phase
+    const preflightResult = performPreflightChecks(initiative as any, InitiativePhase.TASK_GENERATION)
+    if (!preflightResult.valid) {
+      throw new Error(`Pre-flight check failed: ${preflightResult.errors[0]?.message || 'Unknown error'}`)
+    }
+    
+    // Log warnings if any
+    if (preflightResult.warnings && preflightResult.warnings.length > 0) {
+      console.warn('[InitiativeManager] Pre-flight warnings:', preflightResult.warnings)
+    }
+
     // Save research to file
     await this.initiativeStore.savePhaseFile(initiativeId, 'research.md', research)
 
@@ -427,18 +449,29 @@ export class InitiativeManager extends EventEmitter {
     }
   }
 
+  private async savePhaseOutput(initiativeId: string, phase: InitiativePhase, output: string): Promise<void> {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `${phase}-output-${timestamp}.json`
+    
+    // Save output to phase directory
+    await this.initiativeStore.savePhaseFile(initiativeId, filename, output)
+  }
+
   async cleanup(): Promise<void> {
     // Clean up all active processes
     const cleanupPromises: Promise<void>[] = []
     
     for (const [initiativeId, processInfo] of Array.from(this.activeProcesses.entries())) {
       cleanupPromises.push(
-        processInfo.processManager.stopProcesses().then(() => {
-          this.cleanupProcess(initiativeId)
-        }).catch(error => {
-          console.error(`Error cleaning up process ${initiativeId}:`, error)
-          this.cleanupProcess(initiativeId)
-        })
+        (async () => {
+          try {
+            await processInfo.processManager.stopProcesses()
+            this.cleanupProcess(initiativeId)
+          } catch (error: any) {
+            console.error(`Error cleaning up process ${initiativeId}:`, error)
+            this.cleanupProcess(initiativeId)
+          }
+        })()
       )
     }
     

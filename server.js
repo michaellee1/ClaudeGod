@@ -3,6 +3,7 @@ const { parse } = require('url')
 const next = require('next')
 const { WebSocketServer } = require('ws')
 const { mergeProtectionMiddleware } = require('./lib/utils/merge-protection')
+const { runStartupMigrations } = require('./lib/utils/initiative-migration')
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -156,7 +157,15 @@ global.cleanupInitiativeConnections = cleanupInitiativeConnections
 // Enable merge protection
 mergeProtectionMiddleware()
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  // Run database migrations on startup
+  try {
+    await runStartupMigrations()
+  } catch (error) {
+    console.error('Failed to run startup migrations:', error)
+    // Continue startup even if migrations fail
+  }
+
   const server = createServer(async (req, res) => {
     const parsedUrl = parse(req.url, true)
     await handle(req, res, parsedUrl)

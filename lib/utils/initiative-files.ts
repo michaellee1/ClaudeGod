@@ -2,6 +2,12 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { InitiativeQuestion, InitiativePlan, InitiativeTaskStep } from '@/lib/types/initiative'
+import { 
+  validateQuestions, 
+  validatePlan, 
+  validateFilePath,
+  VALIDATION_LIMITS 
+} from './initiative-validation'
 
 // Lock mechanism for concurrent file operations
 const fileLocks = new Map<string, Promise<void>>()
@@ -102,20 +108,21 @@ export async function ensureInitiativeDirectory(id: string): Promise<void> {
 export async function saveQuestions(id: string, questions: InitiativeQuestion[]): Promise<void> {
   const filepath = path.join(getInitiativeDir(id), 'questions.json')
   
-  // Validate questions
-  if (!Array.isArray(questions)) {
-    throw new Error('Questions must be an array')
-  }
-  
-  for (const question of questions) {
-    if (!question.id || !question.question) {
-      throw new Error('Each question must have an id and question text')
-    }
+  // Validate questions using validation utility
+  const validationErrors = validateQuestions(questions)
+  if (validationErrors.length > 0) {
+    throw new Error(`Question validation failed: ${validationErrors[0].message}`)
   }
   
   await withFileLock(filepath, async () => {
     await ensureInitiativeDirectory(id)
     const content = JSON.stringify(questions, null, 2)
+    
+    // Check file size limit
+    if (Buffer.byteLength(content, 'utf-8') > 1024 * 1024) { // 1MB limit for JSON files
+      throw new Error('Questions file exceeds 1MB limit')
+    }
+    
     await atomicWrite(filepath, content)
   })
 }
@@ -129,9 +136,25 @@ export async function saveAnswers(id: string, answers: Record<string, string>): 
     throw new Error('Answers must be an object')
   }
   
+  // Validate each answer length
+  for (const [key, value] of Object.entries(answers)) {
+    if (typeof value !== 'string') {
+      throw new Error(`Answer for question ${key} must be a string`)
+    }
+    if (value.length > VALIDATION_LIMITS.ANSWER_MAX_LENGTH) {
+      throw new Error(`Answer for question ${key} exceeds ${VALIDATION_LIMITS.ANSWER_MAX_LENGTH} character limit`)
+    }
+  }
+  
   await withFileLock(filepath, async () => {
     await ensureInitiativeDirectory(id)
     const content = JSON.stringify(answers, null, 2)
+    
+    // Check file size limit
+    if (Buffer.byteLength(content, 'utf-8') > 1024 * 1024) { // 1MB limit for JSON files
+      throw new Error('Answers file exceeds 1MB limit')
+    }
+    
     await atomicWrite(filepath, content)
   })
 }
@@ -143,6 +166,14 @@ export async function saveResearchNeeds(id: string, content: string): Promise<vo
   // Validate content
   if (typeof content !== 'string') {
     throw new Error('Research needs content must be a string')
+  }
+  
+  if (content.length < VALIDATION_LIMITS.RESEARCH_MIN_LENGTH) {
+    throw new Error(`Research needs content must be at least ${VALIDATION_LIMITS.RESEARCH_MIN_LENGTH} characters`)
+  }
+  
+  if (content.length > VALIDATION_LIMITS.RESEARCH_MAX_LENGTH) {
+    throw new Error(`Research needs content exceeds ${VALIDATION_LIMITS.RESEARCH_MAX_LENGTH} character limit`)
   }
   
   await withFileLock(filepath, async () => {
@@ -160,6 +191,14 @@ export async function saveResearchResults(id: string, content: string): Promise<
     throw new Error('Research results content must be a string')
   }
   
+  if (content.length < VALIDATION_LIMITS.RESEARCH_MIN_LENGTH) {
+    throw new Error(`Research results content must be at least ${VALIDATION_LIMITS.RESEARCH_MIN_LENGTH} characters`)
+  }
+  
+  if (content.length > VALIDATION_LIMITS.RESEARCH_MAX_LENGTH) {
+    throw new Error(`Research results content exceeds ${VALIDATION_LIMITS.RESEARCH_MAX_LENGTH} character limit`)
+  }
+  
   await withFileLock(filepath, async () => {
     await ensureInitiativeDirectory(id)
     await atomicWrite(filepath, content)
@@ -170,18 +209,21 @@ export async function saveResearchResults(id: string, content: string): Promise<
 export async function savePlan(id: string, plan: InitiativePlan): Promise<void> {
   const filepath = path.join(getInitiativeDir(id), 'plan.json')
   
-  // Validate plan
-  if (!plan || typeof plan !== 'object') {
-    throw new Error('Plan must be an object')
-  }
-  
-  if (!plan.objective || !plan.scope || !plan.approach) {
-    throw new Error('Plan must have objective, scope, and approach')
+  // Validate plan using validation utility
+  const validationErrors = validatePlan(plan)
+  if (validationErrors.length > 0) {
+    throw new Error(`Plan validation failed: ${validationErrors[0].message}`)
   }
   
   await withFileLock(filepath, async () => {
     await ensureInitiativeDirectory(id)
     const content = JSON.stringify(plan, null, 2)
+    
+    // Check file size limit
+    if (Buffer.byteLength(content, 'utf-8') > 1024 * 1024) { // 1MB limit for JSON files
+      throw new Error('Plan file exceeds 1MB limit')
+    }
+    
     await atomicWrite(filepath, content)
   })
 }
