@@ -3,9 +3,10 @@ import { ProcessManager } from './process-manager'
 import initiativeStore, { type Initiative as StoreInitiative } from './initiative-store'
 import { InitiativePhase, InitiativeTaskStep } from '../types/initiative'
 import { readFile } from 'fs/promises'
-import { join, normalize } from 'path'
+import { join, normalize, resolve } from 'path'
 import { homedir } from 'os'
 import { performPreflightChecks, validatePhaseTransition } from './initiative-validation'
+import { PROMPTS } from './initiative-prompts'
 
 interface ProcessInfo {
   initiativeId: string
@@ -58,22 +59,21 @@ export class InitiativeManager extends EventEmitter {
   }
 
   private async loadPromptTemplate(phase: InitiativePhase): Promise<string> {
-    const templateMap: Record<InitiativePhase, string> = {
-      [InitiativePhase.EXPLORATION]: 'exploration.md',
-      [InitiativePhase.QUESTIONS]: '', // No process for questions phase
-      [InitiativePhase.RESEARCH_PREP]: 'refinement.md',
-      [InitiativePhase.RESEARCH_REVIEW]: '', // No process for research_review phase
-      [InitiativePhase.TASK_GENERATION]: 'planning.md',
-      [InitiativePhase.READY]: '' // No process for ready phase
+    // Use embedded prompts to avoid filesystem issues in Next.js server context
+    switch (phase) {
+      case InitiativePhase.EXPLORATION:
+        return PROMPTS.exploration
+      case InitiativePhase.RESEARCH_PREP:
+        return PROMPTS.refinement
+      case InitiativePhase.TASK_GENERATION:
+        return PROMPTS.planning
+      case InitiativePhase.QUESTIONS:
+      case InitiativePhase.RESEARCH_REVIEW:
+      case InitiativePhase.READY:
+        throw new Error(`No template available for phase: ${phase}`)
+      default:
+        throw new Error(`Unknown phase: ${phase}`)
     }
-
-    const templateFile = templateMap[phase]
-    if (!templateFile) {
-      throw new Error(`No template available for phase: ${phase}`)
-    }
-
-    const templatePath = join(__dirname, '../../lib/prompts/initiative', templateFile)
-    return await readFile(templatePath, 'utf-8')
   }
 
   private constructPrompt(template: string, initiative: StoreInitiative, context: Record<string, string> = {}): string {
