@@ -36,6 +36,15 @@ export function useWebSocket(url: string, taskId?: string) {
             taskId
           }))
         }
+        
+        // If reconnecting, show a notification
+        if (reconnectAttempts.current > 0) {
+          setLastMessage({
+            type: 'connection-restored',
+            taskId: taskId,
+            data: { content: '✅ Connection restored', timestamp: new Date() }
+          })
+        }
       }
 
       ws.current.onmessage = (event) => {
@@ -47,13 +56,27 @@ export function useWebSocket(url: string, taskId?: string) {
         }
       }
 
-      ws.current.onclose = () => {
-        console.log('WebSocket disconnected')
+      ws.current.onclose = (event) => {
+        console.log('WebSocket disconnected', event.code, event.reason)
         setIsConnected(false)
+        
+        // Don't reconnect if it was a normal closure
+        if (event.code === 1000) {
+          return
+        }
         
         // Attempt to reconnect with exponential backoff
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
         reconnectAttempts.current++
+        
+        // Show disconnection message if this is the first disconnect
+        if (reconnectAttempts.current === 1) {
+          setLastMessage({
+            type: 'connection-lost',
+            taskId: taskId,
+            data: { content: '⚠️ Connection lost. Attempting to reconnect...', timestamp: new Date() }
+          })
+        }
         
         reconnectTimeoutRef.current = setTimeout(() => {
           console.log(`Attempting to reconnect (attempt ${reconnectAttempts.current})...`)
@@ -66,6 +89,11 @@ export function useWebSocket(url: string, taskId?: string) {
       }
     } catch (error) {
       console.error('Error creating WebSocket connection:', error)
+      
+      // Retry connection after a delay
+      reconnectTimeoutRef.current = setTimeout(() => {
+        connect()
+      }, 5000)
     }
   }, [url, taskId])
 

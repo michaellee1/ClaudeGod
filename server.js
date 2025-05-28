@@ -28,7 +28,11 @@ function broadcastTaskUpdate(taskId, update) {
   // Broadcast to all clients (for task list)
   wss.clients.forEach((client) => {
     if (client.readyState === 1) { // WebSocket.OPEN
-      client.send(message)
+      try {
+        client.send(message)
+      } catch (error) {
+        console.error('Error sending task update to client:', error)
+      }
     }
   })
 }
@@ -48,7 +52,11 @@ function broadcastTaskOutput(taskId, output) {
   if (connections) {
     connections.forEach((client) => {
       if (client.readyState === 1) { // WebSocket.OPEN
-        client.send(message)
+        try {
+          client.send(message)
+        } catch (error) {
+          console.error(`Error sending output to client for task ${taskId}:`, error)
+        }
       }
     })
   }

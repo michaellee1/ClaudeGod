@@ -72,6 +72,18 @@ export default function TaskDetail() {
     } else if (lastMessage.type === 'task-removed' && lastMessage.taskId === taskId) {
       // Task was removed, redirect to home
       router.push('/')
+    } else if ((lastMessage.type === 'connection-lost' || lastMessage.type === 'connection-restored') && lastMessage.taskId === taskId) {
+      // Add connection status as system output
+      if (lastMessage.data) {
+        const systemOutput: TaskOutput = {
+          id: Math.random().toString(36).substring(7),
+          taskId: taskId,
+          type: 'system',
+          content: lastMessage.data.content,
+          timestamp: lastMessage.data.timestamp
+        }
+        setOutputs(prev => [...prev, systemOutput])
+      }
     }
   }, [lastMessage, taskId, router])
 

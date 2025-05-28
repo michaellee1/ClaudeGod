@@ -844,6 +844,14 @@ Begin with 'git diff'.`
       if (!process || !process.pid) return
       
       try {
+        // Check if process is still running before attempting to kill
+        try {
+          process.kill(0) // Signal 0 just checks if process exists
+        } catch (e) {
+          // Process doesn't exist, nothing to do
+          return
+        }
+        
         // Send SIGTERM for graceful shutdown
         process.kill('SIGTERM')
         

@@ -207,6 +207,7 @@ export async function getLastCommitHash(repoPath: string): Promise<string> {
 export async function mergeWorktreeToMain(repoPath: string, worktreePath: string): Promise<void> {
   let cleanBranchName = ''
   let originalBranch = ''
+  let tempBranchCreated = false
   
   try {
     // Check if the main repository has uncommitted changes
@@ -233,6 +234,14 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
       console.warn('Could not determine current branch, will not restore')
     }
     
+    // First, ensure the worktree is up to date
+    await execFileAsync('git', ['-C', worktreePath, 'add', '.'])
+    try {
+      await execFileAsync('git', ['-C', worktreePath, 'commit', '-m', 'Auto-commit before merge'])
+    } catch (e) {
+      // No changes to commit, that's fine
+    }
+    
     // Switch to main branch in the main repository
     await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
     
@@ -245,16 +254,27 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     
     // Push the worktree branch changes first
     await execFileAsync('git', ['-C', worktreePath, 'push', '-f', repoPath, `${cleanBranchName}:refs/heads/temp-${cleanBranchName}`])
+    tempBranchCreated = true
     
-    // Now merge the temporary branch
-    await execFileAsync('git', ['-C', repoPath, 'merge', `temp-${cleanBranchName}`])
+    // Now merge the temporary branch with --no-ff to ensure a merge commit
+    await execFileAsync('git', ['-C', repoPath, 'merge', '--no-ff', `temp-${cleanBranchName}`, '-m', `Merge branch '${cleanBranchName}'`])
     
     // Clean up the temporary branch
     await execFileAsync('git', ['-C', repoPath, 'branch', '-D', `temp-${cleanBranchName}`])
+    tempBranchCreated = false
     
     console.log(`Successfully merged ${cleanBranchName} into main. Push manually when ready with: git push origin main`)
   } catch (error: any) {
     console.error('Error merging worktree to main:', error)
+    
+    // Clean up temporary branch if it was created
+    if (tempBranchCreated) {
+      try {
+        await execFileAsync('git', ['-C', repoPath, 'branch', '-D', `temp-${cleanBranchName}`])
+      } catch (cleanupError) {
+        console.error('Failed to clean up temporary branch:', cleanupError)
+      }
+    }
     
     // Check if this is a merge conflict
     if (error.message && error.message.includes('CONFLICT')) {
@@ -280,7 +300,7 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     
     throw new Error(`Merge failed: ${error.message || 'Unknown error during merge'}`)
   } finally {
-    // Restore original branch if we know what it was
+    // Always try to restore original branch if we know what it was
     if (originalBranch && originalBranch !== 'main') {
       try {
         await execFileAsync('git', ['-C', repoPath, 'checkout', originalBranch])

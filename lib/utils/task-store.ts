@@ -60,8 +60,22 @@ class TaskStore {
         }
         this.tasks.set(task.id, task)
         
-        // Note: We can't restore process managers for running tasks
-        // Tasks will remain in their current status even after reload
+        // Check if task was in progress and mark for recovery
+        if (task.status === 'in_progress' || task.status === 'starting') {
+          console.log(`Task ${task.id} was in progress during shutdown, marking for recovery`)
+          task.needsRecovery = true
+          
+          // Add a system message about the interruption
+          const existingOutputs = this.outputs.get(task.id) || []
+          existingOutputs.push({
+            id: Math.random().toString(36).substring(7),
+            taskId: task.id,
+            type: 'system',
+            content: '⚠️ Task was interrupted. You can send additional prompts to continue.',
+            timestamp: new Date()
+          })
+          this.outputs.set(task.id, existingOutputs)
+        }
       }
       
       console.log(`Loaded ${this.tasks.size} tasks from disk`)
@@ -128,8 +142,21 @@ class TaskStore {
     
     // Set new timer to save after 1 second of no changes
     this.saveDebounceTimer = setTimeout(async () => {
-      await this.saveTasks()
-      await this.saveOutputs()
+      try {
+        await this.saveTasks()
+        await this.saveOutputs()
+      } catch (error) {
+        console.error('Error in debouncedSave:', error)
+        // Retry save after a short delay
+        setTimeout(async () => {
+          try {
+            await this.saveTasks()
+            await this.saveOutputs()
+          } catch (retryError) {
+            console.error('Retry save also failed:', retryError)
+          }
+        }, 2000)
+      }
     }, 1000)
   }
 
@@ -328,6 +355,22 @@ class TaskStore {
       await this.stopPreview(taskId)
     }
     
+    // If this is a self-modification task, warn about potential issues
+    if (task.isSelfModification) {
+      console.warn(`WARNING: Merging self-modification task ${taskId}. This may affect the server.`)
+      
+      // Notify all active tasks about impending merge
+      for (const [activeTaskId, activeTask] of this.tasks) {
+        if (activeTaskId !== taskId && activeTask.status === 'in_progress') {
+          this.addOutput(activeTaskId, {
+            type: 'system',
+            content: '⚠️ A self-modification task is being merged. Connection may be temporarily disrupted.',
+            timestamp: new Date()
+          })
+        }
+      }
+    }
+    
     // Merge the worktree branch to main with lock
     await gitLock.withLock(task.repoPath, async () => {
       await mergeWorktreeToMain(task.repoPath, task.worktree)
@@ -338,6 +381,15 @@ class TaskStore {
     task.mergedAt = new Date()
     await this.saveTasks()
     this.broadcastTaskUpdate(taskId, task)
+    
+    // For self-modification tasks, add a warning about potential server restart
+    if (task.isSelfModification) {
+      this.addOutput(taskId, {
+        type: 'system',
+        content: '✅ Self-modification merged. If the server restarts, reconnect to continue.',
+        timestamp: new Date()
+      })
+    }
   }
 
   async sendPromptToTask(taskId: string, prompt: string): Promise<void> {

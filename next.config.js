@@ -7,8 +7,21 @@ const nextConfig = {
       '**/.git/**',
       '**/claude-god-worktrees/**',
       '**/.claude-god-data/**',
-      '**/.next/**'
-    ]
+      '**/.next/**',
+      '**/.env*',
+      '**/*.log'
+    ],
+    // Increase polling interval to reduce file system watching overhead
+    poll: 5000
+  },
+  // Disable webpack watching in production
+  webpack: (config, { dev }) => {
+    if (!dev) {
+      config.watchOptions = {
+        ignored: /.*/
+      }
+    }
+    return config
   }
 }
 
