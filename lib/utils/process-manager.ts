@@ -3,6 +3,8 @@ import { EventEmitter } from 'events'
 import os from 'os'
 import path from 'path'
 import fs from 'fs'
+import { promises as fsPromises } from 'fs'
+import { Initiative } from '../types/initiative'
 
 export interface ProcessOutput {
   type: 'planner' | 'editor' | 'reviewer'
@@ -37,6 +39,12 @@ export class ProcessManager extends EventEmitter {
   private reviewerPrompt: string = ''
   private thinkMode: string | undefined
   private cleanupCallbacks: (() => void)[] = []
+  private initiativeMetadata: {
+    initiativeId?: string
+    phase?: string
+    startTime?: Date
+    pid?: number
+  } = {}
 
   constructor(taskId?: string, worktreePath?: string, repoPath?: string) {
     super()
@@ -1248,5 +1256,466 @@ Begin with 'git diff'.`
     // Don't add user-specific paths, just common system paths
     pathComponents.push(PATH)
     return pathComponents.join(path.delimiter)
+  }
+
+  // Initiative-specific methods
+  async runInitiativeExploration(initiative: Initiative): Promise<void> {
+    console.log(`[ProcessManager] Starting initiative exploration for ${initiative.id}`)
+    
+    // Load and process exploration prompt template
+    const promptTemplate = await this.loadPromptTemplate('exploration')
+    const prompt = this.substituteVariables(promptTemplate, {
+      objective: initiative.objective,
+      outputDir: path.join(os.homedir(), '.claude-god-data', 'initiatives', initiative.id),
+      initiativeId: initiative.id
+    })
+    
+    // Set up process configuration
+    this.currentPhase = 'planner' as any // Using planner phase for initiatives
+    this.taskId = `initiative-${initiative.id}`
+    this.worktreePath = this.repoPath || process.cwd()
+    
+    // Configure timeout for exploration phase (60 minutes)
+    const EXPLORATION_TIMEOUT = 3600000
+    
+    try {
+      await this.startInitiativeProcess(prompt, 'exploration', EXPLORATION_TIMEOUT)
+      console.log(`[ProcessManager] Initiative exploration started successfully`)
+    } catch (error) {
+      console.error(`[ProcessManager] Failed to start exploration:`, error)
+      throw new Error(`Failed to start initiative exploration: ${error}`)
+    }
+  }
+
+  async runInitiativeRefinement(initiative: Initiative): Promise<void> {
+    console.log(`[ProcessManager] Starting initiative refinement for ${initiative.id}`)
+    
+    // Format user answers for the prompt
+    const formattedAnswers = this.formatUserAnswers(initiative.userAnswers, initiative.questions)
+    
+    // Load and process refinement prompt template
+    const promptTemplate = await this.loadPromptTemplate('refinement')
+    const prompt = this.substituteVariables(promptTemplate, {
+      objective: initiative.objective,
+      outputDir: path.join(os.homedir(), '.claude-god-data', 'initiatives', initiative.id),
+      userAnswers: formattedAnswers,
+      initiativeId: initiative.id
+    })
+    
+    // Set up process configuration
+    this.currentPhase = 'planner' as any
+    this.taskId = `initiative-${initiative.id}`
+    this.worktreePath = this.repoPath || process.cwd()
+    
+    // Configure timeout for refinement phase (45 minutes)
+    const REFINEMENT_TIMEOUT = 2700000
+    
+    try {
+      await this.startInitiativeProcess(prompt, 'refinement', REFINEMENT_TIMEOUT)
+      console.log(`[ProcessManager] Initiative refinement started successfully`)
+    } catch (error) {
+      console.error(`[ProcessManager] Failed to start refinement:`, error)
+      throw new Error(`Failed to start initiative refinement: ${error}`)
+    }
+  }
+
+  async runInitiativePlanning(initiative: Initiative): Promise<void> {
+    console.log(`[ProcessManager] Starting initiative planning for ${initiative.id}`)
+    
+    // Load and process planning prompt template
+    const promptTemplate = await this.loadPromptTemplate('planning')
+    const prompt = this.substituteVariables(promptTemplate, {
+      objective: initiative.objective,
+      outputDir: path.join(os.homedir(), '.claude-god-data', 'initiatives', initiative.id),
+      researchResults: initiative.researchResults || 'No research results provided.',
+      initiativeId: initiative.id
+    })
+    
+    // Set up process configuration
+    this.currentPhase = 'planner' as any
+    this.taskId = `initiative-${initiative.id}`
+    this.worktreePath = this.repoPath || process.cwd()
+    
+    // Configure timeout for planning phase (90 minutes)
+    const PLANNING_TIMEOUT = 5400000
+    
+    try {
+      await this.startInitiativeProcess(prompt, 'planning', PLANNING_TIMEOUT)
+      console.log(`[ProcessManager] Initiative planning started successfully`)
+    } catch (error) {
+      console.error(`[ProcessManager] Failed to start planning:`, error)
+      throw new Error(`Failed to start initiative planning: ${error}`)
+    }
+  }
+
+  private async loadPromptTemplate(templateName: string): Promise<string> {
+    const templatePath = path.join(__dirname, '..', 'prompts', 'initiative', `${templateName}.md`)
+    try {
+      const template = await fsPromises.readFile(templatePath, 'utf-8')
+      return template
+    } catch (error) {
+      console.error(`Failed to load prompt template ${templateName}:`, error)
+      throw new Error(`Prompt template not found: ${templateName}`)
+    }
+  }
+
+  private substituteVariables(template: string, variables: Record<string, string>): string {
+    let result = template
+    for (const [key, value] of Object.entries(variables)) {
+      const regex = new RegExp(`{{${key}}}`, 'g')
+      result = result.replace(regex, value)
+    }
+    return result
+  }
+
+  private formatUserAnswers(answers: Record<string, string> | undefined, questions: any[] | undefined): string {
+    if (!answers || !questions) {
+      return 'No user answers provided.'
+    }
+
+    let formatted = '## User Answers\n\n'
+    for (const question of questions) {
+      const answer = answers[question.id]
+      if (answer) {
+        formatted += `**Q: ${question.question}**\nA: ${answer}\n\n`
+      }
+    }
+    return formatted
+  }
+
+  private async startInitiativeProcess(prompt: string, phase: string, timeout: number): Promise<void> {
+    const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+    const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
+    
+    console.log(`[ProcessManager] Starting initiative ${phase} process`)
+    console.log(`[ProcessManager] Timeout: ${timeout}ms`)
+    
+    // Update metadata
+    this.initiativeMetadata = {
+      initiativeId: this.taskId.replace('initiative-', ''),
+      phase,
+      startTime: new Date(),
+      pid: undefined
+    }
+    
+    // Create process with stream-json output
+    const initiativeProcess = spawn(nodeExecutable, [
+      '--no-warnings',
+      '--enable-source-maps',
+      claudePath,
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--dangerously-skip-permissions',
+      '--think-mode',
+      'planning' // Use planning mode for all initiative phases
+    ], {
+      cwd: this.worktreePath,
+      env: { 
+        ...process.env, 
+        PATH: this.getEnhancedPath(),
+        FORCE_COLOR: '0',
+        NO_COLOR: '1'
+      },
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    if (!initiativeProcess.pid) {
+      throw new Error(`Failed to start ${phase} process`)
+    }
+    
+    // Update metadata with PID
+    this.initiativeMetadata.pid = initiativeProcess.pid
+    
+    console.log(`[ProcessManager] Initiative ${phase} process started with PID:`, initiativeProcess.pid)
+    
+    // Emit process started event with metadata
+    this.emit('initiative-process-started', {
+      ...this.initiativeMetadata,
+      timeout
+    })
+    
+    // Set up output handlers specific to initiative phases
+    this.setupInitiativeHandlers(initiativeProcess, phase)
+    
+    // Send prompt via stdin
+    if (initiativeProcess.stdin) {
+      initiativeProcess.stdin.write(prompt + '\n')
+      initiativeProcess.stdin.end()
+    }
+    
+    // Set up timeout handler
+    const timeoutHandler = setTimeout(() => {
+      console.warn(`[ProcessManager] Initiative ${phase} process timed out`)
+      initiativeProcess.kill('SIGTERM')
+      this.emit('initiative-error', {
+        phase,
+        error: `Process timed out after ${timeout / 1000 / 60} minutes`
+      })
+    }, timeout)
+    
+    // Clean up timeout on process exit
+    initiativeProcess.once('exit', () => {
+      clearTimeout(timeoutHandler)
+    })
+    
+    // Store process reference for cleanup
+    this.plannerProcess = initiativeProcess
+  }
+
+  private setupInitiativeHandlers(process: ChildProcess, phase: string) {
+    if (!process) return
+    
+    // Track output for phase completion detection
+    let outputBuffer = ''
+    let hasError = false
+    
+    if (process.stdout) {
+      process.stdout.setEncoding('utf8')
+      process.stdout.on('data', (data) => {
+        this.lastOutputTime = Date.now()
+        const content = data.toString()
+        outputBuffer += content
+        
+        // Parse stream-json format
+        const lines = content.split('\n')
+        for (const line of lines.filter((l: string) => l.trim())) {
+          try {
+            const parsed = JSON.parse(line)
+            
+            // Handle different message types
+            if (parsed.type === 'assistant' && parsed.message?.content) {
+              for (const content of parsed.message.content) {
+                if (content.type === 'text') {
+                  this.emit('initiative-output', {
+                    phase,
+                    content: content.text,
+                    timestamp: new Date()
+                  })
+                }
+              }
+            } else if (parsed.type === 'tool_use') {
+              // Enhanced tool output for initiatives
+              let toolInfo = `⚡ Using tool: ${parsed.name}`
+              
+              if (parsed.input) {
+                switch (parsed.name) {
+                  case 'Read':
+                    if (parsed.input.file_path) {
+                      toolInfo = `📖 Reading: ${parsed.input.file_path}`
+                    }
+                    break
+                  case 'Write':
+                    if (parsed.input.file_path) {
+                      toolInfo = `💾 Writing: ${parsed.input.file_path}`
+                      // Check if this is writing one of our expected output files
+                      if (phase === 'exploration' && (
+                        parsed.input.file_path.endsWith('intermediate-plan.md') ||
+                        parsed.input.file_path.endsWith('questions.md')
+                      )) {
+                        this.emit('initiative-output', {
+                          phase,
+                          content: `✅ Created ${path.basename(parsed.input.file_path)}`,
+                          timestamp: new Date()
+                        })
+                      } else if (phase === 'refinement' && parsed.input.file_path.endsWith('research-needs.md')) {
+                        this.emit('initiative-output', {
+                          phase,
+                          content: `✅ Created research needs document`,
+                          timestamp: new Date()
+                        })
+                      } else if (phase === 'planning' && parsed.input.file_path.endsWith('tasks.json')) {
+                        this.emit('initiative-output', {
+                          phase,
+                          content: `✅ Created task breakdown`,
+                          timestamp: new Date()
+                        })
+                      }
+                    }
+                    break
+                  case 'Grep':
+                    if (parsed.input.pattern) {
+                      toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
+                    }
+                    break
+                  case 'Glob':
+                    if (parsed.input.pattern) {
+                      toolInfo = `📁 Finding: ${parsed.input.pattern}`
+                    }
+                    break
+                  case 'Bash':
+                    if (parsed.input.command) {
+                      const cmd = parsed.input.command.substring(0, 80)
+                      toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
+                    }
+                    break
+                  case 'LS':
+                    if (parsed.input.path) {
+                      toolInfo = `📂 Listing: ${parsed.input.path}`
+                    }
+                    break
+                }
+              }
+              
+              this.emit('initiative-output', {
+                phase,
+                content: toolInfo,
+                timestamp: new Date()
+              })
+            }
+          } catch (e) {
+            // Not JSON, emit as regular output
+            if (line && !line.includes('{"type":')) {
+              this.emit('initiative-output', {
+                phase,
+                content: line,
+                timestamp: new Date()
+              })
+            }
+          }
+        }
+      })
+    }
+    
+    if (process.stderr) {
+      process.stderr.setEncoding('utf8')
+      process.stderr.on('data', (data) => {
+        hasError = true
+        this.emit('initiative-output', {
+          phase,
+          content: `[Error] ${data}`,
+          timestamp: new Date()
+        })
+      })
+    }
+    
+    process.on('exit', (code, signal) => {
+      console.log(`[ProcessManager] Initiative ${phase} process exited with code:`, code)
+      
+      if (code === 0) {
+        this.emit('initiative-phase-complete', {
+          phase,
+          success: true
+        })
+      } else {
+        // Provide detailed error messages based on phase and exit code
+        let errorMsg = ''
+        
+        if (signal === 'SIGTERM') {
+          errorMsg = `Initiative ${phase} process was terminated (timeout or manual stop)`
+        } else if (code === 143) {
+          errorMsg = `Initiative ${phase} process exceeded time limit`
+        } else if (hasError) {
+          errorMsg = `Initiative ${phase} process encountered errors during execution`
+        } else {
+          // Phase-specific error messages
+          switch (phase) {
+            case 'exploration':
+              errorMsg = `Failed to complete exploration phase. Claude Code may have encountered issues understanding the objective or accessing the codebase.`
+              break
+            case 'refinement':
+              errorMsg = `Failed to complete refinement phase. There may have been issues processing the user answers or generating research needs.`
+              break
+            case 'planning':
+              errorMsg = `Failed to complete planning phase. Task generation may have failed due to complexity or missing context.`
+              break
+            default:
+              errorMsg = `Initiative ${phase} process failed with exit code ${code}`
+          }
+        }
+        
+        this.emit('initiative-error', {
+          phase,
+          error: errorMsg,
+          exitCode: code,
+          signal: signal
+        })
+      }
+      
+      // Clean up process reference
+      if (this.plannerProcess === process) {
+        this.plannerProcess = null
+        // Clear metadata on exit
+        this.initiativeMetadata = {}
+      }
+    })
+    
+    process.on('error', (error) => {
+      console.error(`[ProcessManager] Initiative ${phase} process error:`, error)
+      
+      // Provide user-friendly error messages
+      let userError = error.message
+      if (error.message.includes('ENOENT')) {
+        userError = 'Claude Code executable not found. Please ensure Claude Code is installed correctly.'
+      } else if (error.message.includes('EACCES')) {
+        userError = 'Permission denied when trying to run Claude Code. Check file permissions.'
+      } else if (error.message.includes('ENOMEM')) {
+        userError = 'Insufficient memory to start Claude Code process.'
+      }
+      
+      this.emit('initiative-error', {
+        phase,
+        error: userError,
+        originalError: error.message
+      })
+    })
+  }
+
+  // Clean up initiative process on failure or cancellation
+  stopInitiativeProcess(): void {
+    console.log(`[ProcessManager] Stopping initiative process`)
+    
+    if (this.plannerProcess) {
+      const pid = this.plannerProcess.pid
+      const phase = this.initiativeMetadata.phase
+      
+      try {
+        // Send SIGTERM for graceful shutdown
+        this.plannerProcess.kill('SIGTERM')
+        
+        // Give it a moment to clean up
+        setTimeout(() => {
+          if (this.plannerProcess && this.plannerProcess.pid === pid) {
+            console.warn(`[ProcessManager] Force killing initiative process ${pid}`)
+            try {
+              this.plannerProcess.kill('SIGKILL')
+            } catch (e) {
+              // Process may already be dead
+            }
+          }
+        }, 5000)
+        
+        // Emit cleanup event
+        this.emit('initiative-process-stopped', {
+          ...this.initiativeMetadata,
+          reason: 'manual_stop'
+        })
+      } catch (error) {
+        console.error(`[ProcessManager] Error stopping initiative process:`, error)
+      }
+      
+      // Clear process reference
+      this.plannerProcess = null
+    }
+    
+    // Clear metadata
+    this.initiativeMetadata = {}
+  }
+
+  // Get current initiative process status
+  getInitiativeProcessStatus(): {
+    running: boolean,
+    phase?: string,
+    pid?: number,
+    startTime?: Date
+  } {
+    return {
+      running: !!this.plannerProcess,
+      phase: this.initiativeMetadata.phase,
+      pid: this.initiativeMetadata.pid,
+      startTime: this.initiativeMetadata.startTime
+    }
   }
 }
