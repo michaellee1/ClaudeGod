@@ -66,12 +66,13 @@ Structure:
 ```
 
 ## Step Organization Guidelines
+Many of the tasks may depend on previous tasks and/or may have some overlap areas, so we can't just send things off all at once.  Steps are a way to order groups of tasks to solve this.  Previous steps will be merged in before the next step completes.  Tasks in a step should be independent, they will not see code written by other tasks in that step, only code from the step before.
 
-1. **Logical Grouping**: Group related tasks into steps
-2. **Dependencies**: Order steps considering dependencies
-3. **Incremental Value**: Each step should deliver value
-4. **Testing**: Include testing tasks within relevant steps
-5. **Documentation**: Include docs updates in the same step as features
+1. **Steps are not**: Steps are NOT logical groupings of tasks. 
+2. **Steps purpose**: Create a run order that will not lead to merge conflicts, AND will lead to better performance as future steps will be able to see and reference the code written by the previous step.
+3. **Dependencies**: Order steps considering dependencies and merge conflicts.
+4. **Testing**: If you want to include testing or other things that are better when referencing the actual code that is there, either include it in the same task (preferred) or in the next step.  If you include it as a separate task in the same step then it not be able to see the code.
+5. **Safety**: Err on the side of more steps than less (without too many), when there is likely to be tasks in a step that change the same parts of the same files (merge conflicts)
 
 ## Task Description Best Practices
 
