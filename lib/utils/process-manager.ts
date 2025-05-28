@@ -118,6 +118,7 @@ export class ProcessManager extends EventEmitter {
       // Start with planning phase
       this.currentPhase = 'planner'
       this.emit('phase', 'planner')
+      this.emit('status', 'in_progress')
       // Create secure temp file path
       const tempDir = process.env.TMPDIR || '/tmp'
       this.planFilePath = path.join(tempDir, `claude-task-plan-${taskId}-${Date.now()}.md`)
