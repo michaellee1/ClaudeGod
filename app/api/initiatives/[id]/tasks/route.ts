@@ -4,7 +4,7 @@ import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { taskStore } from '@/lib/utils/task-store'
 import { InitiativeTaskStep, InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
 import { withErrorHandler } from '@/lib/utils/error-handler'
-import { ValidationError, NotFoundError } from '@/lib/utils/errors'
+import { ValidationError, InitiativeNotFoundError } from '@/lib/utils/errors'
 
 export const POST = withErrorHandler(async (
   request: NextRequest,
@@ -46,7 +46,7 @@ export const POST = withErrorHandler(async (
 
     const initiative = initiativeStore.get(id)
     if (!initiative) {
-      throw new NotFoundError('Initiative not found')
+      throw new InitiativeNotFoundError('Initiative not found')
     }
 
     if (initiative.currentPhase !== InitiativePhase.READY) {

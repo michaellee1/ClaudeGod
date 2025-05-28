@@ -8,7 +8,7 @@ import {
 } from '@/lib/utils/initiative-validation'
 import { Initiative, InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
 import { withErrorHandler } from '@/lib/utils/error-handler'
-import { ValidationError, NotFoundError } from '@/lib/utils/errors'
+import { ValidationError, InitiativeNotFoundError } from '@/lib/utils/errors'
 
 export const GET = withErrorHandler(async (
   request: NextRequest,
@@ -22,7 +22,7 @@ export const GET = withErrorHandler(async (
 
     const initiative = initiativeStore.get(id)
     if (!initiative) {
-      throw new NotFoundError('Initiative not found')
+      throw new InitiativeNotFoundError('Initiative not found')
     }
 
     // Convert store initiative to full Initiative type for validation

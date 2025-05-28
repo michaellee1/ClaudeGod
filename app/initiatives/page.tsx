@@ -218,8 +218,26 @@ export default function InitiativesPage() {
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to delete initiative')
+        let errorMessage = 'Failed to delete initiative'
+        try {
+          const data = await response.json()
+          errorMessage = data.error?.message || data.error || errorMessage
+        } catch (jsonError) {
+          // If JSON parsing fails, use the default error message
+          console.error('Failed to parse error response:', jsonError)
+        }
+        throw new Error(errorMessage)
+      }
+
+      // Only try to parse JSON if content-type indicates JSON
+      const contentType = response.headers.get('content-type')
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          await response.json() // Consume the response body if it exists
+        } catch (jsonError) {
+          // Ignore JSON parsing errors for successful responses
+          console.warn('Response body is not valid JSON, but request was successful')
+        }
       }
 
       setInitiatives(prev => prev.filter(i => i.id !== deleteInitiativeId))

@@ -172,5 +172,26 @@ export const PATCH = withErrorHandler(async (
     })
 })
 
+export const DELETE = withErrorHandler(async (
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) => {
+    const { id } = params
+
+    if (!id || typeof id !== 'string') {
+      throw new ValidationError('Invalid initiative ID', 'id', id)
+    }
+
+    const initiative = initiativeStore.get(id)
+    if (!initiative) {
+      throw new InitiativeNotFoundError(id)
+    }
+
+    // Delete the initiative
+    await initiativeStore.delete(id)
+
+    return NextResponse.json({ success: true })
+})
+
 // Prevent static caching
 export const dynamic = 'force-dynamic'
