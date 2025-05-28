@@ -320,10 +320,6 @@ export default function Home() {
   }
 
   const handleMerge = async (taskId: string) => {
-    if (!confirm('Are you sure you want to merge this task? This will merge the changes into the main branch.')) {
-      return
-    }
-    
     try {
       const response = await fetch(`/api/tasks/${taskId}/merge`, {
         method: 'POST',
