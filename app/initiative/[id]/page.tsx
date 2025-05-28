@@ -15,7 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InitiativeValidation, InlineValidation } from '@/components/InitiativeValidation'
 import { VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, Zap } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import { InitiativeHelpModal } from '@/components/InitiativeHelpModal'
 import { InitiativeDetailSkeleton } from '@/components/InitiativeSkeletons'
 import { QuestionsEmptyState, TasksEmptyState, ResearchEmptyState, OutputEmptyState } from '@/components/EmptyStates'
@@ -32,6 +33,7 @@ export default function InitiativeDetail() {
   const [isLoading, setIsLoading] = useState(true)
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set(['current']))
   const [showRawOutput, setShowRawOutput] = useState(false)
+  const [yoloMode, setYoloMode] = useState(true)
   const outputEndRef = useRef<HTMLDivElement>(null)
 
   const initiativeId = params.id as string
@@ -45,6 +47,10 @@ export default function InitiativeDetail() {
     }
     if (updatedInitiative.researchResults) {
       setResearchResults(updatedInitiative.researchResults)
+    }
+    // Update YOLO mode state
+    if (updatedInitiative.yoloMode !== undefined) {
+      setYoloMode(updatedInitiative.yoloMode)
     }
   }, [])
 
@@ -71,6 +77,9 @@ export default function InitiativeDetail() {
         }
         if (data.researchResults) {
           setResearchResults(data.researchResults)
+        }
+        if (data.yoloMode !== undefined) {
+          setYoloMode(data.yoloMode)
         }
       } else {
         setError('Failed to load initiative')
@@ -187,14 +196,18 @@ export default function InitiativeDetail() {
     }
   }
 
-  const handleSubmitTaskStep = async (stepId: string) => {
+  const handleSubmitTaskStep = async (stepNumber: number) => {
     setIsSubmitting(true)
     setError(null)
     try {
       const response = await fetch(`/api/initiatives/${initiativeId}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stepId })
+        body: JSON.stringify({ 
+          stepNumber,
+          // In YOLO mode, automatically submit the first step
+          yoloMode: initiative?.yoloMode && stepNumber === 0
+        })
       })
       
       if (!response.ok) {
@@ -214,6 +227,26 @@ export default function InitiativeDetail() {
   const handleCopyResearchNeeds = () => {
     if (initiative?.researchNeeds) {
       navigator.clipboard.writeText(initiative.researchNeeds)
+    }
+  }
+
+  const handleYoloModeToggle = async (checked: boolean) => {
+    setYoloMode(checked)
+    try {
+      const response = await fetch(`/api/initiatives/${initiativeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yoloMode: checked })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update YOLO mode')
+      }
+    } catch (error: any) {
+      setError(error.message)
+      // Revert on error
+      setYoloMode(!checked)
     }
   }
 
@@ -434,7 +467,7 @@ export default function InitiativeDetail() {
                       </Table>
                       {step.status === 'pending' && initiative.status === InitiativeStatus.READY_FOR_TASKS && (
                         <Button
-                          onClick={() => handleSubmitTaskStep(step.id)}
+                          onClick={() => handleSubmitTaskStep(step.order)}
                           disabled={isSubmitting}
                           className="w-full mt-4"
                         >
@@ -514,7 +547,32 @@ export default function InitiativeDetail() {
             <span>/</span>
             <span>{initiative.id}</span>
           </div>
-          <InitiativeHelpModal />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="yolo-mode"
+                      checked={yoloMode}
+                      onCheckedChange={handleYoloModeToggle}
+                    />
+                    <Label 
+                      htmlFor="yolo-mode" 
+                      className="cursor-pointer flex items-center gap-1"
+                    >
+                      <Zap className="h-3 w-3" />
+                      YOLO Mode
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Automatically merge and submit tasks when steps complete</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <InitiativeHelpModal />
+          </div>
         </div>
         <h1 className="text-2xl font-bold mb-2">{initiative.objective}</h1>
         <div className="flex items-center gap-2">

@@ -118,7 +118,7 @@ export async function POST(
         const task = await taskStore.createTask(
           taskPrompt,
           repoPath,
-          'planning', // Default think mode for initiative tasks
+          'none', // Default think mode for initiative tasks - YOLO mode
           {
             initiativeId: id,
             stepNumber: stepNumber,
