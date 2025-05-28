@@ -193,7 +193,7 @@ class TaskStore {
       id: taskId,
       prompt,
       status: 'starting',
-      phase: 'editor',
+      phase: thinkMode === 'planning' ? 'planner' : 'editor',
       worktree: worktreePath,
       repoPath: this.repoPath,
       createdAt: new Date(),
@@ -546,6 +546,12 @@ ${gitDiff}
     
     processManager.on('reviewerPid', (pid) => {
       task.reviewerPid = pid
+      this.debouncedSave()
+      this.broadcastTaskUpdate(task.id, task)
+    })
+    
+    processManager.on('plannerPid', (pid) => {
+      task.plannerPid = pid
       this.debouncedSave()
       this.broadcastTaskUpdate(task.id, task)
     })

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Validate thinkMode if provided
-    const validThinkModes = ['no_review', 'none', 'level1', 'level2', 'level3']
+    const validThinkModes = ['no_review', 'none', 'level1', 'level2', 'planning']
     if (thinkMode && !validThinkModes.includes(thinkMode)) {
       return NextResponse.json(
         { error: 'Invalid think mode' },

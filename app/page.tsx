@@ -377,7 +377,7 @@ export default function Home() {
     let finalPrompt = prompt
     
     // Add think mode first (it will be moved after image ref on backend)
-    if (thinkMode !== 'none' && thinkMode !== 'no_review') {
+    if (thinkMode !== 'none' && thinkMode !== 'no_review' && thinkMode !== 'planning') {
       const thinkModeText = thinkMode === 'level1' ? 'Think hard' : 
                            thinkMode === 'level2' ? 'Ultrathink' : 
                            ''
@@ -495,12 +495,12 @@ export default function Home() {
                 <Label>Think Mode</Label>
                 <RadioGroup value={thinkMode} onValueChange={setThinkMode}>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="none" id="none" />
-                    <Label htmlFor="none" className="font-normal">None</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
                     <RadioGroupItem value="no_review" id="no_review" />
                     <Label htmlFor="no_review" className="font-normal">No Review</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="none" id="none" />
+                    <Label htmlFor="none" className="font-normal">None</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="level1" id="level1" />
@@ -509,6 +509,10 @@ export default function Home() {
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="level2" id="level2" />
                     <Label htmlFor="level2" className="font-normal">Ultrathink (level 2)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="planning" id="planning" />
+                    <Label htmlFor="planning" className="font-normal">Planning (level 3)</Label>
                   </div>
                 </RadioGroup>
               </div>

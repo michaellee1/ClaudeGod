@@ -533,7 +533,10 @@ export default function TaskDetail() {
             return (
               <div key={output.id} className="mb-4">
                 <div className={`font-semibold ${
-                  output.type === 'editor' ? 'text-green-700' : 'text-blue-700'
+                  output.type === 'editor' ? 'text-green-700' : 
+                  output.type === 'reviewer' ? 'text-blue-700' :
+                  output.type === 'planner' ? 'text-purple-700' : 
+                  'text-gray-700'
                 }`}>
                   [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
                 </div>

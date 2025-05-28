@@ -2,9 +2,10 @@ import { spawn, ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import os from 'os'
 import path from 'path'
+import fs from 'fs'
 
 export interface ProcessOutput {
-  type: 'editor' | 'reviewer'
+  type: 'planner' | 'editor' | 'reviewer'
   content: string
   timestamp: Date
 }
@@ -12,7 +13,8 @@ export interface ProcessOutput {
 export class ProcessManager extends EventEmitter {
   private editorProcess: ChildProcess | null = null
   private reviewerProcess: ChildProcess | null = null
-  private currentPhase: 'starting' | 'editor' | 'reviewer' | 'finished' = 'starting'
+  private plannerProcess: ChildProcess | null = null
+  private currentPhase: 'starting' | 'planner' | 'editor' | 'reviewer' | 'finished' = 'starting'
   private lastOutputTime: number = 0
   private outputMonitorInterval: NodeJS.Timeout | null = null
   private readonly IDLE_TIMEOUT = 1800000 // 30 minutes - increased timeout for long-running tasks
@@ -30,6 +32,11 @@ export class ProcessManager extends EventEmitter {
   private taskId: string
   private worktreePath: string
   private repoPath: string
+  private planFilePath: string | null = null
+  private editorPrompt: string = ''
+  private reviewerPrompt: string = ''
+  private thinkMode: string | undefined
+  private cleanupCallbacks: (() => void)[] = []
 
   constructor(taskId?: string, worktreePath?: string, repoPath?: string) {
     super()
@@ -45,6 +52,81 @@ export class ProcessManager extends EventEmitter {
     thinkMode?: string
   ): Promise<{ editorPid: number, reviewerPid: number }> {
     this.emit('status', 'starting')
+    
+    // Handle planning mode
+    if (thinkMode === 'planning') {
+      // Start with planning phase
+      this.currentPhase = 'planner'
+      this.emit('phase', 'planner')
+      // Create secure temp file path
+      const tempDir = process.env.TMPDIR || '/tmp'
+      this.planFilePath = path.join(tempDir, `claude-task-plan-${taskId}-${Date.now()}.md`)
+      
+      const plannerPrompt = `${prompt}. Ultrathink
+
+Task: Deeply analyze this task and create a detailed implementation plan.
+
+1. Carefully read and understand the task description
+2. Explore the codebase to understand:
+   - Project structure and architecture
+   - Existing patterns and conventions
+   - Dependencies and libraries used
+   - Testing framework if any
+3. Identify all components that need to be:
+   - Created
+   - Modified
+   - Tested
+4. Consider edge cases and potential challenges
+5. Create a detailed plan in a markdown file at ${this.planFilePath}
+
+The plan should include:
+- Task summary and objectives
+- Files to be created/modified with specific changes
+- Implementation steps in order
+- Testing strategy
+- Potential risks or complexities
+- More detail for complex parts
+
+Be thorough but concise. Focus on actionable steps.`
+      
+      // Store prompts for later phases
+      this.editorPrompt = `${prompt}. Ultrathink
+
+IMPORTANT: A detailed plan has been created at ${this.planFilePath}
+
+1. First, read the plan using: cat ${this.planFilePath}
+2. Follow the plan to implement the task
+3. Feel free to adjust the plan if you find a better approach
+4. Ensure all requirements from the original prompt are met
+5. The plan provides guidance but you should use your judgment
+
+Original task: "${prompt}"`
+      
+      this.reviewerPrompt = `Task: "${prompt}"
+
+A plan was created at ${this.planFilePath} and implementation was done based on it.
+
+Review the implementation:
+1. Run 'git diff' to see changes
+2. Read the plan: cat ${this.planFilePath}
+3. Verify all requirements are met
+4. Check for bugs, security issues, code quality
+5. Fix any issues found
+6. Run tests if available
+
+Begin with 'git diff'.`
+      
+      this.thinkMode = thinkMode
+      
+      // Start planner process
+      await this.startPlannerProcess(worktreePath, plannerPrompt)
+      
+      // Return early - planner will trigger editor when done
+      return {
+        editorPid: this.plannerProcess?.pid || 0,
+        reviewerPid: 0
+      }
+    }
     
     const editorPrompt = prompt
     const reviewerPrompt = `Task: "${prompt}"
@@ -747,6 +829,16 @@ Begin with 'git diff'.`
       clearInterval(this.outputMonitorInterval)
     }
     
+    // Clean up any temporary files
+    this.cleanupCallbacks.forEach(cleanup => {
+      try {
+        cleanup()
+      } catch (error) {
+        console.error('Cleanup error:', error)
+      }
+    })
+    this.cleanupCallbacks = []
+    
     // Give processes time to gracefully shutdown
     const gracefulShutdown = async (process: ChildProcess | null, name: string) => {
       if (!process || !process.pid) return
@@ -777,21 +869,289 @@ Begin with 'git diff'.`
       }
     }
     
-    // Stop both processes gracefully
+    // Stop all processes gracefully
     Promise.all([
+      gracefulShutdown(this.plannerProcess, 'planner'),
       gracefulShutdown(this.editorProcess, 'editor'),
       gracefulShutdown(this.reviewerProcess, 'reviewer')
     ]).then(() => {
+      this.plannerProcess = null
       this.editorProcess = null
       this.reviewerProcess = null
       this.isShuttingDown = false
+      this.planFilePath = null
+      this.editorPrompt = ''
+      this.reviewerPrompt = ''
+      this.thinkMode = undefined
     })
   }
   
   isProcessRunning(): boolean {
-    return !!(this.editorProcess || this.reviewerProcess)
+    return !!(this.plannerProcess || this.editorProcess || this.reviewerProcess)
   }
   
+  private async startPlannerProcess(worktreePath: string, plannerPrompt: string) {
+    if (!plannerPrompt || !plannerPrompt.trim()) {
+      throw new Error('Planner prompt cannot be empty')
+    }
+    
+    try {
+      const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
+      
+      console.log('Starting planner process')
+      
+      this.plannerProcess = spawn(nodeExecutable, [
+        '--no-warnings',
+        '--enable-source-maps',
+        claudePath,
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions'
+      ], {
+        cwd: worktreePath,
+        env: { 
+          ...process.env, 
+          PATH: this.getEnhancedPath(),
+          FORCE_COLOR: '0',
+          NO_COLOR: '1'
+        },
+        shell: false,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+
+      if (!this.plannerProcess.pid) {
+        throw new Error('Failed to start planner process')
+      }
+      
+      console.log('Planner process started with PID:', this.plannerProcess.pid)
+      this.emit('plannerPid', this.plannerProcess.pid)
+      this.setupPlannerHandlers()
+      
+      // Add cleanup callback for plan file
+      if (this.planFilePath) {
+        this.cleanupCallbacks.push(() => {
+          if (this.planFilePath && fs.existsSync(this.planFilePath)) {
+            try {
+              fs.unlinkSync(this.planFilePath)
+              console.log('Cleaned up plan file:', this.planFilePath)
+            } catch (error) {
+              console.error('Failed to clean up plan file:', error)
+            }
+          }
+        })
+      }
+      
+      // Send prompt via stdin
+      if (this.plannerProcess.stdin) {
+        this.plannerProcess.stdin.write(plannerPrompt + '\n')
+        this.plannerProcess.stdin.end()
+      }
+    } catch (error) {
+      console.error('Error starting planner:', error)
+      this.emit('status', 'failed')
+      throw error
+    }
+  }
+
+  private setupPlannerHandlers() {
+    if (!this.plannerProcess) return
+    
+    if (this.plannerProcess.stdout) {
+      this.plannerProcess.stdout.setEncoding('utf8')
+      this.plannerProcess.stdout.on('data', (data) => {
+        this.lastOutputTime = Date.now()
+        const content = data.toString()
+        this.outputBuffer += content
+        
+        // Process stream-json format similar to editor
+        const lines = content.split('\n')
+        const processedLines = new Set<string>()
+        
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (!trimmedLine || processedLines.has(line)) continue
+          
+          let isJsonLine = false
+          if (trimmedLine.startsWith('{') && trimmedLine.includes('"type":')) {
+            try {
+              const parsed = JSON.parse(trimmedLine)
+              isJsonLine = true
+              
+              if (parsed.type === 'tool_use' && parsed.name) {
+                let toolInfo = `⚡ Using tool: ${parsed.name}`
+                if (parsed.input) {
+                  switch (parsed.name) {
+                    case 'Read':
+                      if (parsed.input.file_path) {
+                        toolInfo = `📖 Reading: ${parsed.input.file_path}`
+                      }
+                      break
+                    case 'Write':
+                      if (parsed.input.file_path) {
+                        toolInfo = `💾 Writing: ${parsed.input.file_path}`
+                      }
+                      break
+                    case 'Bash':
+                      if (parsed.input.command) {
+                        const cmd = parsed.input.command.substring(0, 80)
+                        toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
+                      }
+                      break
+                  }
+                }
+                
+                this.emit('output', {
+                  type: 'planner',
+                  content: toolInfo,
+                  timestamp: new Date()
+                })
+              } else if (parsed.type === 'content' && parsed.content) {
+                this.emit('output', {
+                  type: 'planner',
+                  content: parsed.content,
+                  timestamp: new Date()
+                })
+              }
+            } catch (e) {
+              // Not JSON
+            }
+          }
+          
+          if (!isJsonLine && !processedLines.has(line) && !line.includes('{"type":')) {
+            this.emit('output', {
+              type: 'planner',
+              content: line,
+              timestamp: new Date()
+            })
+            processedLines.add(line)
+          }
+        }
+      })
+    }
+
+    if (this.plannerProcess.stderr) {
+      this.plannerProcess.stderr.setEncoding('utf8')
+      this.plannerProcess.stderr.on('data', (data) => {
+        this.emit('output', {
+          type: 'planner',
+          content: data,
+          timestamp: new Date()
+        })
+      })
+    }
+
+    this.plannerProcess.on('exit', async (code, signal) => {
+      console.log('Planner process exited with code:', code)
+      
+      if (code === 0 && this.currentPhase === 'planner') {
+        // Planner completed successfully, start editor phase
+        this.emit('output', {
+          type: 'planner',
+          content: `✓ Planning phase completed`,
+          timestamp: new Date()
+        })
+        
+        // Transition to editor phase
+        this.currentPhase = 'editor'
+        this.emit('phase', 'editor')
+        
+        // Clean up planner process
+        this.plannerProcess = null
+        
+        // Start editor process with the plan
+        try {
+          await this.startEditorWithPlan()
+        } catch (error) {
+          console.error('Error starting editor after planner:', error)
+          this.emit('output', {
+            type: 'planner',
+            content: `❌ Failed to start editor: ${error}`,
+            timestamp: new Date()
+          })
+          this.emit('status', 'failed')
+        }
+      } else if (code !== 0 && !this.isShuttingDown) {
+        this.emit('output', {
+          type: 'planner',
+          content: `❌ Planning failed (exit code: ${code})`,
+          timestamp: new Date()
+        })
+        this.emit('status', 'failed')
+      }
+    })
+  }
+
+  private async startEditorWithPlan() {
+    if (!this.editorPrompt || !this.editorPrompt.trim()) {
+      throw new Error('Editor prompt cannot be empty')
+    }
+    
+    // Ensure planner process is cleaned up
+    if (this.plannerProcess) {
+      this.plannerProcess = null
+    }
+    
+    // Start editor process with the stored prompt
+    const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+    const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
+    
+    this.editorProcess = spawn(nodeExecutable, [
+      '--no-warnings',
+      '--enable-source-maps',
+      claudePath,
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--dangerously-skip-permissions'
+    ], {
+      cwd: this.worktreePath,
+      env: { 
+        ...process.env, 
+        PATH: this.getEnhancedPath(),
+        FORCE_COLOR: '0',
+        NO_COLOR: '1'
+      },
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    if (!this.editorProcess.pid) {
+      throw new Error('Failed to start editor process')
+    }
+    
+    console.log('Editor process started with PID:', this.editorProcess.pid)
+    this.emit('editorPid', this.editorProcess.pid)
+    this.setupEditorHandlers()
+    
+    // Send prompt via stdin
+    if (this.editorProcess.stdin) {
+      this.editorProcess.stdin.write(this.editorPrompt + '\n')
+      this.editorProcess.stdin.end()
+    }
+    
+    // Continue with sequential execution
+    try {
+      this.startSequentialExecution(this.worktreePath, this.reviewerPrompt, this.thinkMode)
+    } catch (error) {
+      console.error('Error starting sequential execution:', error)
+      this.emit('output', {
+        type: 'editor',
+        content: `❌ Failed to start reviewer: ${error}`,
+        timestamp: new Date()
+      })
+      this.emit('status', 'failed')
+      // Clean up editor process
+      if (this.editorProcess) {
+        this.editorProcess.kill('SIGTERM')
+        this.editorProcess = null
+      }
+    }
+  }
+
   private getEnhancedPath(): string {
     const PATH = process.env.PATH || ''
     const pathComponents = [

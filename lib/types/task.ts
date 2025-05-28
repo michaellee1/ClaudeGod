@@ -2,13 +2,14 @@ export interface Task {
   id: string
   prompt: string
   status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'merged'
-  phase: 'editor' | 'reviewer' | 'done'
+  phase: 'planner' | 'editor' | 'reviewer' | 'done'
   worktree: string
   repoPath: string
   createdAt: Date
   mergedAt?: Date
   editorPid?: number
   reviewerPid?: number
+  plannerPid?: number
   output: TaskOutput[]
   isSelfModification?: boolean
   commitHash?: string
@@ -27,7 +28,7 @@ export interface PromptCycle {
 export interface TaskOutput {
   id: string
   taskId: string
-  type: 'editor' | 'reviewer'
+  type: 'planner' | 'editor' | 'reviewer'
   content: string
   timestamp: Date
 }
