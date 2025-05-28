@@ -4,6 +4,7 @@ const next = require('next')
 const { WebSocketServer } = require('ws')
 const { mergeProtectionMiddleware } = require('./lib/utils/merge-protection')
 const { runStartupMigrations } = require('./lib/utils/initiative-migration')
+const { yoloModeHandler } = require('./lib/utils/yolo-mode-handler')
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -183,6 +184,10 @@ mergeProtectionMiddleware()
 // Initialize YOLO mode handler
 const { YoloModeHandler } = require('./lib/utils/yolo-mode-handler')
 YoloModeHandler.getInstance()
+
+// Initialize initiative processor (commented out for now - manual start only)
+// const initiativeProcessor = require('./lib/utils/initiative-processor')
+// initiativeProcessor.start()
 
 app.prepare().then(async () => {
   // Run database migrations on startup

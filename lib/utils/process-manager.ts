@@ -320,6 +320,8 @@ Begin with 'git diff'.`
                         content: content.text,
                         timestamp: new Date()
                       })
+                      // Also emit raw output for initiative processing
+                      this.emit('output', content.text)
                     }
                   }
                 } else if (parsed.type === 'tool_use') {

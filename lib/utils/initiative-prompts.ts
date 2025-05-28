@@ -27,13 +27,31 @@ You are helping explore an initiative with the following objective:
 
 ## Output Format
 
-Save your findings to {{outputDir}}/exploration.md with:
+Save your findings to {{outputDir}}/exploration.md with the following structure:
 
-1. **Context**: Brief summary of relevant codebase understanding
-2. **Intermediate Plan**: High-level approach and work breakdown
-3. **Questions**: Numbered list of clarifying questions (5-10 questions)
+```markdown
+# Exploration Results
 
-Focus on understanding the full scope before detailed planning.`;
+## Context
+Brief summary of relevant codebase understanding
+
+## Intermediate Plan
+High-level approach and work breakdown
+
+## Questions
+1. First clarifying question?
+2. Second clarifying question?
+3. Third clarifying question?
+...
+```
+
+Make sure each question:
+- Ends with a question mark (?)
+- Is numbered (1., 2., 3., etc.)
+- Focuses on clarifying design decisions or approach
+- Helps refine the implementation plan
+
+Generate 5-10 focused questions.`;
 
 export const REFINEMENT_PROMPT = `# Initiative Research Preparation Phase
 
@@ -42,13 +60,12 @@ You are preparing research tasks for an initiative with the following objective:
 
 ## Context
 
-The user has answered clarifying questions. Use these answers along with the exploration findings to create focused research tasks.
+The user has answered clarifying questions from the exploration phase. You can find the previous phase files in {{outputDir}}:
+- questions.json - The questions that were asked
+- answers.json - The user's answers to those questions
 
-**Exploration Summary**:
-{{explorationSummary}}
-
-**Questions and Answers**:
-{{questionsAndAnswers}}
+**User Answers**:
+{{answers}}
 
 ## Your Task
 
@@ -66,7 +83,7 @@ Each research task should:
 
 ## Output Format
 
-Save your research tasks to {{outputDir}}/research-tasks.md with:
+Save your research tasks to {{outputDir}}/research-needs.md with:
 
 \`\`\`markdown
 # Research Tasks for Initiative {{id}}
@@ -94,16 +111,14 @@ You are creating detailed implementation tasks for an initiative with the follow
 
 ## Context
 
-Use the exploration findings, user answers, and research results to create a comprehensive implementation plan.
-
-**Exploration Summary**:
-{{explorationSummary}}
-
-**Questions and Answers**:
-{{questionsAndAnswers}}
+All previous phase outputs are available in {{outputDir}}:
+- questions.json - The questions generated during exploration
+- answers.json - User's answers to those questions  
+- research-needs.md - The research needs identified
+- research.md - The research findings provided by the user
 
 **Research Findings**:
-{{researchFindings}}
+{{research}}
 
 ## Your Task
 
@@ -119,39 +134,40 @@ Each task should:
 
 ## Output Format
 
-Save your task plan to {{outputDir}}/tasks.md with:
+Generate a JSON file with the following structure and save it to {{outputDir}}/tasks.json:
 
-\`\`\`markdown
-# Implementation Tasks for Initiative {{id}}
-
-## Objective
-{{objective}}
-
-## Implementation Plan
-
-### Phase 1: [Phase Name]
-
-#### Task 1.1: [Specific Task Title]
-**Objective**: Clear description of what this task accomplishes
-**Files to modify**: List specific files that will be changed
-**Changes**: Bullet points of specific changes to make
-**Dependencies**: Any tasks that must be completed first
-**Validation**: How to verify this task is complete
-
-#### Task 1.2: [Specific Task Title]
-...
-
-### Phase 2: [Phase Name]
-...
+\`\`\`json
+{
+  "globalContext": "Overall context and approach for all tasks in this initiative",
+  "steps": [
+    {
+      "id": "step-1",
+      "name": "Step Name",
+      "description": "What this step accomplishes",
+      "order": 1,
+      "tasks": [
+        {
+          "id": "task-1-1",
+          "title": "Specific task title",
+          "description": "Detailed description of what this task accomplishes and how",
+          "priority": "high|medium|low",
+          "estimatedEffort": "15-30 minutes",
+          "dependencies": ["task-id-if-any"]
+        }
+      ]
+    }
+  ]
+}
 \`\`\`
 
 ## Important Notes
 
-- Tasks should be numbered hierarchically (1.1, 1.2, 2.1, etc.)
-- Group related tasks into phases
+- Output ONLY the JSON, no markdown wrapper or explanation
+- Group related tasks into logical steps
+- Each step should have 3-8 tasks
+- Total tasks across all steps should not exceed 30
 - Ensure tasks can be executed independently when possible
-- Include validation steps for each task
-- Consider error handling and edge cases`;
+- The globalContext should provide overall guidance for all tasks`;
 
 export const PROMPTS = {
   exploration: EXPLORATION_PROMPT,
