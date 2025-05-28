@@ -270,9 +270,12 @@ class TaskStore {
   }
 
   private broadcastTaskUpdate(taskId: string, task: Task) {
+    console.log(`[TaskStore] Broadcasting task update for ${taskId}, status: ${task.status}`)
     // Broadcast via WebSocket if available
     if (typeof global !== 'undefined' && (global as any).broadcastTaskUpdate) {
       (global as any).broadcastTaskUpdate(taskId, task)
+    } else {
+      console.warn('[TaskStore] broadcastTaskUpdate function not available in global')
     }
   }
 
@@ -732,6 +735,7 @@ ${gitDiff}
     })
     
     processManager.on('status', (status) => {
+      console.log(`[TaskStore] Received status update for task ${task.id}: ${status}`)
       task.status = status
       this.debouncedSave()
       this.broadcastTaskUpdate(task.id, task)

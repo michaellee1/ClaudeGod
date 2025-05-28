@@ -115,15 +115,16 @@ export class ProcessManager extends EventEmitter {
     
     // Handle planning mode
     if (thinkMode === 'planning') {
-      // Start with planning phase
-      this.currentPhase = 'planner'
-      this.emit('phase', 'planner')
-      this.emit('status', 'in_progress')
-      // Create secure temp file path
-      const tempDir = process.env.TMPDIR || '/tmp'
-      this.planFilePath = path.join(tempDir, `claude-task-plan-${taskId}-${Date.now()}.md`)
-      
-      const plannerPrompt = `${prompt}. Ultrathink
+      try {
+        // Start with planning phase
+        this.currentPhase = 'planner'
+        this.emit('phase', 'planner')
+        
+        // Create secure temp file path
+        const tempDir = process.env.TMPDIR || '/tmp'
+        this.planFilePath = path.join(tempDir, `claude-task-plan-${taskId}-${Date.now()}.md`)
+        
+        const plannerPrompt = `${prompt}. Ultrathink
 
 Task: Deeply analyze this task and create a detailed implementation plan.
 
@@ -149,9 +150,9 @@ The plan should include:
 - More detail for complex parts
 
 Be thorough but concise. Focus on actionable steps.`
-      
-      // Store prompts for later phases
-      this.editorPrompt = `${prompt}. Ultrathink
+        
+        // Store prompts for later phases
+        this.editorPrompt = `${prompt}. Ultrathink
 
 IMPORTANT: A detailed plan has been created at ${this.planFilePath}
 
@@ -162,8 +163,8 @@ IMPORTANT: A detailed plan has been created at ${this.planFilePath}
 5. The plan provides guidance but you should use your judgment
 
 Original task: "${prompt}"`
-      
-      this.reviewerPrompt = `Task: "${prompt}"
+        
+        this.reviewerPrompt = `Task: "${prompt}"
 
 A plan was created at ${this.planFilePath} and implementation was done based on it.
 
@@ -176,16 +177,25 @@ Review the implementation:
 6. Run tests if available
 
 Begin with 'git diff'.`
-      
-      this.thinkMode = thinkMode
-      
-      // Start planner process
-      await this.startPlannerProcess(worktreePath, plannerPrompt)
-      
-      // Return early - planner will trigger editor when done
-      return {
-        editorPid: this.plannerProcess?.pid || 0,
-        reviewerPid: 0
+        
+        this.thinkMode = thinkMode
+        
+        // Start planner process
+        await this.startPlannerProcess(worktreePath, plannerPrompt)
+        
+        // Emit status after successful start
+        console.log(`[ProcessManager ${taskId}] Emitting status: in_progress for planning mode`)
+        this.emit('status', 'in_progress')
+        
+        // Return early - planner will trigger editor when done
+        return {
+          editorPid: this.plannerProcess?.pid || 0,
+          reviewerPid: 0
+        }
+      } catch (error) {
+        console.error('Error in planning mode:', error)
+        this.emit('status', 'failed')
+        throw error
       }
     }
     
