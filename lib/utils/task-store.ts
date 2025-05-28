@@ -20,12 +20,17 @@ class TaskStore {
   private processStateFile: string = path.join(os.homedir(), '.claude-god-data', 'process-state.json')
   private readonly MAX_CONCURRENT_TASKS = 10
   private saveDebounceTimer: NodeJS.Timeout | null = null
+  private taskMonitorInterval: NodeJS.Timeout | null = null
+  private readonly HUNG_TASK_TIMEOUT = 600000 // 10 minutes
+  private readonly HEARTBEAT_CHECK_INTERVAL = 60000 // 1 minute
+  private readonly MAX_RETRY_COUNT = 1
 
   constructor() {
     this.initializeDataDir()
     this.loadConfig()
     this.loadTasks()
     this.recoverProcessManagers()
+    this.startTaskMonitoring()
   }
 
   private async initializeDataDir() {
@@ -59,6 +64,12 @@ class TaskStore {
         task.createdAt = new Date(task.createdAt)
         if (task.mergedAt) {
           task.mergedAt = new Date(task.mergedAt)
+        }
+        if (task.lastActivityTime) {
+          task.lastActivityTime = new Date(task.lastActivityTime)
+        }
+        if (task.lastHeartbeatTime) {
+          task.lastHeartbeatTime = new Date(task.lastHeartbeatTime)
         }
         this.tasks.set(task.id, task)
         
@@ -381,6 +392,9 @@ class TaskStore {
       output: [],
       isSelfModification,
       thinkMode,
+      retryCount: 0,
+      lastActivityTime: new Date(),
+      lastHeartbeatTime: new Date(),
       // Add initiative parameters if provided
       ...(initiativeParams?.initiativeId && { initiativeId: initiativeParams.initiativeId }),
       ...(initiativeParams?.stepNumber !== undefined && { stepNumber: initiativeParams.stepNumber }),
@@ -461,6 +475,12 @@ class TaskStore {
     }
     
     outputs.push(newOutput)
+    
+    // Update last activity time
+    const task = this.tasks.get(taskId)
+    if (task) {
+      task.lastActivityTime = new Date()
+    }
     
     // Limit output history to prevent unbounded growth
     const MAX_OUTPUTS = 1000
@@ -765,6 +785,153 @@ ${gitDiff}
     console.log('All tasks removed successfully')
   }
 
+  private startTaskMonitoring() {
+    // Monitor tasks for hung state and WebSocket reconnection
+    this.taskMonitorInterval = setInterval(() => {
+      const now = new Date()
+      
+      for (const [taskId, task] of this.tasks) {
+        // Skip finished/failed/merged tasks
+        if (task.status === 'finished' || task.status === 'failed' || task.status === 'merged') {
+          continue
+        }
+        
+        // Check for hung tasks (no activity for 10 minutes)
+        if (task.lastActivityTime && (now.getTime() - task.lastActivityTime.getTime()) > this.HUNG_TASK_TIMEOUT) {
+          console.log(`[TaskStore] Task ${taskId} detected as hung - no activity for 10 minutes`)
+          this.handleHungTask(taskId)
+        }
+        
+        // Check for WebSocket reconnection need (no heartbeat for 1 minute)
+        if (task.lastHeartbeatTime && (now.getTime() - task.lastHeartbeatTime.getTime()) > this.HEARTBEAT_CHECK_INTERVAL) {
+          console.log(`[TaskStore] Task ${taskId} needs WebSocket reconnection - no heartbeat for 1 minute`)
+          this.triggerWebSocketReconnection(taskId)
+        }
+      }
+    }, 10000) // Check every 10 seconds
+  }
+
+  private async handleHungTask(taskId: string) {
+    const task = this.tasks.get(taskId)
+    if (!task) return
+    
+    console.log(`[TaskStore] Marking task ${taskId} as failed due to hung state`)
+    
+    // Add system output
+    this.addOutput(taskId, {
+      type: 'system',
+      content: '❌ Task marked as failed - no activity for 10 minutes',
+      timestamp: new Date()
+    })
+    
+    // Update task status
+    task.status = 'failed'
+    await this.saveTasksImmediately()
+    this.broadcastTaskUpdate(taskId, task)
+    
+    // Clean up process manager
+    const processManager = this.processManagers.get(taskId)
+    if (processManager) {
+      processManager.stopProcesses()
+      this.processManagers.delete(taskId)
+    }
+  }
+
+  private triggerWebSocketReconnection(taskId: string) {
+    // Broadcast reconnection request
+    if (typeof global !== 'undefined' && (global as any).triggerWebSocketReconnection) {
+      (global as any).triggerWebSocketReconnection(taskId)
+    }
+    
+    // Update heartbeat time to prevent repeated triggers
+    const task = this.tasks.get(taskId)
+    if (task) {
+      task.lastHeartbeatTime = new Date()
+    }
+  }
+
+  private async retryTask(taskId: string) {
+    const task = this.tasks.get(taskId)
+    if (!task || task.retryCount === undefined) return
+    
+    // Clean up existing process manager
+    const oldProcessManager = this.processManagers.get(taskId)
+    if (oldProcessManager) {
+      oldProcessManager.stopProcesses()
+      this.processManagers.delete(taskId)
+    }
+    
+    // Increment retry count
+    task.retryCount++
+    
+    // Add retry message
+    this.addOutput(taskId, {
+      type: 'system',
+      content: `🔄 Retrying task (attempt ${task.retryCount + 1}/${this.MAX_RETRY_COUNT + 1})`,
+      timestamp: new Date()
+    })
+    
+    // Reset task status
+    task.status = 'starting'
+    task.phase = task.thinkMode === 'planning' ? 'planner' : 'editor'
+    delete task.editorPid
+    delete task.reviewerPid
+    delete task.plannerPid
+    task.lastActivityTime = new Date()
+    task.lastHeartbeatTime = new Date()
+    
+    await this.saveTasksImmediately()
+    this.broadcastTaskUpdate(taskId, task)
+    
+    // Create new process manager and restart
+    const processManager = new ProcessManager(taskId, task.worktree, task.repoPath)
+    this.processManagers.set(taskId, processManager)
+    this.setupProcessManagerEvents(processManager, task)
+    
+    try {
+      const pids = await processManager.startProcesses(
+        task.worktree,
+        task.prompt,
+        taskId,
+        task.thinkMode
+      )
+      
+      if (task.thinkMode === 'planning') {
+        task.plannerPid = pids.plannerPid
+      } else {
+        task.editorPid = pids.editorPid
+        task.reviewerPid = pids.reviewerPid
+      }
+      await this.saveTasks()
+      this.broadcastTaskUpdate(taskId, task)
+    } catch (error) {
+      console.error(`[TaskStore] Failed to retry task ${taskId}:`, error)
+      task.status = 'failed'
+      await this.saveTasksImmediately()
+      this.broadcastTaskUpdate(taskId, task)
+    }
+  }
+
+  // Update heartbeat when receiving WebSocket messages
+  updateTaskHeartbeat(taskId: string) {
+    const task = this.tasks.get(taskId)
+    if (task) {
+      task.lastHeartbeatTime = new Date()
+    }
+  }
+
+  // Cleanup method for graceful shutdown
+  cleanup() {
+    if (this.taskMonitorInterval) {
+      clearInterval(this.taskMonitorInterval)
+      this.taskMonitorInterval = null
+    }
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer)
+      this.saveDebounceTimer = null
+    }
+  }
+
   private setupProcessManagerEvents(processManager: ProcessManager, task: Task) {
     processManager.on('output', (output) => {
       this.addOutput(task.id, output)
@@ -773,6 +940,14 @@ ${gitDiff}
     processManager.on('status', async (status) => {
       console.log(`[TaskStore] Received status update for task ${task.id}: ${status}`)
       task.status = status
+      
+      // Handle failure status for retry logic
+      if (status === 'failed' && task.retryCount !== undefined && task.retryCount < this.MAX_RETRY_COUNT) {
+        console.log(`[TaskStore] Task ${task.id} failed, attempting retry ${task.retryCount + 1}/${this.MAX_RETRY_COUNT}`)
+        await this.retryTask(task.id)
+        return
+      }
+      
       // Use immediate save for critical status changes
       if (status === 'finished' || status === 'failed' || status === 'merged') {
         await this.saveTasksImmediately()

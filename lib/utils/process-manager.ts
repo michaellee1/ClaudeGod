@@ -118,7 +118,7 @@ export class ProcessManager extends EventEmitter {
     prompt: string,
     taskId: string,
     thinkMode?: string
-  ): Promise<{ editorPid: number, reviewerPid: number }> {
+  ): Promise<{ editorPid: number, reviewerPid: number, plannerPid?: number }> {
     this.emit('status', 'starting')
     
     // Handle planning mode
@@ -197,8 +197,9 @@ Begin with 'git diff'.`
         
         // Return early - planner will trigger editor when done
         return {
-          editorPid: this.plannerProcess?.pid || 0,
-          reviewerPid: 0
+          editorPid: 0,
+          reviewerPid: 0,
+          plannerPid: this.plannerProcess?.pid || 0
         }
       } catch (error) {
         console.error('Error in planning mode:', error)

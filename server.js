@@ -146,6 +146,28 @@ function cleanupInitiativeConnections(initiativeId) {
   }
 }
 
+// WebSocket reconnection trigger
+function triggerWebSocketReconnection(taskId) {
+  console.log(`[Server] Triggering WebSocket reconnection for task ${taskId}`)
+  const connections = taskConnections.get(taskId)
+  if (connections) {
+    const message = JSON.stringify({
+      type: 'reconnect-required',
+      taskId,
+      reason: 'No activity detected'
+    })
+    connections.forEach((client) => {
+      if (client.readyState === 1) { // WebSocket.OPEN
+        try {
+          client.send(message)
+        } catch (error) {
+          console.error(`Error sending reconnection request for task ${taskId}:`, error)
+        }
+      }
+    })
+  }
+}
+
 // Export functions for use in other modules
 global.broadcastTaskUpdate = broadcastTaskUpdate
 global.broadcastTaskOutput = broadcastTaskOutput
@@ -153,6 +175,7 @@ global.cleanupTaskConnections = cleanupTaskConnections
 global.broadcastInitiativeUpdate = broadcastInitiativeUpdate
 global.broadcastInitiativeOutput = broadcastInitiativeOutput
 global.cleanupInitiativeConnections = cleanupInitiativeConnections
+global.triggerWebSocketReconnection = triggerWebSocketReconnection
 
 // Enable merge protection
 mergeProtectionMiddleware()
@@ -214,6 +237,14 @@ app.prepare().then(async () => {
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message.toString())
+        
+        // Update heartbeat for task-specific messages
+        if (data.taskId) {
+          const { taskStore } = require('./lib/utils/task-store')
+          if (taskStore.updateTaskHeartbeat) {
+            taskStore.updateTaskHeartbeat(data.taskId)
+          }
+        }
         
         if (data.type === 'subscribe' && data.taskId && /^[a-zA-Z0-9-_]+$/.test(data.taskId)) {
           // Subscribe to a specific task

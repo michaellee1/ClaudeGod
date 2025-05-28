@@ -12,6 +12,8 @@ export function useWebSocket(url: string, taskId?: string) {
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttempts = useRef(0)
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastActivityRef = useRef<Date>(new Date())
 
   const connect = useCallback(() => {
     try {
@@ -51,6 +53,14 @@ export function useWebSocket(url: string, taskId?: string) {
         try {
           const message = JSON.parse(event.data) as WebSocketMessage
           setLastMessage(message)
+          lastActivityRef.current = new Date()
+          
+          // Handle reconnect-required message
+          if (message.type === 'reconnect-required' && message.taskId === taskId) {
+            console.log('Received reconnect request from server')
+            disconnect()
+            setTimeout(() => connect(), 100)
+          }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error)
         }
@@ -112,15 +122,39 @@ export function useWebSocket(url: string, taskId?: string) {
   const sendMessage = useCallback((message: any) => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify(message))
+      lastActivityRef.current = new Date()
     }
   }, [])
 
+  // Start activity monitoring
+  const startActivityMonitoring = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current)
+    }
+    
+    heartbeatIntervalRef.current = setInterval(() => {
+      const now = new Date()
+      const timeSinceLastActivity = now.getTime() - lastActivityRef.current.getTime()
+      
+      // If no activity for 1 minute, try to reconnect
+      if (timeSinceLastActivity > 60000 && ws.current && ws.current.readyState === WebSocket.OPEN) {
+        console.log('No WebSocket activity for 1 minute, reconnecting...')
+        disconnect()
+        setTimeout(() => connect(), 100)
+      }
+    }, 10000) // Check every 10 seconds
+  }, [connect, disconnect])
+
   useEffect(() => {
     connect()
+    startActivityMonitoring()
     return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
+      }
       disconnect()
     }
-  }, [connect, disconnect])
+  }, [connect, disconnect, startActivityMonitoring])
 
   return {
     isConnected,

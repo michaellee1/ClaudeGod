@@ -20,6 +20,9 @@ export interface Task {
   stepNumber?: number
   globalContext?: string
   needsRecovery?: boolean
+  retryCount?: number
+  lastActivityTime?: Date
+  lastHeartbeatTime?: Date
 }
 
 export interface PromptCycle {
