@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react'
+import { InitiativeValidationSkeleton } from '@/components/InitiativeSkeletons'
 
 interface ValidationError {
   field: string
@@ -76,12 +77,7 @@ export function InitiativeValidation({
   }, [initiativeId, phase])
 
   if (isLoading) {
-    return (
-      <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
-        <span>Validating...</span>
-      </div>
-    )
+    return <InitiativeValidationSkeleton />
   }
 
   if (error) {

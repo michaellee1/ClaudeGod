@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import type { Initiative } from '@/lib/utils/initiative-store'
 import { useInitiativeWebSocket } from '@/lib/hooks/useInitiativeWebSocket'
@@ -38,8 +38,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Eye, Trash2, CheckCircle2, Plus, Loader2, HelpCircle } from 'lucide-react'
+import { Eye, Trash2, CheckCircle2, Plus, Loader2, HelpCircle, Search, Filter } from 'lucide-react'
 import { InitiativeHelpModal } from '@/components/InitiativeHelpModal'
+import { InitiativeListSkeleton } from '@/components/InitiativeSkeletons'
+import { InitiativesEmptyState } from '@/components/EmptyStates'
+import { useDebounce } from '@/lib/hooks/useDebounce'
 
 // Map InitiativeStore's phase to our status for display
 const getStatusFromPhase = (phase: string): string => {
@@ -91,6 +94,9 @@ export default function InitiativesPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [deleteInitiativeId, setDeleteInitiativeId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
   // WebSocket for real-time updates
   const { lastMessage } = useInitiativeWebSocket('/ws', {
@@ -217,12 +223,46 @@ export default function InitiativesPage() {
     }
   }
 
+  // Filter initiatives based on search and status - memoized for performance
+  const filteredInitiatives = useMemo(() => {
+    return initiatives.filter(initiative => {
+      // Search filter
+      const matchesSearch = debouncedSearchQuery === '' || 
+        initiative.objective.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        initiative.id.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+      
+      // Status filter
+      const status = getStatusFromPhase(initiative.phase)
+      const isCompleted = initiative.phase === 'ready' || !initiative.isActive
+      const matchesStatus = statusFilter === 'all' || 
+        (statusFilter === 'active' && !isCompleted) ||
+        (statusFilter === 'completed' && isCompleted) ||
+        (statusFilter === status)
+      
+      return matchesSearch && matchesStatus
+    })
+  }, [initiatives, debouncedSearchQuery, statusFilter])
+
   if (isLoading) {
     return (
       <div className="w-full px-4 py-8">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle>Initiatives</CardTitle>
+                </div>
+                <CardDescription>
+                  Manage your development initiatives and track their progress
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <InitiativeListSkeleton />
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -272,15 +312,109 @@ export default function InitiativesPage() {
             </Alert>
           )}
 
+          {/* Search and Filter Bar */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search initiatives..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                aria-label="Search initiatives"
+              />
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-md border border-input bg-background text-sm"
+                aria-label="Filter by status"
+              >
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+                <option value="exploring">Exploring</option>
+                <option value="awaiting_answers">Awaiting Answers</option>
+                <option value="researching">Researching</option>
+                <option value="planning">Planning</option>
+              </select>
+            </div>
+          </div>
+
           {initiatives.length === 0 ? (
+            <InitiativesEmptyState onCreateClick={() => setIsCreateDialogOpen(true)} />
+          ) : filteredInitiatives.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">No initiatives created yet</p>
-              <Button onClick={() => setIsCreateDialogOpen(true)}>
-                Create your first initiative
+              <p className="text-muted-foreground mb-4">No initiatives match your search criteria</p>
+              <Button variant="outline" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}>
+                Clear filters
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              {/* Mobile view - Cards */}
+              <div className="block sm:hidden space-y-4">
+                {filteredInitiatives.map((initiative) => {
+                  const status = getStatusFromPhase(initiative.phase)
+                  const isCompleted = initiative.phase === 'ready' || !initiative.isActive
+                  
+                  return (
+                    <Card key={initiative.id} className="p-4">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-medium text-sm line-clamp-2 flex-1">
+                            {initiative.objective}
+                          </h3>
+                          <Badge variant={getStatusBadgeVariant(isCompleted ? 'completed' : status)} className="text-xs">
+                            {isCompleted ? 'Done' : status.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                          </Badge>
+                        </div>
+                        
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{formatPhase(initiative.phase)}</span>
+                          <span>{new Date(initiative.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        
+                        <div className="flex items-center justify-end gap-1 pt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                          >
+                            <Link href={`/initiatives/${initiative.id}`} aria-label={`View initiative: ${initiative.objective}`}>
+                              <Eye className="h-4 w-4 mr-1" aria-hidden="true" />
+                              View
+                            </Link>
+                          </Button>
+                          {!isCompleted && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleCompleteInitiative(initiative.id)}
+                              aria-label={`Complete initiative: ${initiative.objective}`}
+                            >
+                              <CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden="true" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteInitiativeId(initiative.id)}
+                            aria-label={`Delete initiative: ${initiative.objective}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+              
+              {/* Desktop view - Table */}
+              <div className="hidden sm:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -316,7 +450,7 @@ export default function InitiativesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {initiatives.map((initiative) => {
+                  {filteredInitiatives.map((initiative) => {
                     const status = getStatusFromPhase(initiative.phase)
                     const isCompleted = initiative.phase === 'ready' || !initiative.isActive
 
@@ -355,8 +489,8 @@ export default function InitiativesPage() {
                               title="View Initiative"
                               asChild
                             >
-                              <Link href={`/initiatives/${initiative.id}`}>
-                                <Eye className="h-4 w-4" />
+                              <Link href={`/initiatives/${initiative.id}`} aria-label={`View initiative: ${initiative.objective}`}>
+                                <Eye className="h-4 w-4" aria-hidden="true" />
                               </Link>
                             </Button>
                             {!isCompleted && (
@@ -365,8 +499,9 @@ export default function InitiativesPage() {
                                 size="icon"
                                 title="Complete Initiative"
                                 onClick={() => handleCompleteInitiative(initiative.id)}
+                                aria-label={`Complete initiative: ${initiative.objective}`}
                               >
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                <CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden="true" />
                               </Button>
                             )}
                             <Button
@@ -374,8 +509,9 @@ export default function InitiativesPage() {
                               size="icon"
                               title="Delete Initiative"
                               onClick={() => setDeleteInitiativeId(initiative.id)}
+                              aria-label={`Delete initiative: ${initiative.objective}`}
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
                             </Button>
                           </div>
                         </TableCell>
@@ -385,6 +521,7 @@ export default function InitiativesPage() {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
         </CardContent>
       </Card>

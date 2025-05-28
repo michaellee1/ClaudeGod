@@ -17,6 +17,8 @@ import { InitiativeValidation, InlineValidation } from '@/components/InitiativeV
 import { VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
 import { HelpCircle } from 'lucide-react'
 import { InitiativeHelpModal } from '@/components/InitiativeHelpModal'
+import { InitiativeDetailSkeleton } from '@/components/InitiativeSkeletons'
+import { QuestionsEmptyState, TasksEmptyState, ResearchEmptyState, OutputEmptyState } from '@/components/EmptyStates'
 
 export default function InitiativeDetail() {
   const params = useParams()
@@ -477,12 +479,8 @@ export default function InitiativeDetail() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto p-8">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Loading initiative...</p>
-          </CardContent>
-        </Card>
+      <div className="container mx-auto p-4 sm:p-8">
+        <InitiativeDetailSkeleton />
       </div>
     )
   }
@@ -644,11 +642,11 @@ export default function InitiativeDetail() {
         <TabsContent value="output" className="space-y-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-xs max-h-[600px] overflow-y-auto">
-                {outputs.length === 0 ? (
-                  <p className="text-gray-500">No output yet...</p>
-                ) : (
-                  outputs.map((output, index) => (
+              {outputs.length === 0 ? (
+                <OutputEmptyState />
+              ) : (
+                <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-xs max-h-[600px] overflow-y-auto">
+                  {outputs.map((output, index) => (
                     <div key={index} className="mb-2">
                       <span className={`font-bold ${
                         output.type === 'error' ? 'text-red-400' :
@@ -664,10 +662,10 @@ export default function InitiativeDetail() {
                       </span>
                       <pre className="whitespace-pre-wrap mt-1">{output.content}</pre>
                     </div>
-                  ))
-                )}
-                <div ref={outputEndRef} />
-              </div>
+                  ))}
+                  <div ref={outputEndRef} />
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
