@@ -115,11 +115,20 @@ class TaskStore {
 
   private async saveTasks() {
     try {
+      // Create backup before overwriting (if file exists)
+      try {
+        const backupPath = this.tasksFile + '.backup'
+        await fs.copyFile(this.tasksFile, backupPath)
+      } catch (error) {
+        // Ignore if file doesn't exist yet
+      }
+      
       // Convert Map to array for JSON serialization
       const tasksArray = Array.from(this.tasks.values())
       await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
     } catch (error) {
       console.error('Error saving tasks:', error)
+      throw error // Re-throw to ensure callers know save failed
     }
   }
 
@@ -269,6 +278,30 @@ class TaskStore {
     }, 1000)
   }
 
+  // Immediate save method for critical operations (merge, delete, etc)
+  private async saveTasksImmediately() {
+    // Clear any pending debounced saves
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer)
+    }
+    
+    try {
+      await this.saveTasks()
+      console.log('[TaskStore] Tasks saved immediately')
+    } catch (error) {
+      console.error('[TaskStore] Error saving tasks immediately:', error)
+      // Retry once
+      try {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        await this.saveTasks()
+        console.log('[TaskStore] Tasks saved on retry')
+      } catch (retryError) {
+        console.error('[TaskStore] Failed to save tasks even after retry:', retryError)
+        throw retryError
+      }
+    }
+  }
+
   private broadcastTaskUpdate(taskId: string, task: Task) {
     console.log(`[TaskStore] Broadcasting task update for ${taskId}, status: ${task.status}`)
     // Broadcast via WebSocket if available
@@ -356,7 +389,8 @@ class TaskStore {
     
     this.tasks.set(taskId, task)
     this.outputs.set(taskId, [])
-    this.debouncedSave() // Save after creating task
+    // Use immediate save for task creation to prevent loss
+    await this.saveTasksImmediately()
     this.broadcastTaskUpdate(taskId, task)
     
     const processManager = new ProcessManager(taskId, worktreePath, this.repoPath)
@@ -509,7 +543,8 @@ class TaskStore {
     // Mark task as merged instead of removing it
     task.status = 'merged' as any
     task.mergedAt = new Date()
-    await this.saveTasks()
+    // CRITICAL: Use immediate save for merge operations to prevent data loss
+    await this.saveTasksImmediately()
     this.broadcastTaskUpdate(taskId, task)
     
     // For self-modification tasks, add a success message
@@ -696,7 +731,8 @@ ${gitDiff}
     
     this.tasks.delete(taskId)
     this.outputs.delete(taskId)
-    this.debouncedSave() // Save after removing task
+    // Use immediate save when deleting tasks
+    await this.saveTasksImmediately()
     this.cleanupTaskConnections(taskId)
   }
 
@@ -734,10 +770,15 @@ ${gitDiff}
       this.addOutput(task.id, output)
     })
     
-    processManager.on('status', (status) => {
+    processManager.on('status', async (status) => {
       console.log(`[TaskStore] Received status update for task ${task.id}: ${status}`)
       task.status = status
-      this.debouncedSave()
+      // Use immediate save for critical status changes
+      if (status === 'finished' || status === 'failed' || status === 'merged') {
+        await this.saveTasksImmediately()
+      } else {
+        this.debouncedSave()
+      }
       this.broadcastTaskUpdate(task.id, task)
     })
     
@@ -765,7 +806,7 @@ ${gitDiff}
       this.broadcastTaskUpdate(task.id, task)
     })
     
-    processManager.on('error', (error: Error) => {
+    processManager.on('error', async (error: Error) => {
       console.error(`Process error for task ${task.id}:`, error)
       this.addOutput(task.id, {
         type: 'system',
@@ -776,7 +817,8 @@ ${gitDiff}
       // Don't automatically mark as failed for SIGTERM errors
       if (!error.message.includes('SIGTERM')) {
         task.status = 'failed'
-        this.debouncedSave()
+        // Use immediate save for failure status
+        await this.saveTasksImmediately()
         this.broadcastTaskUpdate(task.id, task)
       }
     })
@@ -793,6 +835,8 @@ ${gitDiff}
     processManager.on('completed', async (shouldAutoCommit: boolean) => {
       task.status = 'finished'
       task.phase = 'done'
+      // Save immediately when task completes
+      await this.saveTasksImmediately()
       
       // Auto-commit if reviewer completed successfully
       if (shouldAutoCommit) {
