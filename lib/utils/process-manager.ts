@@ -47,17 +47,16 @@ export class ProcessManager extends EventEmitter {
     this.emit('status', 'starting')
     
     const editorPrompt = prompt
-    const reviewerPrompt = `Another AI agent was asked to implement the following: "${prompt}"
+    const reviewerPrompt = `Task: "${prompt}"
 
-Please review their implementation by:
-1. First, run 'git diff' to see all changes made by the other agent
-2. Carefully review each change to ensure it correctly implements the requirements
-3. Check for any bugs, security issues, or code quality problems
-4. Verify that only necessary changes were made (no extraneous modifications)
-5. If you find any issues, fix them directly in the code
-6. After making fixes, run the tests if applicable to ensure everything works
+Review the implementation:
+1. Run 'git diff' to see changes
+2. Verify requirements are met
+3. Check for bugs, security issues, code quality
+4. Fix any issues found
+5. Run tests if available
 
-Start by running 'git diff' to see what was changed.`
+Begin with 'git diff'.`
 
     try {
       // Start editor process first
@@ -170,7 +169,7 @@ Start by running 'git diff' to see what was changed.`
                     switch (parsed.name) {
                       case 'Read':
                         if (parsed.input.file_path) {
-                          toolInfo = `[Reading file: ${parsed.input.file_path}]`
+                          toolInfo = `📖 Reading: ${parsed.input.file_path}`
                           if (parsed.input.offset || parsed.input.limit) {
                             toolInfo += ` (lines ${parsed.input.offset || 0}-${(parsed.input.offset || 0) + (parsed.input.limit || 'end')})`
                           }
@@ -178,26 +177,22 @@ Start by running 'git diff' to see what was changed.`
                         break
                       case 'Edit':
                         if (parsed.input.file_path) {
-                          toolInfo = `[Editing file: ${parsed.input.file_path}]`
-                          if (parsed.input.old_string) {
-                            const preview = parsed.input.old_string.substring(0, 50).replace(/\n/g, '\\n')
-                            toolInfo += ` - replacing "${preview}${parsed.input.old_string.length > 50 ? '...' : ''}"`
-                          }
+                          toolInfo = `✏️ Editing: ${parsed.input.file_path}`
                         }
                         break
                       case 'MultiEdit':
                         if (parsed.input.file_path && parsed.input.edits) {
-                          toolInfo = `[Multi-editing file: ${parsed.input.file_path}] - ${parsed.input.edits.length} edits`
+                          toolInfo = `✏️ Multi-edit: ${parsed.input.file_path} (${parsed.input.edits.length} changes)`
                         }
                         break
                       case 'Write':
                         if (parsed.input.file_path) {
-                          toolInfo = `[Writing file: ${parsed.input.file_path}]`
+                          toolInfo = `💾 Writing: ${parsed.input.file_path}`
                         }
                         break
                       case 'Grep':
                         if (parsed.input.pattern) {
-                          toolInfo = `[Searching for: "${parsed.input.pattern}"]`
+                          toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
                           if (parsed.input.path) {
                             toolInfo += ` in ${parsed.input.path}`
                           }
@@ -208,7 +203,7 @@ Start by running 'git diff' to see what was changed.`
                         break
                       case 'Glob':
                         if (parsed.input.pattern) {
-                          toolInfo = `[Finding files: ${parsed.input.pattern}]`
+                          toolInfo = `📁 Finding: ${parsed.input.pattern}`
                           if (parsed.input.path) {
                             toolInfo += ` in ${parsed.input.path}`
                           }
@@ -217,12 +212,12 @@ Start by running 'git diff' to see what was changed.`
                       case 'Bash':
                         if (parsed.input.command) {
                           const cmd = parsed.input.command.substring(0, 80)
-                          toolInfo = `[Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}]`
+                          toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
                         }
                         break
                       case 'LS':
                         if (parsed.input.path) {
-                          toolInfo = `[Listing: ${parsed.input.path}]`
+                          toolInfo = `📂 Listing: ${parsed.input.path}`
                         }
                         break
                     }
@@ -237,7 +232,7 @@ Start by running 'git diff' to see what was changed.`
                   // Log initialization
                   this.emit('output', {
                     type: 'editor',
-                    content: `[System: Initialized with tools: ${parsed.tools?.join(', ') || 'none'}]`,
+                    content: `🚀 Started`,
                     timestamp: new Date()
                   })
                 } else if (parsed.type === 'tool_result') {
@@ -299,7 +294,7 @@ Start by running 'git diff' to see what was changed.`
         console.log('Editor process error:', error)
         this.emit('output', {
           type: 'editor',
-          content: `PROCESS ERROR: ${error.message}`,
+          content: `❌ Error: ${error.message}`,
           timestamp: new Date()
         })
         this.emit('status', 'failed')
@@ -311,14 +306,14 @@ Start by running 'git diff' to see what was changed.`
         
         let exitMessage: string
         if (code === 0) {
-          exitMessage = `Process completed successfully (code: ${code})`
+          exitMessage = `✓ Completed successfully`
         } else if (code === 143 && !this.isShuttingDown) {
-          exitMessage = `Process terminated (SIGTERM). This may be due to timeout or system resource limits.`
+          exitMessage = `⚠️ Terminated (timeout or resource limit)`
           this.emit('error', new Error(exitMessage))
         } else if (!this.isShuttingDown) {
-          exitMessage = `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+          exitMessage = `❌ Failed (exit code: ${code})`
         } else {
-          exitMessage = `Process stopped (code: ${code})`
+          exitMessage = `Stopped`
         }
         
         this.emit('output', {
@@ -383,7 +378,7 @@ Start by running 'git diff' to see what was changed.`
                   switch (toolName) {
                     case 'Read':
                       if (parsed.input.file_path) {
-                        toolInfo = `[Reading file: ${parsed.input.file_path}]`
+                        toolInfo = `📖 Reading: ${parsed.input.file_path}`
                         if (parsed.input.offset || parsed.input.limit) {
                           toolInfo += ` (lines ${parsed.input.offset || 0}-${(parsed.input.offset || 0) + (parsed.input.limit || 'end')})`
                         }
@@ -391,41 +386,33 @@ Start by running 'git diff' to see what was changed.`
                       break
                     case 'Edit':
                       if (parsed.input.file_path) {
-                        toolInfo = `[Editing file: ${parsed.input.file_path}]`
-                        if (parsed.input.old_string && parsed.input.new_string) {
-                          const oldPreview = parsed.input.old_string.substring(0, 50).replace(/\n/g, '\\n')
-                          const newPreview = parsed.input.new_string.substring(0, 50).replace(/\n/g, '\\n')
-                          toolInfo += ` (replacing "${oldPreview}${parsed.input.old_string.length > 50 ? '...' : ''}" with "${newPreview}${parsed.input.new_string.length > 50 ? '...' : ''}")`
-                        }
+                        toolInfo = `✏️ Editing: ${parsed.input.file_path}`
                       }
                       break
                     case 'MultiEdit':
                       if (parsed.input.file_path && parsed.input.edits) {
-                        toolInfo = `[Multi-editing file: ${parsed.input.file_path}] (${parsed.input.edits.length} edits)`
+                        toolInfo = `✏️ Multi-edit: ${parsed.input.file_path} (${parsed.input.edits.length} changes)`
                       }
                       break
                     case 'Write':
                       if (parsed.input.file_path) {
-                        toolInfo = `[Writing file: ${parsed.input.file_path}]`
-                        if (parsed.input.content) {
-                          toolInfo += ` (${parsed.input.content.length} characters)`
-                        }
+                        toolInfo = `💾 Writing: ${parsed.input.file_path}`
                       }
                       break
                     case 'Grep':
                       if (parsed.input.pattern) {
-                        toolInfo = `[Searching for pattern: "${parsed.input.pattern}"]`
+                        toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
                         if (parsed.input.path) {
                           toolInfo += ` in ${parsed.input.path}`
                         }
                         if (parsed.input.include) {
-                          toolInfo += ` (files matching ${parsed.input.include})`
+                          toolInfo += ` (${parsed.input.include})`
                         }
                       }
                       break
                     case 'Glob':
                       if (parsed.input.pattern) {
-                        toolInfo = `[Finding files matching: ${parsed.input.pattern}]`
+                        toolInfo = `📁 Finding: ${parsed.input.pattern}`
                         if (parsed.input.path) {
                           toolInfo += ` in ${parsed.input.path}`
                         }
@@ -434,12 +421,12 @@ Start by running 'git diff' to see what was changed.`
                     case 'Bash':
                       if (parsed.input.command) {
                         const cmdPreview = parsed.input.command.substring(0, 100)
-                        toolInfo = `[Running command: ${cmdPreview}${parsed.input.command.length > 100 ? '...' : ''}]`
+                        toolInfo = `🖥️ Running: ${cmdPreview}${parsed.input.command.length > 100 ? '...' : ''}`
                       }
                       break
                     case 'LS':
                       if (parsed.input.path) {
-                        toolInfo = `[Listing directory: ${parsed.input.path}]`
+                        toolInfo = `📂 Listing: ${parsed.input.path}`
                       }
                       break
                   }
@@ -453,7 +440,7 @@ Start by running 'git diff' to see what was changed.`
                   // Log initialization
                   this.emit('output', {
                     type: 'reviewer',
-                    content: `[System: Initialized with tools: ${parsed.tools?.join(', ') || 'none'}]`,
+                    content: `🚀 Started`,
                     timestamp: new Date()
                   })
                 } else if (parsed.type === 'tool_result') {
@@ -515,7 +502,7 @@ Start by running 'git diff' to see what was changed.`
         console.log('Reviewer process error:', error)
         this.emit('output', {
           type: 'reviewer',
-          content: `PROCESS ERROR: ${error.message}`,
+          content: `❌ Error: ${error.message}`,
           timestamp: new Date()
         })
         this.emit('status', 'failed')
@@ -527,14 +514,14 @@ Start by running 'git diff' to see what was changed.`
         
         let exitMessage: string
         if (code === 0) {
-          exitMessage = `Process completed successfully (code: ${code})`
+          exitMessage = `✓ Completed successfully`
         } else if (code === 143 && !this.isShuttingDown) {
-          exitMessage = `Process terminated (SIGTERM). This may be due to timeout or system resource limits.`
+          exitMessage = `⚠️ Terminated (timeout or resource limit)`
           this.emit('error', new Error(exitMessage))
         } else if (!this.isShuttingDown) {
-          exitMessage = `Process exited unexpectedly (code: ${code}, signal: ${signal})`
+          exitMessage = `❌ Failed (exit code: ${code})`
         } else {
-          exitMessage = `Process stopped (code: ${code})`
+          exitMessage = `Stopped`
         }
         
         this.emit('output', {
@@ -674,7 +661,7 @@ Start by running 'git diff' to see what was changed.`
 
       // Set up a sanity timeout
       const timeout = setTimeout(() => {
-        console.warn(`${processName} process timed out after 30 minutes`)
+        console.warn(`${processName} timed out after 30 minutes`)
         if (!this.isShuttingDown) {
           this.emit('timeout', { processName, pid: process.pid })
         }
