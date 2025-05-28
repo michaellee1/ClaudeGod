@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Eye, Trash2, CheckCircle2, Plus, Loader2 } from 'lucide-react'
+import { Eye, Trash2, CheckCircle2, Plus, Loader2, HelpCircle } from 'lucide-react'
+import { InitiativeHelpModal } from '@/components/InitiativeHelpModal'
 
 // Map InitiativeStore's phase to our status for display
 const getStatusFromPhase = (phase: string): string => {
@@ -226,20 +228,41 @@ export default function InitiativesPage() {
   }
 
   return (
-    <div className="w-full px-4 py-8">
+    <TooltipProvider>
+      <div className="w-full px-4 py-8">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Initiatives</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Initiatives</CardTitle>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Initiatives help you break down complex objectives into well-planned tasks through a guided workflow.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <CardDescription>
                 Manage your development initiatives and track their progress
               </CardDescription>
             </div>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Initiative
-            </Button>
+            <div className="flex items-center gap-2">
+              <InitiativeHelpModal />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={() => setIsCreateDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Initiative
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Start a new initiative to plan your next feature</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -262,8 +285,32 @@ export default function InitiativesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[40%] min-w-[200px]">Objective</TableHead>
-                    <TableHead className="w-[15%] min-w-[120px]">Status</TableHead>
-                    <TableHead className="w-[15%] min-w-[120px]">Phase</TableHead>
+                    <TableHead className="w-[15%] min-w-[120px]">
+                      <div className="flex items-center gap-1">
+                        Status
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Current processing status of the initiative</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[15%] min-w-[120px]">
+                      <div className="flex items-center gap-1">
+                        Phase
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Current workflow phase (Exploration → Questions → Research → Tasks → Ready)</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableHead>
                     <TableHead className="w-[15%] min-w-[120px]">Created</TableHead>
                     <TableHead className="w-[15%] min-w-[120px] text-right">Actions</TableHead>
                   </TableRow>
@@ -350,6 +397,22 @@ export default function InitiativesPage() {
             <DialogDescription>
               Define a clear objective for your initiative. This will guide the exploration and planning process.
             </DialogDescription>
+            <div className="mt-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">
+                  <p className="mb-2">Tips for good objectives:</p>
+                  <ul className="list-disc list-inside text-sm">
+                    <li>Be specific about what you want to achieve</li>
+                    <li>Include scope and constraints</li>
+                    <li>Focus on a single feature or improvement</li>
+                    <li>Example: "Add user authentication with JWT tokens and email/password login"</li>
+                  </ul>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -418,6 +481,7 @@ export default function InitiativesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }

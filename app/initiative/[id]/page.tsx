@@ -12,8 +12,11 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InitiativeValidation, InlineValidation } from '@/components/InitiativeValidation'
 import { VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
+import { HelpCircle } from 'lucide-react'
+import { InitiativeHelpModal } from '@/components/InitiativeHelpModal'
 
 export default function InitiativeDetail() {
   const params = useParams()
@@ -497,24 +500,42 @@ export default function InitiativeDetail() {
   }
 
   return (
-    <div className="container mx-auto p-4 max-w-6xl">
+    <TooltipProvider>
+      <div className="container mx-auto p-4 max-w-6xl">
       <div className="mb-6">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-          <Button
-            onClick={() => router.push('/initiatives')}
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2"
-          >
-            Initiatives
-          </Button>
-          <span>/</span>
-          <span>{initiative.id}</span>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Button
+              onClick={() => router.push('/initiatives')}
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2"
+            >
+              Initiatives
+            </Button>
+            <span>/</span>
+            <span>{initiative.id}</span>
+          </div>
+          <InitiativeHelpModal />
         </div>
         <h1 className="text-2xl font-bold mb-2">{initiative.objective}</h1>
         <div className="flex items-center gap-2">
-          <Badge variant="outline">{initiative.status}</Badge>
-          <Badge>{initiative.currentPhase}</Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="outline" className="cursor-help">{initiative.status}</Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Current processing status of the initiative</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge className="cursor-help">{initiative.currentPhase}</Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Current phase in the initiative workflow</p>
+            </TooltipContent>
+          </Tooltip>
           {initiative.lastError && (
             <Badge variant="destructive">Error</Badge>
           )}
@@ -545,9 +566,30 @@ export default function InitiativeDetail() {
 
       <Tabs defaultValue="workflow" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="workflow">Workflow</TabsTrigger>
-          <TabsTrigger value="output">Process Output</TabsTrigger>
-          <TabsTrigger value="files">Raw Files</TabsTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <TabsTrigger value="workflow">Workflow</TabsTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>View and interact with the initiative phases</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <TabsTrigger value="output">Process Output</TabsTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Real-time output from Claude Code</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <TabsTrigger value="files">Raw Files</TabsTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Access the raw JSON/Markdown files</p>
+            </TooltipContent>
+          </Tooltip>
         </TabsList>
 
         <TabsContent value="workflow" className="space-y-4">
@@ -682,6 +724,7 @@ export default function InitiativeDetail() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }

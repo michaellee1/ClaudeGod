@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { CheckCircle2, Circle, Clock, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { CheckCircle2, Circle, Clock, AlertCircle, RefreshCw, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react'
 
 interface PhaseInfo {
   phase: InitiativePhase
@@ -14,6 +15,7 @@ interface PhaseInfo {
   description: string
   estimatedTime: string
   status: 'completed' | 'active' | 'pending' | 'error'
+  tooltip: string
 }
 
 interface InitiativeStatusProps {
@@ -57,42 +59,48 @@ export function InitiativeStatus({ initiative, onRetry, className }: InitiativeS
       label: 'Exploration',
       description: 'Analyzing codebase and creating initial plan',
       estimatedTime: '2-3 minutes',
-      status: getPhaseStatus(InitiativePhase.EXPLORATION)
+      status: getPhaseStatus(InitiativePhase.EXPLORATION),
+      tooltip: 'Claude Code explores your codebase to understand the structure and create an initial implementation plan. This phase generates clarifying questions for better planning.'
     },
     {
       phase: InitiativePhase.QUESTIONS,
       label: 'Questions',
       description: 'Gathering requirements and clarifications',
       estimatedTime: '1-2 minutes',
-      status: getPhaseStatus(InitiativePhase.QUESTIONS)
+      status: getPhaseStatus(InitiativePhase.QUESTIONS),
+      tooltip: 'Answer the generated questions to provide context and constraints. Your answers help refine the implementation approach and ensure the solution meets your needs.'
     },
     {
       phase: InitiativePhase.RESEARCH_PREP,
       label: 'Research Preparation',
       description: 'Refining plan and identifying research needs',
       estimatedTime: '2-3 minutes',
-      status: getPhaseStatus(InitiativePhase.RESEARCH_PREP)
+      status: getPhaseStatus(InitiativePhase.RESEARCH_PREP),
+      tooltip: 'Claude Code refines the plan based on your answers and identifies areas requiring research. This creates a focused research document for gathering additional information.'
     },
     {
       phase: InitiativePhase.RESEARCH_REVIEW,
       label: 'Research Review',
       description: 'Reviewing research results and insights',
       estimatedTime: '1-2 minutes',
-      status: getPhaseStatus(InitiativePhase.RESEARCH_REVIEW)
+      status: getPhaseStatus(InitiativePhase.RESEARCH_REVIEW),
+      tooltip: 'Provide research findings from Deep Research or other sources. This information helps create more accurate and well-informed implementation tasks.'
     },
     {
       phase: InitiativePhase.TASK_GENERATION,
       label: 'Task Generation',
       description: 'Creating detailed task breakdown',
       estimatedTime: '3-5 minutes',
-      status: getPhaseStatus(InitiativePhase.TASK_GENERATION)
+      status: getPhaseStatus(InitiativePhase.TASK_GENERATION),
+      tooltip: 'Claude Code creates a detailed breakdown of tasks with specific implementation steps. Each task is self-contained with clear objectives and dependencies.'
     },
     {
       phase: InitiativePhase.READY,
       label: 'Ready',
       description: 'Tasks ready for submission',
       estimatedTime: 'Complete',
-      status: getPhaseStatus(InitiativePhase.READY)
+      status: getPhaseStatus(InitiativePhase.READY),
+      tooltip: 'All tasks have been generated and are ready for submission to the task system. Review and submit tasks in the order that makes sense for your implementation.'
     }
   ]
 
@@ -151,7 +159,8 @@ export function InitiativeStatus({ initiative, onRetry, className }: InitiativeS
   }
 
   return (
-    <Card className={cn("p-6", className)}>
+    <TooltipProvider>
+      <Card className={cn("p-6", className)}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">Initiative Progress</h3>
@@ -194,7 +203,17 @@ export function InitiativeStatus({ initiative, onRetry, className }: InitiativeS
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <h4 className="font-medium">{phaseInfo.label}</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium">{phaseInfo.label}</h4>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>{phaseInfo.tooltip}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
                           <p className="text-sm text-gray-600 mt-1">{phaseInfo.description}</p>
                           <div className="flex items-center gap-2 mt-2">
                             <Clock className="w-3 h-3 text-gray-400" />
@@ -260,5 +279,6 @@ export function InitiativeStatus({ initiative, onRetry, className }: InitiativeS
         )}
       </div>
     </Card>
+    </TooltipProvider>
   )
 }
