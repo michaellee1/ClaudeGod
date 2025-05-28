@@ -119,8 +119,8 @@ export class InitiativeManager extends EventEmitter {
     processManager.on(INITIATIVE_EVENTS.OUTPUT, (output: PhaseOutput) => {
       outputs.push(JSON.stringify(output))
       // Broadcast output to WebSocket if available
-      if (global.broadcastInitiativeUpdate) {
-        global.broadcastInitiativeUpdate(processInfo.initiativeId, {
+      if ((global as any).broadcastInitiativeUpdate) {
+        (global as any).broadcastInitiativeUpdate(processInfo.initiativeId, {
           type: 'output',
           phase: processInfo.phase,
           data: output

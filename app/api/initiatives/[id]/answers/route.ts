@@ -2,38 +2,45 @@ import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { validateAnswers, VALIDATION_LIMITS, InitiativeAnswer } from '@/lib/utils/initiative-validation'
+import { withErrorHandler, withRetry } from '@/lib/utils/error-handler'
+import { 
+  ValidationError, 
+  InitiativeNotFoundError, 
+  InitiativeInvalidStateError,
+  InitiativeLimitExceededError 
+} from '@/lib/utils/errors'
 
-export async function POST(
+export const POST = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
-  try {
+) => {
     const { id } = params
 
     if (!id || typeof id !== 'string') {
-      return NextResponse.json(
-        { error: 'Invalid initiative ID' },
-        { status: 400 }
-      )
+      throw new ValidationError('Invalid initiative ID', 'id', id)
     }
 
-    const body = await request.json()
+    let body;
+    try {
+      body = await request.json()
+    } catch (error) {
+      throw new ValidationError('Invalid JSON in request body')
+    }
+    
     const { answers } = body
 
     if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
-      return NextResponse.json(
-        { error: 'Answers must be provided as an object' },
-        { status: 400 }
-      )
+      throw new ValidationError('Answers must be provided as an object', 'answers', answers)
     }
 
     // Validate all answers are strings and convert to InitiativeAnswer format
     const answerArray: InitiativeAnswer[] = []
     for (const [key, value] of Object.entries(answers)) {
       if (typeof key !== 'string' || typeof value !== 'string') {
-        return NextResponse.json(
-          { error: 'All answer keys and values must be strings' },
-          { status: 400 }
+        throw new ValidationError(
+          'All answer keys and values must be strings',
+          `answers.${key}`,
+          value
         )
       }
       answerArray.push({ questionId: key, text: value })
@@ -42,43 +49,35 @@ export async function POST(
     // Validate answers using validation utility
     const answerErrors = validateAnswers(answerArray)
     if (answerErrors.length > 0) {
-      return NextResponse.json(
-        { 
-          error: 'Answer validation failed',
-          errors: answerErrors.map(err => ({
-            field: err.field,
-            message: err.message,
-            constraint: err.constraint,
-            details: err.details
-          }))
-        },
-        { status: 400 }
+      // Throw the first error for simplicity
+      const firstError = answerErrors[0]
+      throw new ValidationError(
+        firstError.message,
+        firstError.field,
+        answerArray
       )
     }
 
     const initiative = initiativeStore.get(id)
     if (!initiative) {
-      return NextResponse.json(
-        { error: 'Initiative not found' },
-        { status: 404 }
-      )
+      throw new InitiativeNotFoundError(id)
     }
 
     if (initiative.phase !== 'questions') {
-      return NextResponse.json(
-        { error: `Cannot submit answers in phase: ${initiative.phase}. Initiative must be in 'questions' phase.` },
-        { status: 400 }
-      )
+      throw new InitiativeInvalidStateError(id, initiative.phase, 'questions')
     }
 
     // Process answers and trigger refinement phase
     const manager = InitiativeManager.getInstance()
-    await manager.processAnswers(id, answers)
+    await withRetry(
+      () => manager.processAnswers(id, answers),
+      { maxRetries: 3 }
+    )
 
     // Get updated initiative
     const updatedInitiative = initiativeStore.get(id)
     if (!updatedInitiative) {
-      throw new Error('Initiative not found after update')
+      throw new InitiativeNotFoundError(id)
     }
 
     return NextResponse.json({
@@ -87,23 +86,7 @@ export async function POST(
       status: 'answers_submitted',
       message: 'Answers submitted successfully. Research preparation phase started.'
     })
-  } catch (error: any) {
-    console.error('Error submitting answers:', error)
-    
-    // Check for resource limit error
-    if (error.message?.includes('Resource limit reached')) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 429 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: error.message || 'Failed to submit answers' },
-      { status: 500 }
-    )
-  }
-}
+})
 
 // Prevent static caching
 export const dynamic = 'force-dynamic'

@@ -3,29 +3,35 @@ import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { validateResearch, VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
 import { InitiativeResearch } from '@/lib/types/initiative'
+import { withErrorHandler, withRetry } from '@/lib/utils/error-handler'
+import { 
+  ValidationError, 
+  InitiativeNotFoundError, 
+  InitiativeInvalidStateError,
+  InitiativeLimitExceededError 
+} from '@/lib/utils/errors'
 
-export async function POST(
+export const POST = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
-  try {
+) => {
     const { id } = params
 
     if (!id || typeof id !== 'string') {
-      return NextResponse.json(
-        { error: 'Invalid initiative ID' },
-        { status: 400 }
-      )
+      throw new ValidationError('Invalid initiative ID', 'id', id)
     }
 
-    const body = await request.json()
+    let body;
+    try {
+      body = await request.json()
+    } catch (error) {
+      throw new ValidationError('Invalid JSON in request body')
+    }
+    
     const { research } = body
 
     if (!research || typeof research !== 'string' || research.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Research must be provided as a non-empty string' },
-        { status: 400 }
-      )
+      throw new ValidationError('Research must be provided as a non-empty string', 'research', research)
     }
 
     // Validate research using validation utility
@@ -38,43 +44,35 @@ export async function POST(
     }
     const researchErrors = validateResearch(researchData)
     if (researchErrors.length > 0) {
-      return NextResponse.json(
-        { 
-          error: 'Research validation failed',
-          errors: researchErrors.map(err => ({
-            field: err.field,
-            message: err.message,
-            constraint: err.constraint,
-            details: err.details
-          }))
-        },
-        { status: 400 }
+      // Throw the first error for simplicity
+      const firstError = researchErrors[0]
+      throw new ValidationError(
+        firstError.message,
+        firstError.field,
+        research
       )
     }
 
     const initiative = initiativeStore.get(id)
     if (!initiative) {
-      return NextResponse.json(
-        { error: 'Initiative not found' },
-        { status: 404 }
-      )
+      throw new InitiativeNotFoundError(id)
     }
 
     if (initiative.phase !== 'research_review') {
-      return NextResponse.json(
-        { error: `Cannot submit research in phase: ${initiative.phase}. Initiative must be in 'research_review' phase.` },
-        { status: 400 }
-      )
+      throw new InitiativeInvalidStateError(id, initiative.phase, 'research_review')
     }
 
     // Process research and trigger planning phase
     const manager = InitiativeManager.getInstance()
-    await manager.processResearch(id, research.trim())
+    await withRetry(
+      () => manager.processResearch(id, research.trim()),
+      { maxRetries: 3 }
+    )
 
     // Get updated initiative
     const updatedInitiative = initiativeStore.get(id)
     if (!updatedInitiative) {
-      throw new Error('Initiative not found after update')
+      throw new InitiativeNotFoundError(id)
     }
 
     return NextResponse.json({
@@ -83,23 +81,7 @@ export async function POST(
       status: 'research_submitted',
       message: 'Research submitted successfully. Task generation phase started.'
     })
-  } catch (error: any) {
-    console.error('Error submitting research:', error)
-    
-    // Check for resource limit error
-    if (error.message?.includes('Resource limit reached')) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 429 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: error.message || 'Failed to submit research' },
-      { status: 500 }
-    )
-  }
-}
+})
 
 // Prevent static caching
 export const dynamic = 'force-dynamic'
