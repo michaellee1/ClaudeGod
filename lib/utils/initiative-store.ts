@@ -1,32 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
-
-export type InitiativePhase = 
-  | 'exploration'
-  | 'questions'
-  | 'research_prep'
-  | 'research_review'
-  | 'task_generation'
-  | 'ready'
-
-export interface Initiative {
-  id: string
-  objective: string
-  phase: InitiativePhase
-  directory: string
-  createdAt: Date
-  updatedAt: Date
-  completedAt?: Date
-  phaseData?: any
-  claudeCodePid?: number
-  isActive: boolean
-  status?: string
-  tasksCreated?: number
-  yoloMode?: boolean
-  currentStepIndex?: number
-  lastError?: string
-}
+import { Initiative, InitiativePhase, InitiativeStatus } from '../types/initiative'
 
 class InitiativeStore {
   private static instance: InitiativeStore
@@ -120,7 +95,7 @@ class InitiativeStore {
   async createInitiative(objective: string): Promise<Initiative> {
     // Check concurrent initiative limit
     const activeInitiatives = Array.from(this.initiatives.values()).filter(
-      i => i.isActive
+      i => i.status !== InitiativeStatus.COMPLETED && i.status !== InitiativeStatus.TASKS_SUBMITTED
     )
     if (activeInitiatives.length >= this.MAX_CONCURRENT_INITIATIVES) {
       throw new Error(`Maximum concurrent initiatives (${this.MAX_CONCURRENT_INITIATIVES}) reached`)
@@ -140,11 +115,10 @@ class InitiativeStore {
     const initiative: Initiative = {
       id,
       objective,
-      phase: 'exploration',
-      directory,
+      status: InitiativeStatus.EXPLORING,
+      currentPhase: InitiativePhase.EXPLORATION,
       createdAt: new Date(),
       updatedAt: new Date(),
-      isActive: true,
       yoloMode: true,
       currentStepIndex: 0
     }
@@ -186,21 +160,39 @@ class InitiativeStore {
     return updatedInitiative
   }
 
-  async updatePhase(id: string, phase: InitiativePhase, data?: any): Promise<void> {
+  async updatePhase(id: string, phase: string, data?: any): Promise<void> {
     const initiative = this.initiatives.get(id)
     if (!initiative) {
       throw new Error(`Initiative ${id} not found`)
     }
 
-    // Update phase and associated data
-    initiative.phase = phase
-    initiative.phaseData = data
+    // Map phase string to enum values
+    const phaseMap: Record<string, InitiativePhase> = {
+      'exploration': InitiativePhase.EXPLORATION,
+      'questions': InitiativePhase.QUESTIONS,
+      'research_prep': InitiativePhase.RESEARCH_PREP,
+      'research_review': InitiativePhase.RESEARCH_REVIEW,
+      'task_generation': InitiativePhase.TASK_GENERATION,
+      'ready': InitiativePhase.READY
+    }
+
+    const statusMap: Record<string, InitiativeStatus> = {
+      'exploration': InitiativeStatus.EXPLORING,
+      'questions': InitiativeStatus.AWAITING_ANSWERS,
+      'research_prep': InitiativeStatus.RESEARCHING,
+      'research_review': InitiativeStatus.AWAITING_RESEARCH,
+      'task_generation': InitiativeStatus.PLANNING,
+      'ready': InitiativeStatus.READY_FOR_TASKS
+    }
+
+    // Update phase and status
+    initiative.currentPhase = phaseMap[phase] || InitiativePhase.EXPLORATION
+    initiative.status = statusMap[phase] || InitiativeStatus.EXPLORING
     initiative.updatedAt = new Date()
 
     // Handle completion
     if (phase === 'ready') {
-      initiative.completedAt = new Date()
-      initiative.isActive = false
+      initiative.status = InitiativeStatus.READY_FOR_TASKS
     }
 
     this.initiatives.set(id, initiative)
@@ -216,7 +208,8 @@ class InitiativeStore {
       throw new Error(`Initiative ${id} not found`)
     }
 
-    const filePath = path.join(initiative.directory, filename)
+    const directory = path.join(this.initiativesDir, id)
+    const filePath = path.join(directory, filename)
     
     try {
       await fs.writeFile(filePath, content, 'utf-8')
@@ -233,7 +226,8 @@ class InitiativeStore {
       throw new Error(`Initiative ${id} not found`)
     }
 
-    const filePath = path.join(initiative.directory, filename)
+    const directory = path.join(this.initiativesDir, id)
+    const filePath = path.join(directory, filename)
     
     try {
       const content = await fs.readFile(filePath, 'utf-8')
@@ -254,11 +248,12 @@ class InitiativeStore {
     console.log(`Deleting initiative ${id}`)
 
     // Clean up directory
+    const directory = path.join(this.initiativesDir, id)
     try {
-      await fs.rm(initiative.directory, { recursive: true, force: true })
-      console.log(`Deleted initiative directory: ${initiative.directory}`)
+      await fs.rm(directory, { recursive: true, force: true })
+      console.log(`Deleted initiative directory: ${directory}`)
     } catch (error) {
-      console.error(`Error deleting initiative directory ${initiative.directory}:`, error)
+      console.error(`Error deleting initiative directory ${directory}:`, error)
     }
 
     // Remove from map
@@ -296,35 +291,36 @@ class InitiativeStore {
   }
 
   // Get phase-specific file paths
-  getPhaseFilePath(id: string, phase: InitiativePhase): string {
+  getPhaseFilePath(id: string, phase: InitiativePhase | string): string {
     const initiative = this.initiatives.get(id)
     if (!initiative) {
       throw new Error(`Initiative ${id} not found`)
     }
 
-    const phaseFiles: Record<InitiativePhase, string> = {
-      'exploration': 'questions.md',
-      'questions': 'answers.md',
-      'research_prep': 'research-needs.md',
-      'research_review': 'research-results.md',
-      'task_generation': 'tasks.md',
-      'ready': 'final-tasks.md'
+    const phaseFiles: Record<string, string> = {
+      [InitiativePhase.EXPLORATION]: 'questions.md',
+      [InitiativePhase.QUESTIONS]: 'answers.md',
+      [InitiativePhase.RESEARCH_PREP]: 'research-needs.md',
+      [InitiativePhase.RESEARCH_REVIEW]: 'research-results.md',
+      [InitiativePhase.TASK_GENERATION]: 'tasks.md',
+      [InitiativePhase.READY]: 'final-tasks.md'
     }
 
-    return path.join(initiative.directory, phaseFiles[phase])
+    const directory = path.join(this.initiativesDir, id)
+    return path.join(directory, phaseFiles[phase as string])
   }
 
   // Utility methods for common operations
   getActiveInitiatives(): Initiative[] {
     return Array.from(this.initiatives.values())
-      .filter(i => i.isActive)
+      .filter(i => i.status !== InitiativeStatus.COMPLETED && i.status !== InitiativeStatus.TASKS_SUBMITTED)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   }
 
   getCompletedInitiatives(): Initiative[] {
     return Array.from(this.initiatives.values())
-      .filter(i => !i.isActive && i.completedAt)
-      .sort((a, b) => b.completedAt!.getTime() - a.completedAt!.getTime())
+      .filter(i => i.status === InitiativeStatus.COMPLETED || i.status === InitiativeStatus.TASKS_SUBMITTED)
+      .sort((a, b) => (b.updatedAt || b.createdAt).getTime() - (a.updatedAt || a.createdAt).getTime())
   }
 
   // Check if we can create a new initiative

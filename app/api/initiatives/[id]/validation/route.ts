@@ -47,13 +47,11 @@ export async function GET(
     const fullInitiative: Partial<Initiative> = {
       id: initiative.id,
       objective: initiative.objective,
-      status: mapStatus(initiative.isActive, initiative.phase),
-      currentPhase: initiative.phase as InitiativePhase,
+      status: initiative.status,
+      currentPhase: initiative.currentPhase,
       createdAt: initiative.createdAt,
       updatedAt: initiative.updatedAt,
-      processId: initiative.claudeCodePid?.toString(),
-      // Add phase-specific data
-      ...(initiative.phaseData || {})
+      processId: initiative.processId
     }
 
     // Perform general validation
@@ -86,8 +84,8 @@ export async function GET(
       report,
       initiative: {
         id: initiative.id,
-        phase: initiative.phase,
-        status: initiative.isActive ? 'active' : 'completed'
+        phase: initiative.currentPhase,
+        status: initiative.status
       }
     })
   } catch (error: any) {

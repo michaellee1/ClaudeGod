@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 import { InitiativeManager } from './initiative-manager'
-import initiativeStore, { type Initiative as StoreInitiative } from './initiative-store'
-import { InitiativePhase, InitiativeStatus } from '../types/initiative'
+import initiativeStore from './initiative-store'
+import { Initiative as StoreInitiative, InitiativePhase, InitiativeStatus } from '../types/initiative'
 import {
   AppError,
   ErrorCode,
@@ -209,9 +209,8 @@ export class InitiativeProcessor extends EventEmitter {
         )
       }
     
-      // Store interfaces don't have lastError, check phase data
-      const hasError = initiative.phaseData?.error
-      if (!hasError) {
+      // Check if initiative has an error
+      if (!initiative.lastError) {
         throw new Error(`No failed phase to retry for initiative ${initiativeId}`)
       }
     
@@ -248,7 +247,7 @@ export class InitiativeProcessor extends EventEmitter {
       
       // Clear error state
       await this.updateInitiativeWithRetry(initiativeId, { 
-        phaseData: { ...initiative.phaseData, error: undefined } 
+        lastError: undefined 
       })
     } catch (error) {
       throw error
@@ -283,8 +282,8 @@ export class InitiativeProcessor extends EventEmitter {
     
     // Update initiative status
     initiativeStore.update(initiativeId, {
-      claudeCodePid: undefined,
-      phaseData: { error: 'Process cancelled by user' }
+      processId: undefined,
+      lastError: 'Process cancelled by user'
     })
     
     this.broadcastStatusUpdate(initiativeId, 'cancelled')
@@ -335,7 +334,7 @@ export class InitiativeProcessor extends EventEmitter {
       } else {
         // Max retries reached
         initiativeStore.update(nextItem.initiativeId, {
-          phaseData: { error: `Failed to start process after ${this.MAX_RETRY_COUNT} attempts: ${(error as Error).message}` }
+          lastError: `Failed to start process after ${this.MAX_RETRY_COUNT} attempts: ${(error as Error).message}`
         })
         this.metrics.totalFailed++
       }
@@ -374,7 +373,7 @@ export class InitiativeProcessor extends EventEmitter {
     
     // Update initiative with process info
     initiativeStore.update(initiativeId, {
-      claudeCodePid: process.pid, // Using current process PID as placeholder
+      processId: String(process.pid), // Convert PID to string
       isActive: true
     })
     
@@ -467,7 +466,7 @@ export class InitiativeProcessor extends EventEmitter {
     
     // Update initiative
     initiativeStore.update(initiativeId, {
-      claudeCodePid: undefined,
+      processId: undefined,
       isActive: false
     })
     
@@ -501,9 +500,9 @@ export class InitiativeProcessor extends EventEmitter {
     
     // Update initiative with error
     initiativeStore.update(initiativeId, {
-      claudeCodePid: undefined,
+      processId: undefined,
       isActive: false,
-      phaseData: { error: error.message }
+      lastError: error.message
     })
     
     console.error(`Process failed for initiative ${initiativeId}, phase ${phase}:`, error)
@@ -544,7 +543,7 @@ export class InitiativeProcessor extends EventEmitter {
       }
       
       // Check if Claude Code process is actually running
-      const isProcessAlive = await this.checkProcessHealth(initiative.claudeCodePid)
+      const isProcessAlive = await this.checkProcessHealth(initiative.processId ? parseInt(initiative.processId) : undefined)
       
       if (!isProcessAlive) {
         // Process crashed, attempt recovery
@@ -848,7 +847,7 @@ export class InitiativeProcessor extends EventEmitter {
   }
   
   private async checkProcessHealth(pid?: number): Promise<boolean> {
-    if (!pid) return false
+    if (!pid || isNaN(pid)) return false
     
     try {
       // Check if process exists by sending signal 0

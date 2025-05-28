@@ -9,6 +9,7 @@ import {
   InitiativeInvalidStateError,
   InitiativeLimitExceededError 
 } from '@/lib/utils/errors'
+import { InitiativePhase } from '@/lib/types/initiative'
 
 export const POST = withErrorHandler(async (
   request: NextRequest,
@@ -63,8 +64,8 @@ export const POST = withErrorHandler(async (
       throw new InitiativeNotFoundError(id)
     }
 
-    if (initiative.phase !== 'questions') {
-      throw new InitiativeInvalidStateError(id, initiative.phase, 'questions')
+    if (initiative.currentPhase !== InitiativePhase.QUESTIONS) {
+      throw new InitiativeInvalidStateError(id, initiative.currentPhase.toString(), 'questions')
     }
 
     // Process answers and trigger refinement phase
@@ -82,7 +83,7 @@ export const POST = withErrorHandler(async (
 
     return NextResponse.json({
       id: updatedInitiative.id,
-      phase: updatedInitiative.phase,
+      phase: updatedInitiative.currentPhase,
       status: 'answers_submitted',
       message: 'Answers submitted successfully. Research preparation phase started.'
     })

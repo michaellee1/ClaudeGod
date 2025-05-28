@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { taskStore } from '@/lib/utils/task-store'
-import { InitiativeTaskStep } from '@/lib/types/initiative'
+import { InitiativeTaskStep, InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
 
 export async function POST(
   request: NextRequest,
@@ -57,9 +57,9 @@ export async function POST(
       )
     }
 
-    if (initiative.phase !== 'ready') {
+    if (initiative.currentPhase !== InitiativePhase.READY) {
       return NextResponse.json(
-        { error: `Cannot convert to tasks in phase: ${initiative.phase}. Initiative must be in 'ready' phase.` },
+        { error: `Cannot convert to tasks in phase: ${initiative.currentPhase}. Initiative must be in 'ready' phase.` },
         { status: 400 }
       )
     }
@@ -137,17 +137,17 @@ export async function POST(
     }
 
     // Update initiative tasks created count
-    // Track tasks created in phase data
-    const currentCount = (initiative.phaseData?.tasksCreated as number) || 0
+    const currentCount = initiative.submittedTasks || 0
     await initiativeStore.update(id, { 
-      phaseData: { ...initiative.phaseData, tasksCreated: currentCount + createdTasks.length }
+      submittedTasks: currentCount + createdTasks.length,
+      status: InitiativeStatus.TASKS_SUBMITTED
     })
 
     return NextResponse.json({
       initiativeId: id,
       stepNumber: stepNumber,
       tasksCreated: createdTasks.length,
-      totalTasksCreated: ((initiative.phaseData?.tasksCreated as number) || 0) + createdTasks.length,
+      totalTasksCreated: (initiative.submittedTasks || 0) + createdTasks.length,
       tasks: createdTasks,
       message: `Successfully created ${createdTasks.length} tasks from step ${stepNumber}`
     })

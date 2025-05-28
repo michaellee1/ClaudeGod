@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { validateResearch, VALIDATION_LIMITS } from '@/lib/utils/initiative-validation'
-import { InitiativeResearch } from '@/lib/types/initiative'
+import { InitiativeResearch, InitiativePhase } from '@/lib/types/initiative'
 import { withErrorHandler, withRetry } from '@/lib/utils/error-handler'
 import { 
   ValidationError, 
@@ -58,8 +58,8 @@ export const POST = withErrorHandler(async (
       throw new InitiativeNotFoundError(id)
     }
 
-    if (initiative.phase !== 'research_review') {
-      throw new InitiativeInvalidStateError(id, initiative.phase, 'research_review')
+    if (initiative.currentPhase !== InitiativePhase.RESEARCH_REVIEW) {
+      throw new InitiativeInvalidStateError(id, initiative.currentPhase.toString(), 'research_review')
     }
 
     // Process research and trigger planning phase
@@ -77,7 +77,7 @@ export const POST = withErrorHandler(async (
 
     return NextResponse.json({
       id: updatedInitiative.id,
-      phase: updatedInitiative.phase,
+      phase: updatedInitiative.currentPhase,
       status: 'research_submitted',
       message: 'Research submitted successfully. Task generation phase started.'
     })

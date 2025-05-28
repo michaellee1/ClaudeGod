@@ -4,6 +4,7 @@ import { join } from 'path'
 import { readFile } from 'fs/promises'
 import { withErrorHandler } from '@/lib/utils/error-handler'
 import { InitiativeNotFoundError, ValidationError } from '@/lib/utils/errors'
+import { InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
 
 export const GET = withErrorHandler(async (
   request: NextRequest,
@@ -34,8 +35,20 @@ export const GET = withErrorHandler(async (
       }
     }
 
+    // Map InitiativePhase enum back to string for comparison
+    const phaseToString: Record<string, string> = {
+      [InitiativePhase.EXPLORATION]: 'exploration',
+      [InitiativePhase.QUESTIONS]: 'questions',
+      [InitiativePhase.RESEARCH_PREP]: 'research_prep',
+      [InitiativePhase.RESEARCH_REVIEW]: 'research_review',
+      [InitiativePhase.TASK_GENERATION]: 'task_generation',
+      [InitiativePhase.READY]: 'ready'
+    }
+    
+    const phaseString = phaseToString[initiative.currentPhase] || 'exploration'
+    
     // Load phase-specific files based on current phase
-    switch (initiative.phase) {
+    switch (phaseString) {
       case 'questions':
       case 'research_prep':
       case 'research_review':
@@ -45,19 +58,19 @@ export const GET = withErrorHandler(async (
         const questions = await loadPhaseFile('questions.json')
         if (questions) phaseFiles.questions = questions
 
-        if (initiative.phase !== 'questions') {
+        if (phaseString !== 'questions') {
           // Load answers if past questions phase
           const answers = await loadPhaseFile('answers.json')
           if (answers) phaseFiles.answers = answers
         }
 
-        if (initiative.phase === 'research_review' || initiative.phase === 'task_generation' || initiative.phase === 'ready') {
+        if (phaseString === 'research_review' || phaseString === 'task_generation' || phaseString === 'ready') {
           // Load research prep output if available
           const researchPrep = await loadPhaseFile('research_prep.md')
           if (researchPrep) phaseFiles.researchPrep = researchPrep
         }
 
-        if (initiative.phase === 'task_generation' || initiative.phase === 'ready') {
+        if (phaseString === 'task_generation' || phaseString === 'ready') {
           // Load research if available
           try {
             const research = await initiativeStore.loadPhaseFile(id, 'research.md')
@@ -67,7 +80,7 @@ export const GET = withErrorHandler(async (
           }
         }
 
-        if (initiative.phase === 'ready') {
+        if (phaseString === 'ready') {
           // Load tasks if ready
           const tasks = await loadPhaseFile('tasks.json')
           if (tasks) phaseFiles.tasks = tasks
@@ -79,17 +92,22 @@ export const GET = withErrorHandler(async (
     const response = {
       id: initiative.id,
       objective: initiative.objective,
-      phase: initiative.phase,
-      status: initiative.isActive ? 'active' : 'completed',
+      phase: phaseString,
+      currentPhase: initiative.currentPhase,
+      status: initiative.status,
       createdAt: initiative.createdAt,
       updatedAt: initiative.updatedAt,
-      tasksCreated: (initiative.phaseData?.tasksCreated as number) || 0,
       yoloMode: initiative.yoloMode ?? true,
       currentStepIndex: initiative.currentStepIndex ?? 0,
+      questions: phaseFiles.questions?.questions || [],
+      userAnswers: phaseFiles.answers || {},
+      researchNeeds: phaseFiles.research || '',
+      researchResults: phaseFiles.research || '',
+      taskSteps: phaseFiles.tasks?.steps || [],
       phaseFiles,
       progress: {
-        phase: initiative.phase,
-        isComplete: initiative.phase === 'ready',
+        phase: phaseString,
+        isComplete: phaseString === 'ready',
         hasQuestions: !!phaseFiles.questions,
         hasAnswers: !!phaseFiles.answers,
         hasResearch: !!phaseFiles.research,
@@ -131,10 +149,24 @@ export const PATCH = withErrorHandler(async (
 
     const updatedInitiative = await initiativeStore.update(id, updates)
 
+    // Map InitiativePhase enum back to string
+    const phaseToString: Record<string, string> = {
+      [InitiativePhase.EXPLORATION]: 'exploration',
+      [InitiativePhase.QUESTIONS]: 'questions',
+      [InitiativePhase.RESEARCH_PREP]: 'research_prep',
+      [InitiativePhase.RESEARCH_REVIEW]: 'research_review',
+      [InitiativePhase.TASK_GENERATION]: 'task_generation',
+      [InitiativePhase.READY]: 'ready'
+    }
+    
+    const phaseString = phaseToString[updatedInitiative.currentPhase] || 'exploration'
+    
     return NextResponse.json({
       id: updatedInitiative.id,
       objective: updatedInitiative.objective,
-      phase: updatedInitiative.phase,
+      phase: phaseString,
+      currentPhase: updatedInitiative.currentPhase,
+      status: updatedInitiative.status,
       yoloMode: updatedInitiative.yoloMode,
       updatedAt: updatedInitiative.updatedAt
     })

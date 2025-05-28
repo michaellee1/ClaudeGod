@@ -4,6 +4,7 @@ import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { validateObjective } from '@/lib/utils/initiative-validation'
 import { withErrorHandler } from '@/lib/utils/error-handler'
 import { ValidationError, InitiativeLimitExceededError } from '@/lib/utils/errors'
+import { InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
     let body;
@@ -53,32 +54,59 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       throw error
     }
 
+    // Map InitiativePhase enum back to string for backward compatibility
+    const phaseToString: Record<string, string> = {
+      [InitiativePhase.EXPLORATION]: 'exploration',
+      [InitiativePhase.QUESTIONS]: 'questions',
+      [InitiativePhase.RESEARCH_PREP]: 'research_prep',
+      [InitiativePhase.RESEARCH_REVIEW]: 'research_review',
+      [InitiativePhase.TASK_GENERATION]: 'task_generation',
+      [InitiativePhase.READY]: 'ready'
+    }
+    
+    const phaseString = phaseToString[initiative.currentPhase] || 'exploration'
+    
     return NextResponse.json({
       id: initiative.id,
-      status: 'created',
-      phase: initiative.phase,
+      status: initiative.status,
+      phase: phaseString,
       objective: initiative.objective,
-      createdAt: initiative.createdAt
+      createdAt: initiative.createdAt,
+      isActive: true,
+      yoloMode: initiative.yoloMode
     })
 })
 
 export const GET = withErrorHandler(async () => {
     const initiatives = initiativeStore.getAll()
     
-    // Transform initiatives for API response
-    const apiInitiatives = initiatives.map(initiative => ({
-      id: initiative.id,
-      objective: initiative.objective,
-      phase: initiative.phase,
-      status: initiative.isActive ? 'active' : 'completed',
-      createdAt: initiative.createdAt,
-      updatedAt: initiative.updatedAt,
-      progress: {
-        phase: initiative.phase,
-        tasksCreated: (initiative.phaseData?.tasksCreated as number) || 0,
-        isComplete: initiative.phase === 'ready'
+    // Transform initiatives for API response - need to map internal phase to string
+    const apiInitiatives = initiatives.map(initiative => {
+      // Map InitiativePhase enum back to string for backward compatibility
+      const phaseToString: Record<string, string> = {
+        [InitiativePhase.EXPLORATION]: 'exploration',
+        [InitiativePhase.QUESTIONS]: 'questions',
+        [InitiativePhase.RESEARCH_PREP]: 'research_prep',
+        [InitiativePhase.RESEARCH_REVIEW]: 'research_review',
+        [InitiativePhase.TASK_GENERATION]: 'task_generation',
+        [InitiativePhase.READY]: 'ready'
       }
-    }))
+      
+      const phaseString = phaseToString[initiative.currentPhase] || 'exploration'
+      const isActive = initiative.status !== InitiativeStatus.COMPLETED && initiative.status !== InitiativeStatus.TASKS_SUBMITTED
+      
+      return {
+        id: initiative.id,
+        objective: initiative.objective,
+        phase: phaseString,
+        status: initiative.status,
+        createdAt: initiative.createdAt,
+        updatedAt: initiative.updatedAt,
+        isActive,
+        yoloMode: initiative.yoloMode,
+        currentStepIndex: initiative.currentStepIndex
+      }
+    })
 
     return NextResponse.json(apiInitiatives)
 })
