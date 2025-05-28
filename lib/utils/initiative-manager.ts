@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 import { ProcessManager } from './process-manager'
-import initiativeStore, { type Initiative as StoreInitiative } from './initiative-store'
-import { InitiativePhase, InitiativeTaskStep } from '../types/initiative'
+import initiativeStore from './initiative-store'
+import { Initiative as StoreInitiative, InitiativePhase, InitiativeTaskStep } from '../types/initiative'
 import { readFile } from 'fs/promises'
 import { join, normalize, resolve } from 'path'
 import { homedir } from 'os'
@@ -258,8 +258,8 @@ export class InitiativeManager extends EventEmitter {
       throw new Error(`Initiative ${initiativeId} not found`)
     }
 
-    if (initiative.phase !== 'exploration') {
-      throw new Error(`Invalid phase transition: Cannot start exploration from phase ${initiative.phase}`)
+    if (initiative.currentPhase !== InitiativePhase.EXPLORATION) {
+      throw new Error(`Invalid phase transition: Cannot start exploration from phase ${initiative.currentPhase}`)
     }
 
     // Load prompt template
@@ -306,8 +306,8 @@ export class InitiativeManager extends EventEmitter {
       throw new Error(`Initiative ${initiativeId} not found`)
     }
 
-    if (initiative.phase !== 'questions') {
-      throw new Error(`Invalid phase transition: Cannot process answers from phase ${initiative.phase}`)
+    if (initiative.currentPhase !== InitiativePhase.QUESTIONS) {
+      throw new Error(`Invalid phase transition: Cannot process answers from phase ${initiative.currentPhase}`)
     }
 
     // Save answers to file
@@ -360,13 +360,13 @@ export class InitiativeManager extends EventEmitter {
       throw new Error(`Initiative ${initiativeId} not found`)
     }
 
-    if (initiative.phase !== 'research_review') {
-      throw new Error(`Invalid phase transition: Cannot process research from phase ${initiative.phase}`)
+    if (initiative.currentPhase !== InitiativePhase.RESEARCH_REVIEW) {
+      throw new Error(`Invalid phase transition: Cannot process research from phase ${initiative.currentPhase}`)
     }
 
     // Validate phase transition
     const transitionError = validatePhaseTransition(
-      initiative.phase as InitiativePhase,
+      initiative.currentPhase,
       InitiativePhase.TASK_GENERATION,
       initiative as any
     )
@@ -426,8 +426,8 @@ export class InitiativeManager extends EventEmitter {
       throw new Error(`Initiative ${initiativeId} not found`)
     }
 
-    if (initiative.phase !== 'ready') {
-      throw new Error(`Tasks not ready: Initiative is in phase ${initiative.phase}`)
+    if (initiative.currentPhase !== InitiativePhase.READY) {
+      throw new Error(`Tasks not ready: Initiative is in phase ${initiative.currentPhase}`)
     }
 
     // Load tasks from file

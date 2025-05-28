@@ -2,7 +2,18 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import type { Initiative } from '@/lib/utils/initiative-store'
+// API response type for initiatives
+interface InitiativeResponse {
+  id: string
+  objective: string
+  phase: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  isActive: boolean
+  yoloMode?: boolean
+  currentStepIndex?: number
+}
 import { useInitiativeWebSocket } from '@/lib/hooks/useInitiativeWebSocket'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -86,7 +97,7 @@ const formatPhase = (phase: string): string => {
 }
 
 export default function InitiativesPage() {
-  const [initiatives, setInitiatives] = useState<Initiative[]>([])
+  const [initiatives, setInitiatives] = useState<InitiativeResponse[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -105,10 +116,34 @@ export default function InitiativesPage() {
         const index = prev.findIndex(i => i.id === initiative.id)
         if (index >= 0) {
           const updated = [...prev]
-          updated[index] = initiative
+          // Map Initiative to InitiativeResponse
+          const response: InitiativeResponse = {
+            id: initiative.id,
+            objective: initiative.objective,
+            phase: initiative.currentPhase,
+            status: initiative.status,
+            createdAt: initiative.createdAt.toString(),
+            updatedAt: initiative.updatedAt.toString(),
+            isActive: initiative.status !== 'completed' && initiative.status !== 'tasks_submitted',
+            yoloMode: initiative.yoloMode,
+            currentStepIndex: initiative.currentStepIndex
+          }
+          updated[index] = response
           return updated
         }
-        return [...prev, initiative]
+        // Map new Initiative to InitiativeResponse
+        const response: InitiativeResponse = {
+          id: initiative.id,
+          objective: initiative.objective,
+          phase: initiative.currentPhase,
+          status: initiative.status,
+          createdAt: initiative.createdAt.toString(),
+          updatedAt: initiative.updatedAt.toString(),
+          isActive: initiative.status !== 'completed' && initiative.status !== 'tasks_submitted',
+          yoloMode: initiative.yoloMode,
+          currentStepIndex: initiative.currentStepIndex
+        }
+        return [...prev, response]
       })
     },
     onInitiativeRemoved: (initiativeId) => {
@@ -383,7 +418,7 @@ export default function InitiativesPage() {
                             size="sm"
                             asChild
                           >
-                            <Link href={`/initiatives/${initiative.id}`} aria-label={`View initiative: ${initiative.objective}`}>
+                            <Link href={`/initiative/${initiative.id}`} aria-label={`View initiative: ${initiative.objective}`}>
                               <Eye className="h-4 w-4 mr-1" aria-hidden="true" />
                               View
                             </Link>
@@ -489,7 +524,7 @@ export default function InitiativesPage() {
                               title="View Initiative"
                               asChild
                             >
-                              <Link href={`/initiatives/${initiative.id}`} aria-label={`View initiative: ${initiative.objective}`}>
+                              <Link href={`/initiative/${initiative.id}`} aria-label={`View initiative: ${initiative.objective}`}>
                                 <Eye className="h-4 w-4" aria-hidden="true" />
                               </Link>
                             </Button>

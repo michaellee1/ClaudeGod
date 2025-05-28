@@ -94,6 +94,8 @@ export interface Initiative {
   // Metadata
   totalTasks?: number
   submittedTasks?: number
+  isActive?: boolean
+  completedAt?: Date
   
   // YOLO mode
   yoloMode?: boolean

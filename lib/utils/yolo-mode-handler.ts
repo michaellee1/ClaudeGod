@@ -1,6 +1,9 @@
 import { taskStore } from './task-store'
-import initiativeStore, { Initiative } from './initiative-store'
+import initiativeStore from './initiative-store'
+import { Initiative, InitiativeStatus } from '@/lib/types/initiative'
 import { Task } from '@/lib/types/task'
+import path from 'path'
+import os from 'os'
 
 export class YoloModeHandler {
   private static instance: YoloModeHandler
@@ -108,7 +111,8 @@ export class YoloModeHandler {
   
   private async submitNextStep(initiative: Initiative) {
     // Get the generated tasks
-    const phaseData = await this.loadPhaseData(initiative.directory, 'tasks.json')
+    const initiativeDir = path.join(os.homedir(), '.claude-god-data', 'initiatives', initiative.id)
+    const phaseData = await this.loadPhaseData(initiativeDir, 'tasks.json')
     if (!phaseData || !phaseData.steps) {
       console.log('[YOLO] No task steps found')
       return
@@ -118,7 +122,7 @@ export class YoloModeHandler {
     if (nextStepIndex >= phaseData.steps.length) {
       console.log('[YOLO] All steps completed!')
       await initiativeStore.update(initiative.id, {
-        status: 'completed',
+        status: InitiativeStatus.COMPLETED,
         currentStepIndex: phaseData.steps.length - 1
       })
       return

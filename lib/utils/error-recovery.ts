@@ -14,8 +14,7 @@ import { withRetry, ErrorRecovery, RecoveryStrategy } from './error-handler';
 import { ProcessManager } from './process-manager';
 import initiativeStore from './initiative-store';
 import { InitiativeTransaction } from './rollback-manager';
-import type { InitiativePhase } from '../types/initiative';
-import type { Initiative as StoreInitiative } from './initiative-store';
+import { InitiativePhase, Initiative as StoreInitiative, InitiativeStatus } from '../types/initiative';
 
 /**
  * Recovery strategy for process failures
@@ -49,17 +48,8 @@ export class ProcessRecoveryStrategy implements RecoveryStrategy<void> {
     const initiative = initiativeStore.get(this.initiativeId);
     
     if (initiative) {
-      initiative.status = 'error';
-      // Store error in phaseData since the store Initiative type doesn't have error field
-      initiative.phaseData = {
-        ...initiative.phaseData,
-        error: {
-          message: error.message,
-          code: error.code,
-          timestamp: new Date().toISOString(),
-          recoverable: true
-        }
-      };
+      // Store error in lastError field instead of status
+      initiative.lastError = error.message;
       initiativeStore.update(this.initiativeId, initiative);
     }
   }
@@ -150,36 +140,38 @@ export class InitiativeStateRecoveryStrategy implements RecoveryStrategy<StoreIn
 
     // Determine recovery action based on current state
     switch (currentState) {
-      case 'processing':
+      case InitiativeStatus.EXPLORING:
+      case InitiativeStatus.RESEARCHING:
+      case InitiativeStatus.PLANNING:
         // Check if process is marked as active
         if (!initiative.isActive) {
-          // No process running, reset to previous phase
-          initiative.status = 'ready';
+          // No process running, keep current status
           initiativeStore.update(initiativeId, initiative);
         }
         break;
         
-      case 'error':
-        // Allow retry from error state
-        initiative.status = 'ready';
-        // Clear error from phaseData
-        if (initiative.phaseData?.error) {
-          delete initiative.phaseData.error;
-        }
-        initiativeStore.update(initiativeId, initiative);
+      case InitiativeStatus.AWAITING_ANSWERS:
+      case InitiativeStatus.AWAITING_RESEARCH:
+        // These are valid waiting states, no action needed
         break;
         
       default:
         // For other states, try to determine the correct state
         // based on available data
         // Reset to beginning if we can't determine state
-        if (initiative.phase === 'research_prep' || initiative.phase === 'research_review') {
-          initiative.phase = 'questions';
-          initiative.status = 'ready';
+        if (initiative.currentPhase === InitiativePhase.RESEARCH_PREP) {
+          initiative.currentPhase = InitiativePhase.QUESTIONS;
+          initiative.status = InitiativeStatus.AWAITING_ANSWERS;
+        } else if (initiative.currentPhase === InitiativePhase.QUESTIONS) {
+          initiative.status = InitiativeStatus.AWAITING_ANSWERS;
+        } else if (initiative.currentPhase === InitiativePhase.RESEARCH_REVIEW) {
+          initiative.status = InitiativeStatus.AWAITING_RESEARCH;
+        } else if (initiative.currentPhase === InitiativePhase.TASK_GENERATION) {
+          initiative.status = InitiativeStatus.READY_FOR_TASKS;
         } else {
           // Reset to beginning if we can't determine state
-          initiative.phase = 'exploration';
-          initiative.status = 'ready';
+          initiative.currentPhase = InitiativePhase.EXPLORATION;
+          initiative.status = InitiativeStatus.EXPLORING;
         }
         initiativeStore.update(initiativeId, initiative);
     }
@@ -277,17 +269,8 @@ export class InitiativeRecovery {
     const initiative = initiativeStore.get(this.initiativeId);
     
     if (initiative) {
-      initiative.status = 'error';
-      // Store error in phaseData
-      initiative.phaseData = {
-        ...initiative.phaseData,
-        error: {
-          message: appError.message,
-          code: appError.code,
-          timestamp: new Date().toISOString(),
-          recoverable: this.isRecoverable(appError)
-        }
-      };
+      // Store error in lastError field
+      initiative.lastError = appError.message;
       initiativeStore.update(this.initiativeId, initiative);
     }
 
@@ -300,10 +283,18 @@ export class InitiativeRecovery {
         async () => {
           // Fallback: reset initiative to safe state
           if (initiative) {
-            initiative.status = 'ready';
-            if (initiative.phaseData?.error) {
-              delete initiative.phaseData.error;
+            // Reset to appropriate status based on phase
+            if (initiative.currentPhase === 'questions') {
+              initiative.status = InitiativeStatus.AWAITING_ANSWERS;
+            } else if (initiative.currentPhase === 'research_review') {
+              initiative.status = InitiativeStatus.AWAITING_RESEARCH;
+            } else if (initiative.currentPhase === 'task_generation' || initiative.currentPhase === 'ready') {
+              initiative.status = InitiativeStatus.READY_FOR_TASKS;
+            } else {
+              initiative.status = InitiativeStatus.EXPLORING;
             }
+            // Clear error
+            initiative.lastError = undefined;
             initiativeStore.update(this.initiativeId, initiative);
           }
         }
@@ -344,16 +335,17 @@ export class RecoveryWorkflows {
     // Reset initiative to ready state
     const initiative = initiativeStore.get(initiativeId);
     if (initiative) {
-      initiative.status = 'ready';
-      initiative.phaseData = {
-        ...initiative.phaseData,
-        error: {
-          message: 'Process crashed, ready to retry',
-          code: ErrorCode.CLAUDE_PROCESS_CRASHED,
-          timestamp: new Date().toISOString(),
-          recoverable: true
-        }
-      };
+      // Reset to appropriate status based on phase
+      if (initiative.currentPhase === InitiativePhase.QUESTIONS) {
+        initiative.status = InitiativeStatus.AWAITING_ANSWERS;
+      } else if (initiative.currentPhase === InitiativePhase.RESEARCH_REVIEW) {
+        initiative.status = InitiativeStatus.AWAITING_RESEARCH;
+      } else if (initiative.currentPhase === InitiativePhase.TASK_GENERATION || initiative.currentPhase === InitiativePhase.READY) {
+        initiative.status = InitiativeStatus.READY_FOR_TASKS;
+      } else {
+        initiative.status = InitiativeStatus.EXPLORING;
+      }
+      initiative.lastError = 'Process crashed, ready to retry';
       initiativeStore.update(initiativeId, initiative);
     }
   }
@@ -371,7 +363,7 @@ export class RecoveryWorkflows {
     while (retries < maxRetries) {
       try {
         const initiative = initiativeStore.get(initiativeId);
-        if (initiative && initiative.status !== 'processing') {
+        if (initiative && !initiative.isActive) {
           return; // Lock released
         }
       } catch {}
@@ -382,8 +374,8 @@ export class RecoveryWorkflows {
 
     // Force unlock if still locked
     const initiative = initiativeStore.get(initiativeId);
-    if (initiative && initiative.status === 'processing') {
-      initiative.status = 'ready';
+    if (initiative && initiative.isActive) {
+      initiative.isActive = false;
       initiativeStore.update(initiativeId, initiative);
     }
   }
@@ -402,22 +394,19 @@ export class RecoveryWorkflows {
 
     // Check if transition actually completed
     const hasDataForPhase = (phase: InitiativePhase): boolean => {
-      // Check phaseData for phase-specific data
-      const phaseData = initiative.phaseData || {};
-      
       switch (phase) {
         case 'exploration':
-          return !!phaseData.questions;
+          return !!initiative.questions && initiative.questions.length > 0;
         case 'questions':
-          return !!phaseData.answers;
+          return !!initiative.userAnswers && Object.keys(initiative.userAnswers).length > 0;
         case 'research_prep':
-          return !!phaseData.researchPlan;
+          return !!initiative.researchNeeds;
         case 'research_review':
-          return !!phaseData.research;
+          return !!initiative.researchResults;
         case 'task_generation':
-          return !!phaseData.tasks || (initiative.tasksCreated ?? 0) > 0;
+          return !!initiative.taskSteps && initiative.taskSteps.length > 0;
         case 'ready':
-          return (initiative.tasksCreated ?? 0) > 0;
+          return (initiative.submittedTasks ?? 0) > 0;
         default:
           return false;
       }
@@ -425,12 +414,21 @@ export class RecoveryWorkflows {
 
     // Determine correct phase
     if (hasDataForPhase(toPhase)) {
-      initiative.phase = toPhase;
+      initiative.currentPhase = toPhase;
     } else {
-      initiative.phase = fromPhase;
+      initiative.currentPhase = fromPhase;
     }
     
-    initiative.status = 'ready';
+    // Set appropriate status based on phase
+    if (initiative.currentPhase === 'questions') {
+      initiative.status = InitiativeStatus.AWAITING_ANSWERS;
+    } else if (initiative.currentPhase === 'research_review') {
+      initiative.status = InitiativeStatus.AWAITING_RESEARCH;
+    } else if (initiative.currentPhase === 'task_generation' || initiative.currentPhase === 'ready') {
+      initiative.status = InitiativeStatus.READY_FOR_TASKS;
+    } else {
+      initiative.status = InitiativeStatus.EXPLORING;
+    }
     initiativeStore.update(initiativeId, initiative);
   }
 }
