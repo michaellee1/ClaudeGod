@@ -7,8 +7,8 @@ You are refining the plan for an initiative with the following objective:
 
 ### Your Exploration Results
 Read your previous exploration output from:
-- `{{outputDir}}/intermediate-plan.md`
-- `{{outputDir}}/questions.md`
+- `{{outputDir}}/exploration.md`
+- `{{outputDir}}/questions.json`
 
 ### User's Answers
 {{userAnswers}}

@@ -116,19 +116,27 @@ export class InitiativeManager extends EventEmitter {
   private async setupProcessManagerEvents(processManager: ProcessManager, processInfo: ProcessInfo): Promise<void> {
     const outputs: string[] = []
 
-    processManager.on(INITIATIVE_EVENTS.OUTPUT, (output: PhaseOutput) => {
-      outputs.push(JSON.stringify(output))
+    // Listen to the raw output from process manager
+    processManager.on('output', (output: any) => {
+      // Store output as JSON line
+      const phaseOutput: PhaseOutput = {
+        type: 'output',
+        data: typeof output === 'string' ? output : JSON.stringify(output)
+      }
+      outputs.push(JSON.stringify(phaseOutput))
+      
       // Broadcast output to WebSocket if available
-      if ((global as any).broadcastInitiativeUpdate) {
-        (global as any).broadcastInitiativeUpdate(processInfo.initiativeId, {
+      if ((global as any).broadcastInitiativeOutput) {
+        (global as any).broadcastInitiativeOutput(processInfo.initiativeId, {
           type: 'output',
           phase: processInfo.phase,
-          data: output
+          data: output,
+          timestamp: new Date()
         })
       }
     })
 
-    processManager.on(INITIATIVE_EVENTS.COMPLETED, async () => {
+    processManager.on('completed', async () => {
       try {
         // Save all outputs to phase file
         const outputContent = outputs.join('\n')
@@ -149,7 +157,7 @@ export class InitiativeManager extends EventEmitter {
       }
     })
 
-    processManager.on(INITIATIVE_EVENTS.ERROR, (error: Error) => {
+    processManager.on('error', (error: Error) => {
       console.error(`Process error for initiative ${processInfo.initiativeId}:`, error)
       this.cleanupProcess(processInfo.initiativeId)
       this.emit(INITIATIVE_EVENTS.ERROR, { initiativeId: processInfo.initiativeId, phase: processInfo.phase, error })
@@ -180,48 +188,110 @@ export class InitiativeManager extends EventEmitter {
       case InitiativePhase.EXPLORATION:
         // Parse questions from exploration output
         const explorationOutput = await this.initiativeStore.loadPhaseFile(initiativeId, 'exploration_output.json')
-        // Extract questions and save them
-        await this.initiativeStore.savePhaseFile(initiativeId, 'questions.json', JSON.stringify({
-          questions: this.parseQuestionsFromOutput(explorationOutput)
-        }))
+        const questions = this.parseQuestionsFromOutput(explorationOutput)
+        // Save questions in the expected format
+        await this.initiativeStore.savePhaseFile(initiativeId, 'questions.json', JSON.stringify(questions))
+        // Also save the raw markdown output for reference
+        const markdownQuestions = Object.entries(questions).map(([id, q]) => `${id}: ${q}`).join('\n')
+        await this.initiativeStore.savePhaseFile(initiativeId, 'questions.md', markdownQuestions)
         // Transition to questions phase
-        this.initiativeStore.updatePhase(initiativeId, 'questions')
+        await this.initiativeStore.updatePhase(initiativeId, 'questions')
         break
 
       case InitiativePhase.RESEARCH_PREP:
+        // Extract research needs from output
+        const researchOutput = await this.initiativeStore.loadPhaseFile(initiativeId, 'research_prep_output.json')
+        let researchNeeds = ''
+        try {
+          const lines = researchOutput.split('\n').filter(line => line.trim())
+          for (const line of lines) {
+            try {
+              const parsed: PhaseOutput = JSON.parse(line)
+              if (parsed.type === 'output' && parsed.data) {
+                researchNeeds += parsed.data + '\n'
+              }
+            } catch {
+              researchNeeds += line + '\n'
+            }
+          }
+        } catch (error) {
+          console.error('Error extracting research needs:', error)
+        }
+        // Save research needs
+        await this.initiativeStore.savePhaseFile(initiativeId, 'research-needs.md', researchNeeds.trim())
         // Research prep complete, transition to research_review
-        this.initiativeStore.updatePhase(initiativeId, 'research_review')
+        await this.initiativeStore.updatePhase(initiativeId, 'research_review')
         break
 
       case InitiativePhase.TASK_GENERATION:
         // Parse tasks from output
         const taskOutput = await this.initiativeStore.loadPhaseFile(initiativeId, 'task_generation_output.json')
         const tasks = this.parseTasksFromOutput(taskOutput)
-        // Save tasks
-        await this.initiativeStore.savePhaseFile(initiativeId, 'tasks.json', JSON.stringify(tasks))
+        // Also extract global context
+        let globalContext = ''
+        try {
+          let jsonContent = ''
+          const lines = taskOutput.split('\n').filter(line => line.trim())
+          for (const line of lines) {
+            try {
+              const parsed: PhaseOutput = JSON.parse(line)
+              if (parsed.type === 'output' && parsed.data) {
+                jsonContent += parsed.data + '\n'
+              }
+            } catch {
+              jsonContent += line + '\n'
+            }
+          }
+          const { parseTaskPlan } = require('./initiative-parsers')
+          const taskPlan = parseTaskPlan(jsonContent)
+          globalContext = taskPlan.globalContext || ''
+        } catch (error) {
+          console.error('Error extracting global context:', error)
+        }
+        // Save tasks with proper structure
+        await this.initiativeStore.savePhaseFile(initiativeId, 'tasks.json', JSON.stringify({
+          globalContext,
+          steps: tasks
+        }))
+        // Update initiative with task steps
+        await this.initiativeStore.update(initiativeId, {
+          taskSteps: tasks
+        })
         // Transition to ready
-        this.initiativeStore.updatePhase(initiativeId, 'ready')
+        await this.initiativeStore.updatePhase(initiativeId, 'ready')
         break
     }
   }
 
   private parseQuestionsFromOutput(output: string): Record<string, string> {
     // Parse questions from the exploration phase output
-    // This is a simplified parser - actual implementation would need to handle the specific output format
+    // First try to extract the actual content from the JSON output
     const questions: Record<string, string> = {}
     try {
+      // Extract the markdown content from the output
+      let markdownContent = ''
       const lines = output.split('\n').filter(line => line.trim())
+      
       for (const line of lines) {
         try {
           const parsed: PhaseOutput = JSON.parse(line)
-          if (parsed.type === 'question' && parsed.id && parsed.text) {
-            questions[parsed.id] = parsed.text
+          if (parsed.type === 'output' && parsed.data) {
+            markdownContent += parsed.data + '\n'
           }
         } catch (lineError) {
-          // Skip invalid JSON lines
-          continue
+          // Not JSON, might be raw output
+          markdownContent += line + '\n'
         }
       }
+      
+      // Now parse questions from the markdown content
+      const { parseQuestions } = require('./initiative-parsers')
+      const parsedQuestions = parseQuestions(markdownContent)
+      
+      // Convert to the expected format
+      parsedQuestions.forEach((q: any) => {
+        questions[q.id] = q.question
+      })
     } catch (error) {
       console.error('Error parsing questions:', error)
     }
@@ -230,24 +300,32 @@ export class InitiativeManager extends EventEmitter {
 
   private parseTasksFromOutput(output: string): InitiativeTaskStep[] {
     // Parse tasks from the task_generation phase output
-    const tasks: InitiativeTaskStep[] = []
     try {
+      // Extract the JSON content from the output
+      let jsonContent = ''
       const lines = output.split('\n').filter(line => line.trim())
+      
       for (const line of lines) {
         try {
           const parsed: PhaseOutput = JSON.parse(line)
-          if (parsed.type === 'task' && parsed.data) {
-            tasks.push(parsed.data as InitiativeTaskStep)
+          if (parsed.type === 'output' && parsed.data) {
+            jsonContent += parsed.data + '\n'
           }
         } catch (lineError) {
-          // Skip invalid JSON lines
-          continue
+          // Not JSON, might be raw output
+          jsonContent += line + '\n'
         }
       }
+      
+      // Now parse tasks from the JSON content
+      const { parseTaskPlan } = require('./initiative-parsers')
+      const taskPlan = parseTaskPlan(jsonContent)
+      
+      return taskPlan.steps || []
     } catch (error) {
       console.error('Error parsing tasks:', error)
+      return []
     }
-    return tasks
   }
 
   async startExploration(initiativeId: string): Promise<void> {
@@ -431,8 +509,24 @@ export class InitiativeManager extends EventEmitter {
     }
 
     // Load tasks from file
-    const tasksContent = await this.initiativeStore.loadPhaseFile(initiativeId, 'tasks.json')
-    return JSON.parse(tasksContent) as InitiativeTaskStep[]
+    try {
+      const tasksContent = await this.initiativeStore.loadPhaseFile(initiativeId, 'tasks.json')
+      const parsed = JSON.parse(tasksContent)
+      
+      // Handle both formats: array of steps or object with steps property
+      if (Array.isArray(parsed)) {
+        return parsed as InitiativeTaskStep[]
+      } else if (parsed.steps && Array.isArray(parsed.steps)) {
+        return parsed.steps as InitiativeTaskStep[]
+      } else {
+        console.error('Invalid tasks format:', parsed)
+        return []
+      }
+    } catch (error) {
+      console.error(`Error loading tasks for initiative ${initiativeId}:`, error)
+      // Try to get from initiative object
+      return initiative.taskSteps || []
+    }
   }
 
   private cleanupProcess(initiativeId: string): void {

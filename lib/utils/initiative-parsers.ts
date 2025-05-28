@@ -184,18 +184,11 @@ function validateAndTransformSteps(steps: any[]): InitiativeTaskStep[] {
           console.warn(`Task ${taskIndex + 1} in step "${step.name}" missing required fields`)
         }
         
-        // Create step structure for task
-        const taskSteps = task.steps || [{
-          description: task.description || 'Complete task',
-          completed: false
-        }]
-        
         return {
           id: task.id || `task-${index}-${taskIndex}`,
           title: task.title || 'Untitled Task',
           description: task.description || '',
           priority: validatePriority(task.priority),
-          steps: taskSteps,
           dependencies: Array.isArray(task.dependencies) ? task.dependencies : [],
           estimatedEffort: task.estimatedEffort || task.effort || undefined,
           status: 'pending' as const,

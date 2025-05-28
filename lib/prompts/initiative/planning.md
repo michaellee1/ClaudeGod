@@ -6,8 +6,8 @@ You are creating the final implementation plan for an initiative with the follow
 ## Previous Context
 
 Read all previous outputs from this initiative:
-1. `{{outputDir}}/intermediate-plan.md` - Your initial exploration
-2. `{{outputDir}}/questions.md` - Your clarifying questions
+1. `{{outputDir}}/exploration.md` - Your initial exploration and questions
+2. `{{outputDir}}/questions.json` - The questions in JSON format
 3. User's answers to your questions (provided during refinement)
 4. `{{outputDir}}/research-needs.md` - Your research requirements
 

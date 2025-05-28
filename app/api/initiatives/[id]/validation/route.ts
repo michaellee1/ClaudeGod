@@ -7,27 +7,22 @@ import {
   ValidationReport 
 } from '@/lib/utils/initiative-validation'
 import { Initiative, InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
+import { withErrorHandler } from '@/lib/utils/error-handler'
+import { ValidationError, NotFoundError } from '@/lib/utils/errors'
 
-export async function GET(
+export const GET = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
-  try {
+) => {
     const { id } = params
 
     if (!id || typeof id !== 'string') {
-      return NextResponse.json(
-        { error: 'Invalid initiative ID' },
-        { status: 400 }
-      )
+      throw new ValidationError('Invalid initiative ID')
     }
 
     const initiative = initiativeStore.get(id)
     if (!initiative) {
-      return NextResponse.json(
-        { error: 'Initiative not found' },
-        { status: 404 }
-      )
+      throw new NotFoundError('Initiative not found')
     }
 
     // Convert store initiative to full Initiative type for validation
@@ -88,14 +83,7 @@ export async function GET(
         status: initiative.status
       }
     })
-  } catch (error: any) {
-    console.error('Error generating validation report:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to generate validation report' },
-      { status: 500 }
-    )
-  }
-}
+})
 
 // Prevent static caching
 export const dynamic = 'force-dynamic'

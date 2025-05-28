@@ -25,50 +25,31 @@ You are helping explore an initiative with the following objective:
 
 ## Output Format
 
-You must create two output files:
+Save your findings to {{outputDir}}/exploration.md with the following structure:
 
-### 1. Intermediate Plan: `{{outputDir}}/intermediate-plan.md`
-Structure your plan with these sections:
 ```markdown
-# Intermediate Plan: {{objective}}
+# Exploration Results
 
-## Codebase Analysis
-- Key findings from exploration
-- Relevant existing patterns
-- Current implementation details
+## Context
+Brief summary of relevant codebase understanding
 
-## Proposed Approach
-- High-level strategy
-- Major components to build/modify
-- Integration points
+## Intermediate Plan
+High-level approach and work breakdown
 
-## Technical Considerations
-- Potential challenges
-- Architecture decisions needed
-- Performance or security considerations
-
-## Rough Work Breakdown
-- Major phases or milestones
-- Key deliverables
+## Questions
+1. First clarifying question?
+2. Second clarifying question?
+3. Third clarifying question?
+...
 ```
 
-### 2. Questions for User: `{{outputDir}}/questions.md`
-Format your questions clearly:
-```markdown
-# Questions for Initiative: {{objective}}
+Make sure each question:
+- Ends with a question mark (?)
+- Is numbered (1., 2., 3., etc.)
+- Focuses on clarifying design decisions or approach
+- Helps refine the implementation plan
 
-## Requirements Clarification
-1. [Specific question about functionality]
-2. [Question about scope or boundaries]
-
-## Technical Decisions
-1. [Question about implementation approach]
-2. [Question about technology choices]
-
-## Priorities and Constraints
-1. [Question about what's most important]
-2. [Question about limitations or requirements]
-```
+Generate 5-10 focused questions.
 
 ## Important Notes
 
