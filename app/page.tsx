@@ -416,7 +416,7 @@ export default function Home() {
   }
 
   return (
-    <div className="w-full px-8 py-8">
+    <div className="w-full px-4 py-8">
       
       {error && (
         <Alert variant="destructive" className="mb-6">
@@ -424,8 +424,8 @@ export default function Home() {
         </Alert>
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        <Card className="lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-4">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Submit New Task</CardTitle>
             <CardDescription>Create a coding task with clear requirements</CardDescription>
@@ -520,7 +520,7 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
+        <Card className="lg:col-span-7">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
