@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Select } from '@/components/ui/select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   Table,
   TableBody,
@@ -192,7 +192,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [isDeletingAll, setIsDeletingAll] = useState(false)
   const [previewingTaskId, setPreviewingTaskId] = useState<string | null>(null)
-  const [thinkMode, setThinkMode] = useState('no_review')
+  const [thinkMode, setThinkMode] = useState('none')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   
@@ -379,9 +379,11 @@ export default function Home() {
     // Add think mode first (it will be moved after image ref on backend)
     if (thinkMode !== 'none' && thinkMode !== 'no_review') {
       const thinkModeText = thinkMode === 'level1' ? 'Think hard' : 
-                           thinkMode === 'level2' ? 'Think harder' : 
-                           'Ultrathink'
-      finalPrompt = `${finalPrompt}. ${thinkModeText}`
+                           thinkMode === 'level2' ? 'Ultrathink' : 
+                           ''
+      if (thinkModeText) {
+        finalPrompt = `${finalPrompt}. ${thinkModeText}`
+      }
     }
 
     setIsSubmitting(true)
@@ -490,18 +492,25 @@ export default function Home() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="thinkMode">Think Mode</Label>
-                <Select
-                  id="thinkMode"
-                  value={thinkMode}
-                  onChange={(e) => setThinkMode(e.target.value)}
-                >
-                  <option value="no_review">No Review</option>
-                  <option value="none">None</option>
-                  <option value="level1">Think hard (level 1)</option>
-                  <option value="level2">Think harder (level 2)</option>
-                  <option value="level3">Ultrathink (level 3)</option>
-                </Select>
+                <Label>Think Mode</Label>
+                <RadioGroup value={thinkMode} onValueChange={setThinkMode}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="none" id="none" />
+                    <Label htmlFor="none" className="font-normal">None</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="no_review" id="no_review" />
+                    <Label htmlFor="no_review" className="font-normal">No Review</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="level1" id="level1" />
+                    <Label htmlFor="level1" className="font-normal">Think hard (level 1)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="level2" id="level2" />
+                    <Label htmlFor="level2" className="font-normal">Ultrathink (level 2)</Label>
+                  </div>
+                </RadioGroup>
               </div>
               
               <Button type="submit" disabled={isSubmitting}>
