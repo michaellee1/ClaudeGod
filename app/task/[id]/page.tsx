@@ -528,6 +528,9 @@ export default function TaskDetail() {
         {/* Right side - full height process output */}
         <div ref={outputContainerRef} className="flex-1 bg-gray-50 text-gray-900 p-4 rounded-lg overflow-y-auto font-mono text-sm border border-gray-200">
           {outputs.map((output) => {
+            // Skip outputs without content
+            if (!output.content) return null
+            
             // Check if this is a tool use or file content
             const isToolUse = output.content.startsWith('[') && (output.content.includes('[Tool:') || output.content.includes('[Reading file:') || output.content.includes('[Editing file:') || output.content.includes('[Writing file:') || output.content.includes('[Searching') || output.content.includes('[Finding') || output.content.includes('[Running:') || output.content.includes('[Listing:') || output.content.includes('[Multi-editing') || output.content.includes('[System:'))
             const isFileContent = !isToolUse && output.content.includes('\n') && output.content.length > 100
@@ -561,7 +564,7 @@ export default function TaskDetail() {
                 )}
               </div>
             )
-          })}
+          }).filter(Boolean)}
           <div ref={outputEndRef} />
         </div>
       </div>

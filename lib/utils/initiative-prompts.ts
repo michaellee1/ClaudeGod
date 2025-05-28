@@ -29,7 +29,7 @@ You are helping explore an initiative with the following objective:
 
 Save your findings to {{outputDir}}/exploration.md with the following structure:
 
-```markdown
+\`\`\`markdown
 # Exploration Results
 
 ## Context
@@ -43,7 +43,7 @@ High-level approach and work breakdown
 2. Second clarifying question?
 3. Third clarifying question?
 ...
-```
+\`\`\`
 
 Make sure each question:
 - Ends with a question mark (?)

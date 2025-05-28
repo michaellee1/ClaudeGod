@@ -4,7 +4,6 @@ const next = require('next')
 const { WebSocketServer } = require('ws')
 const { mergeProtectionMiddleware } = require('./lib/utils/merge-protection')
 const { runStartupMigrations } = require('./lib/utils/initiative-migration')
-const { yoloModeHandler } = require('./lib/utils/yolo-mode-handler')
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -182,8 +181,9 @@ global.triggerWebSocketReconnection = triggerWebSocketReconnection
 mergeProtectionMiddleware()
 
 // Initialize YOLO mode handler
-const { YoloModeHandler } = require('./lib/utils/yolo-mode-handler')
-YoloModeHandler.getInstance()
+// TODO: Fix TypeScript module loading issue
+// const { YoloModeHandler } = require('./lib/utils/yolo-mode-handler')
+// YoloModeHandler.getInstance()
 
 // Initialize initiative processor (commented out for now - manual start only)
 // const initiativeProcessor = require('./lib/utils/initiative-processor')
@@ -248,12 +248,13 @@ app.prepare().then(async () => {
         const data = JSON.parse(message.toString())
         
         // Update heartbeat for task-specific messages
-        if (data.taskId) {
-          const { taskStore } = require('./lib/utils/task-store')
-          if (taskStore.updateTaskHeartbeat) {
-            taskStore.updateTaskHeartbeat(data.taskId)
-          }
-        }
+        // TODO: Fix TypeScript module loading issue
+        // if (data.taskId) {
+        //   const { taskStore } = require('./lib/utils/task-store')
+        //   if (taskStore.updateTaskHeartbeat) {
+        //     taskStore.updateTaskHeartbeat(data.taskId)
+        //   }
+        // }
         
         if (data.type === 'subscribe' && data.taskId && /^[a-zA-Z0-9-_]+$/.test(data.taskId)) {
           // Subscribe to a specific task
