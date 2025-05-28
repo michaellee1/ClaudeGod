@@ -2,6 +2,19 @@ import { EventEmitter } from 'events'
 import { InitiativeManager } from './initiative-manager'
 import initiativeStore, { type Initiative as StoreInitiative } from './initiative-store'
 import { InitiativePhase, InitiativeStatus } from '../types/initiative'
+import {
+  AppError,
+  ErrorCode,
+  InitiativeError,
+  ProcessError,
+  ClaudeOutputMalformedError,
+  FileNotFoundError,
+  ConcurrentModificationError,
+  toAppError
+} from './errors'
+import { withRetry, ErrorLogger, CircuitBreaker } from './error-handler'
+import { InitiativeRecovery, RecoveryWorkflows } from './error-recovery'
+import { InitiativeTransaction } from './rollback-manager'
 
 interface QueuedPhase {
   initiativeId: string
@@ -44,6 +57,9 @@ export class InitiativeProcessor extends EventEmitter {
     totalRetried: 0,
     averageProcessingTime: 0
   }
+  private circuitBreaker: CircuitBreaker
+  private errorLogger: ErrorLogger
+  private queueLock: boolean = false
   
   private readonly MAX_CONCURRENT_PROCESSES = 3
   private readonly HEALTH_CHECK_INTERVAL = 30000 // 30 seconds
@@ -53,6 +69,8 @@ export class InitiativeProcessor extends EventEmitter {
   private constructor() {
     super()
     this.initiativeManager = InitiativeManager.getInstance()
+    this.circuitBreaker = new CircuitBreaker(5, 60000, 'initiative-processor')
+    this.errorLogger = ErrorLogger.getInstance()
     this.setupEventHandlers()
   }
   
@@ -80,6 +98,16 @@ export class InitiativeProcessor extends EventEmitter {
     // Handle process termination
     process.on('SIGINT', () => this.shutdown())
     process.on('SIGTERM', () => this.shutdown())
+    process.on('uncaughtException', (error) => {
+      this.errorLogger.log(error, { source: 'uncaughtException' })
+      console.error('Uncaught exception in InitiativeProcessor:', error)
+      this.shutdown()
+    })
+    process.on('unhandledRejection', (reason, promise) => {
+      const error = reason instanceof Error ? reason : new Error(String(reason))
+      this.errorLogger.log(error, { source: 'unhandledRejection', promise })
+      console.error('Unhandled rejection in InitiativeProcessor:', reason)
+    })
   }
   
   /**
@@ -170,51 +198,61 @@ export class InitiativeProcessor extends EventEmitter {
   /**
    * Manually retry a failed phase
    */
-  retryFailedPhase(initiativeId: string): void {
-    const initiative = initiativeStore.get(initiativeId)
-    if (!initiative) {
-      throw new Error(`Initiative ${initiativeId} not found`)
-    }
-    
-    // Store interfaces don't have lastError, check phase data
-    const hasError = initiative.phaseData?.error
-    if (!hasError) {
-      throw new Error(`No failed phase to retry for initiative ${initiativeId}`)
-    }
-    
-    // Determine the phase to retry based on current status
-    const phaseToRetry = this.getPhaseForStatus(initiative.status as InitiativeStatus)
-    if (!phaseToRetry) {
-      throw new Error(`Cannot determine phase to retry for status ${initiative.status}`)
-    }
-    
-    // Find existing queue item or create new one
-    const existingIndex = this.queue.findIndex(
-      item => item.initiativeId === initiativeId
-    )
-    
-    if (existingIndex !== -1) {
-      // Increment retry count
-      this.queue[existingIndex].retryCount++
-      this.queue[existingIndex].timestamp = Date.now()
-    } else {
-      // Add to queue as retry
-      const queueItem: QueuedPhase = {
-        initiativeId,
-        phase: phaseToRetry,
-        priority: 0, // High priority for retries
-        timestamp: Date.now(),
-        retryCount: 1
+  async retryFailedPhase(initiativeId: string): Promise<void> {
+    try {
+      const initiative = await this.getInitiativeWithLock(initiativeId)
+      if (!initiative) {
+        throw new InitiativeError(
+          `Initiative ${initiativeId} not found`,
+          ErrorCode.INITIATIVE_NOT_FOUND,
+          { initiativeId }
+        )
       }
-      this.queue.push(queueItem)
+    
+      // Store interfaces don't have lastError, check phase data
+      const hasError = initiative.phaseData?.error
+      if (!hasError) {
+        throw new Error(`No failed phase to retry for initiative ${initiativeId}`)
+      }
+    
+      // Determine the phase to retry based on current status
+      const phaseToRetry = this.getPhaseForStatus(initiative.status as InitiativeStatus)
+      if (!phaseToRetry) {
+        throw new Error(`Cannot determine phase to retry for status ${initiative.status}`)
+      }
+    
+      // Find existing queue item or create new one
+      const existingIndex = this.queue.findIndex(
+        item => item.initiativeId === initiativeId
+      )
+      
+      if (existingIndex !== -1) {
+        // Increment retry count
+        this.queue[existingIndex].retryCount++
+        this.queue[existingIndex].timestamp = Date.now()
+      } else {
+        // Add to queue as retry
+        const queueItem: QueuedPhase = {
+          initiativeId,
+          phase: phaseToRetry,
+          priority: 0, // High priority for retries
+          timestamp: Date.now(),
+          retryCount: 1
+        }
+        this.queue.push(queueItem)
+      }
+      
+      this.sortQueue()
+      console.log(`Queued retry for phase ${phaseToRetry} of initiative ${initiativeId}`)
+      this.broadcastQueueUpdate()
+      
+      // Clear error state
+      await this.updateInitiativeWithRetry(initiativeId, { 
+        phaseData: { ...initiative.phaseData, error: undefined } 
+      })
+    } catch (error) {
+      throw error
     }
-    
-    this.sortQueue()
-    console.log(`Queued retry for phase ${phaseToRetry} of initiative ${initiativeId}`)
-    this.broadcastQueueUpdate()
-    
-    // Clear error state
-    initiativeStore.update(initiativeId, { phaseData: { ...initiative.phaseData, error: undefined } })
   }
   
   /**
@@ -237,9 +275,11 @@ export class InitiativeProcessor extends EventEmitter {
     this.activeProcesses.delete(initiativeId)
     
     // Remove from queue if present
-    this.queue = this.queue.filter(
-      item => item.initiativeId !== initiativeId
-    )
+    await this.modifyQueueSafely(() => {
+      this.queue = this.queue.filter(
+        item => item.initiativeId !== initiativeId
+      )
+    })
     
     // Update initiative status
     initiativeStore.update(initiativeId, {
@@ -278,9 +318,13 @@ export class InitiativeProcessor extends EventEmitter {
     }
     
     try {
-      await this.startProcess(nextItem)
+      await this.circuitBreaker.execute(async () => {
+        await this.startProcess(nextItem)
+      })
     } catch (error) {
-      console.error(`Failed to start process for ${nextItem.initiativeId}:`, error)
+      const appError = toAppError(error)
+      this.errorLogger.log(appError, { initiativeId: nextItem.initiativeId, phase: nextItem.phase })
+      console.error(`Failed to start process for ${nextItem.initiativeId}:`, appError.message)
       
       // Re-queue if under retry limit
       if (nextItem.retryCount < this.MAX_RETRY_COUNT) {
@@ -307,6 +351,10 @@ export class InitiativeProcessor extends EventEmitter {
     
     console.log(`Starting process for initiative ${initiativeId}, phase ${phase}`)
     
+    // Create recovery context
+    const recovery = new InitiativeRecovery(initiativeId)
+    const transaction = new InitiativeTransaction(initiativeId)
+    
     // Create active process entry
     const activeProcess: ActiveProcess = {
       initiativeId,
@@ -316,7 +364,10 @@ export class InitiativeProcessor extends EventEmitter {
     
     // Set up health monitoring
     activeProcess.healthCheckInterval = setInterval(() => {
-      this.performHealthCheck(initiativeId)
+      this.performHealthCheck(initiativeId).catch(error => {
+        console.error(`Health check failed for ${initiativeId}:`, error)
+        this.handleProcessError(initiativeId, phase, error)
+      })
     }, this.HEALTH_CHECK_INTERVAL)
     
     this.activeProcesses.set(initiativeId, activeProcess)
@@ -330,26 +381,68 @@ export class InitiativeProcessor extends EventEmitter {
     // Broadcast status update
     this.broadcastStatusUpdate(initiativeId, 'processing', phase)
     
-    // Start the actual process based on phase
-    switch (phase) {
-      case InitiativePhase.EXPLORATION:
-        await this.initiativeManager.startExploration(initiativeId)
-        break
-        
-      case InitiativePhase.RESEARCH_PREP:
-        // This requires answers to be already saved
-        const answers = await initiativeStore.loadPhaseFile(initiativeId, 'answers.json')
-        await this.initiativeManager.processAnswers(initiativeId, JSON.parse(answers))
-        break
-        
-      case InitiativePhase.TASK_GENERATION:
-        // This requires research to be already saved
-        const research = await initiativeStore.loadPhaseFile(initiativeId, 'research.md')
-        await this.initiativeManager.processResearch(initiativeId, research)
-        break
-        
-      default:
-        throw new Error(`Cannot process phase ${phase} automatically`)
+    // Add rollback for process cleanup
+    recovery.addRollback(
+      'cleanup-process',
+      `Cleanup process for ${initiativeId}`,
+      async () => {
+        if (activeProcess.healthCheckInterval) {
+          clearInterval(activeProcess.healthCheckInterval)
+        }
+        this.activeProcesses.delete(initiativeId)
+      }
+    )
+    
+    try {
+      // Start the actual process based on phase
+      await recovery.executeWithRecovery(async () => {
+        switch (phase) {
+          case InitiativePhase.EXPLORATION:
+            await withRetry(
+              () => this.initiativeManager.startExploration(initiativeId),
+              { maxRetries: 3, retryableErrors: ['NETWORK_ERROR', 'NETWORK_TIMEOUT'] }
+            )
+            break
+            
+          case InitiativePhase.RESEARCH_PREP:
+            // This requires answers to be already saved
+            const answers = await this.loadPhaseFileWithRetry(initiativeId, 'answers.json')
+            try {
+              const parsedAnswers = JSON.parse(answers)
+              await withRetry(
+                () => this.initiativeManager.processAnswers(initiativeId, parsedAnswers),
+                { maxRetries: 3 }
+              )
+            } catch (parseError) {
+              throw new ClaudeOutputMalformedError(answers, parseError instanceof Error ? parseError.message : String(parseError))
+            }
+            break
+            
+          case InitiativePhase.TASK_GENERATION:
+            // This requires research to be already saved
+            const research = await this.loadPhaseFileWithRetry(initiativeId, 'research.md')
+            await withRetry(
+              () => this.initiativeManager.processResearch(initiativeId, research),
+              { maxRetries: 3 }
+            )
+            break
+            
+          default:
+            throw new InitiativeError(
+              `Cannot process phase ${phase} automatically`,
+              ErrorCode.INITIATIVE_INVALID_STATE,
+              { phase }
+            )
+        }
+      }, {
+        maxRetries: 2,
+        rollbackOnFailure: true
+      })
+      
+      transaction.commit()
+    } catch (error) {
+      // Recovery failed, handle the error
+      throw error
     }
   }
   
@@ -432,33 +525,62 @@ export class InitiativeProcessor extends EventEmitter {
   /**
    * Perform health check on active process
    */
-  private performHealthCheck(initiativeId: string): void {
+  private async performHealthCheck(initiativeId: string): Promise<void> {
     const activeProcess = this.activeProcesses.get(initiativeId)
     if (!activeProcess) {
       return
     }
     
-    const initiative = initiativeStore.get(initiativeId)
-    if (!initiative) {
-      // Initiative was deleted, clean up process
-      console.warn(`Initiative ${initiativeId} no longer exists, cleaning up process`)
-      if (activeProcess.healthCheckInterval) {
-        clearInterval(activeProcess.healthCheckInterval)
+    try {
+      const initiative = await this.getInitiativeWithLock(initiativeId)
+      if (!initiative) {
+        // Initiative was deleted, clean up process
+        console.warn(`Initiative ${initiativeId} no longer exists, cleaning up process`)
+        if (activeProcess.healthCheckInterval) {
+          clearInterval(activeProcess.healthCheckInterval)
+        }
+        this.activeProcesses.delete(initiativeId)
+        return
       }
-      this.activeProcesses.delete(initiativeId)
-      return
+      
+      // Check if Claude Code process is actually running
+      const isProcessAlive = await this.checkProcessHealth(initiative.claudeCodePid)
+      
+      if (!isProcessAlive) {
+        // Process crashed, attempt recovery
+        console.error(`Process crashed for initiative ${initiativeId}`)
+        await RecoveryWorkflows.recoverFromProcessCrash(initiativeId, activeProcess.phase)
+        throw new ProcessError(
+          `Claude Code process crashed`,
+          ErrorCode.CLAUDE_PROCESS_CRASHED,
+          { initiativeId, phase: activeProcess.phase }
+        )
+      }
+      
+      // Check if process is stuck (running too long)
+      const runningTime = Date.now() - activeProcess.startTime
+      const maxRuntime = 30 * 60 * 1000 // 30 minutes
+      
+      if (runningTime > maxRuntime) {
+        throw new ProcessError(
+          `Process timeout after ${runningTime}ms`,
+          ErrorCode.PROCESS_TIMEOUT,
+          { initiativeId, runningTime }
+        )
+      }
+      
+      console.log(`Health check for ${initiativeId}: running for ${runningTime}ms`)
+      
+      // Broadcast health status
+      this.broadcastHealthStatus(initiativeId, {
+        phase: activeProcess.phase,
+        runningTime,
+        healthy: true
+      })
+    } catch (error) {
+      // Health check failed, let the caller handle it
+      throw error
     }
-    
-    // Check if process is still running (basic check)
-    const runningTime = Date.now() - activeProcess.startTime
-    console.log(`Health check for ${initiativeId}: running for ${runningTime}ms`)
-    
-    // Broadcast health status
-    this.broadcastHealthStatus(initiativeId, {
-      phase: activeProcess.phase,
-      runningTime,
-      healthy: true
-    })
   }
   
   /**
@@ -637,6 +759,105 @@ export class InitiativeProcessor extends EventEmitter {
       [InitiativeStatus.COMPLETED]: InitiativePhase.READY
     }
     return statusPhaseMap[status] || null
+  }
+  
+  /**
+   * Helper methods for error handling
+   */
+  
+  private async getInitiativeWithLock(initiativeId: string): Promise<StoreInitiative | undefined> {
+    const maxRetries = 5
+    let retries = 0
+    
+    while (retries < maxRetries) {
+      try {
+        const initiative = initiativeStore.get(initiativeId)
+        if (!initiative) return undefined
+        
+        // Check if initiative is locked by another process
+        if (initiative.isActive && !this.activeProcesses.has(initiativeId)) {
+          // Another process has it, wait
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          retries++
+          continue
+        }
+        
+        return initiative
+      } catch (error) {
+        if (retries === maxRetries - 1) {
+          throw new ConcurrentModificationError('initiative', 'read')
+        }
+        await new Promise(resolve => setTimeout(resolve, 500))
+        retries++
+      }
+    }
+    
+    throw new ConcurrentModificationError('initiative', 'read')
+  }
+  
+  private async updateInitiativeWithRetry(initiativeId: string, updates: Partial<StoreInitiative>): Promise<void> {
+    await withRetry(
+      async () => {
+        try {
+          await initiativeStore.update(initiativeId, updates)
+        } catch (error) {
+          throw new ConcurrentModificationError('initiative', 'update')
+        }
+      },
+      { maxRetries: 3, initialDelay: 500 }
+    )
+  }
+  
+  private async loadPhaseFileWithRetry(initiativeId: string, filename: string): Promise<string> {
+    return await withRetry(
+      async () => {
+        try {
+          return await initiativeStore.loadPhaseFile(initiativeId, filename)
+        } catch (error) {
+          const err = error as any
+          if (err.code === 'ENOENT') {
+            throw new FileNotFoundError(`${initiativeId}/${filename}`)
+          }
+          throw error
+        }
+      },
+      { maxRetries: 3, retryableErrors: ['FILE_OPERATION_FAILED'] }
+    )
+  }
+  
+  private async modifyQueueSafely(modifier: () => void): Promise<void> {
+    const maxRetries = 10
+    let retries = 0
+    
+    while (retries < maxRetries) {
+      if (!this.queueLock) {
+        this.queueLock = true
+        try {
+          modifier()
+          return
+        } finally {
+          this.queueLock = false
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 50))
+      retries++
+    }
+    
+    throw new ConcurrentModificationError('queue', 'modify')
+  }
+  
+  private async checkProcessHealth(pid?: number): Promise<boolean> {
+    if (!pid) return false
+    
+    try {
+      // Check if process exists by sending signal 0
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      // Process doesn't exist
+      return false
+    }
   }
 }
 

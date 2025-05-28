@@ -2,35 +2,46 @@ import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { InitiativeManager } from '@/lib/utils/initiative-manager'
 import { validateObjective } from '@/lib/utils/initiative-validation'
+import { withErrorHandler } from '@/lib/utils/error-handler'
+import { ValidationError, InitiativeLimitExceededError } from '@/lib/utils/errors'
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
+export const POST = withErrorHandler(async (request: NextRequest) => {
+    let body;
+    try {
+      body = await request.json()
+    } catch (error) {
+      throw new ValidationError('Invalid JSON in request body')
+    }
+    
     const { objective } = body
 
     if (!objective || typeof objective !== 'string' || objective.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Objective is required and must be a non-empty string' },
-        { status: 400 }
-      )
+      throw new ValidationError('Objective is required and must be a non-empty string', 'objective')
     }
 
     // Validate objective using validation utility
     const objectiveError = validateObjective(objective)
     if (objectiveError) {
-      return NextResponse.json(
-        { 
-          error: objectiveError.message,
-          field: objectiveError.field,
-          constraint: objectiveError.constraint,
-          details: objectiveError.details
-        },
-        { status: 400 }
+      throw new ValidationError(
+        objectiveError.message,
+        objectiveError.field,
+        objective
       )
     }
 
     // Create new initiative
-    const initiative = await initiativeStore.createInitiative(objective.trim())
+    let initiative;
+    try {
+      initiative = await initiativeStore.createInitiative(objective.trim())
+    } catch (error: any) {
+      if (error.message?.includes('Resource limit reached')) {
+        const match = error.message.match(/(\d+)\/(\d+)/)
+        if (match) {
+          throw new InitiativeLimitExceededError(parseInt(match[2]), parseInt(match[1]))
+        }
+      }
+      throw error
+    }
 
     // Start exploration phase
     const manager = InitiativeManager.getInstance()
@@ -49,26 +60,9 @@ export async function POST(request: NextRequest) {
       objective: initiative.objective,
       createdAt: initiative.createdAt
     })
-  } catch (error: any) {
-    console.error('Error creating initiative:', error)
-    
-    // Check for resource limit error
-    if (error.message?.includes('Resource limit reached')) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 429 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: error.message || 'Failed to create initiative' },
-      { status: 500 }
-    )
-  }
-}
+})
 
-export async function GET() {
-  try {
+export const GET = withErrorHandler(async () => {
     const initiatives = initiativeStore.getAll()
     
     // Transform initiatives for API response
@@ -87,14 +81,7 @@ export async function GET() {
     }))
 
     return NextResponse.json(apiInitiatives)
-  } catch (error: any) {
-    console.error('Error listing initiatives:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to list initiatives' },
-      { status: 500 }
-    )
-  }
-}
+})
 
 // Prevent static caching
 export const dynamic = 'force-dynamic'

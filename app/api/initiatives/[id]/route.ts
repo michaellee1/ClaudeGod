@@ -2,27 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import initiativeStore from '@/lib/utils/initiative-store'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
+import { withErrorHandler } from '@/lib/utils/error-handler'
+import { InitiativeNotFoundError, ValidationError } from '@/lib/utils/errors'
 
-export async function GET(
+export const GET = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
-  try {
+) => {
     const { id } = params
 
     if (!id || typeof id !== 'string') {
-      return NextResponse.json(
-        { error: 'Invalid initiative ID' },
-        { status: 400 }
-      )
+      throw new ValidationError('Invalid initiative ID', 'id', id)
     }
 
     const initiative = initiativeStore.get(id)
     if (!initiative) {
-      return NextResponse.json(
-        { error: 'Initiative not found' },
-        { status: 404 }
-      )
+      throw new InitiativeNotFoundError(id)
     }
 
     // Prepare phase files data
@@ -101,14 +96,7 @@ export async function GET(
     }
 
     return NextResponse.json(response)
-  } catch (error: any) {
-    console.error('Error getting initiative details:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to get initiative details' },
-      { status: 500 }
-    )
-  }
-}
+})
 
 // Prevent static caching
 export const dynamic = 'force-dynamic'
