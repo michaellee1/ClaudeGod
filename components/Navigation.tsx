@@ -15,7 +15,7 @@ export function Navigation() {
   const pathname = usePathname()
 
   return (
-    <NavigationMenu className="mx-auto">
+    <NavigationMenu>
       <NavigationMenuList>
         <NavigationMenuItem>
           <Link href="/" legacyBehavior passHref>
