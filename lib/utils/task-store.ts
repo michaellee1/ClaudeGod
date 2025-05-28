@@ -351,9 +351,11 @@ class TaskStore {
       let contextPrompt = ''
       if (task.promptHistory.length === 1) {
         // First additional prompt
-        contextPrompt = `The first prompt was "${task.prompt}" (don't work on this), and you can see what we built in response to that prompt by using git diff. Now, you are being asked to make changes to this initial work, with the new request for changes being "${prompt}" (work on this). Make those changes.
+        contextPrompt = `Initial task: "${task.prompt}"
+New request: "${prompt}"
 
-## Git diff showing what was built:
+Current implementation shown below. Apply the requested changes:
+
 \`\`\`diff
 ${gitDiff}
 \`\`\``
@@ -374,12 +376,13 @@ ${gitDiff}
           }
         }
         
-        contextPrompt = `The first ${previousPrompts.length} prompts were:
+        contextPrompt = `Previous tasks:
 ${previousPrompts.map((p, i) => `${i + 1}. "${p}"`).join('\n')}
 
-You can see what we built in response to these prompts by using git diff. Now, you are being asked to make changes to this work, with the new request for changes being "${prompt}" (work on this). Make those changes.
+New request: "${prompt}"
 
-## Git diff showing what was built:
+Current implementation shown below. Apply the requested changes:
+
 \`\`\`diff
 ${gitDiff}
 \`\`\``
@@ -567,7 +570,7 @@ ${gitDiff}
       console.warn(`Process timeout for task ${task.id}: ${processName} (PID: ${pid})`)
       this.addOutput(task.id, {
         type: 'system',
-        content: `⏱️ ${processName} process timed out after 30 minutes and was terminated`,
+        content: `⏱️ ${processName} timed out (30 min limit)`,
         timestamp: new Date()
       })
     })

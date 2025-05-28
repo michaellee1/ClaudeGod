@@ -430,7 +430,7 @@ export default function Home() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Submit New Task</CardTitle>
-            <CardDescription>Create a new coding task for Claude to work on</CardDescription>
+            <CardDescription>Create a coding task with clear requirements</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -453,7 +453,7 @@ export default function Home() {
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   className="min-h-[120px]"
-                  placeholder="Describe your task..."
+                  placeholder="Describe what needs to be built or fixed..."
                   required
                 />
               </div>

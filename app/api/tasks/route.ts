@@ -106,10 +106,10 @@ export async function POST(request: NextRequest) {
       
       if (thinkModeMatch) {
         // Insert before think mode
-        finalPrompt = finalPrompt.replace(thinkModeRegex, `. Referenced image at ${imagePath}${thinkModeMatch[0]}`)
+        finalPrompt = finalPrompt.replace(thinkModeRegex, `. See image: ${imagePath}${thinkModeMatch[0]}`)
       } else {
         // No think mode, append at end
-        finalPrompt = `${finalPrompt}. Referenced image at ${imagePath}`
+        finalPrompt = `${finalPrompt}. See image: ${imagePath}`
       }
     }
     
