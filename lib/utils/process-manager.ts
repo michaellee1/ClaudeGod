@@ -45,6 +45,66 @@ export class ProcessManager extends EventEmitter {
     this.repoPath = repoPath || ''
   }
 
+  // Method to reconnect to existing processes after restart
+  async reconnectToProcesses(pids: { editorPid?: number, reviewerPid?: number, plannerPid?: number }, phase: string) {
+    this.currentPhase = phase as any
+    
+    // Since we can't reconnect to existing process streams, 
+    // we'll at least track that the processes are running
+    console.log(`ProcessManager reconnected for task ${this.taskId}:`, {
+      editorPid: pids.editorPid,
+      reviewerPid: pids.reviewerPid,
+      plannerPid: pids.plannerPid,
+      phase: phase
+    })
+    
+    // Monitor the processes to detect when they complete
+    this.monitorExistingProcesses(pids)
+  }
+
+  private async monitorExistingProcesses(pids: { editorPid?: number, reviewerPid?: number, plannerPid?: number }) {
+    const { execFile } = require('child_process')
+    const { promisify } = require('util')
+    const exec = promisify(execFile)
+    
+    // Set up monitoring interval
+    const checkInterval = setInterval(async () => {
+      let anyAlive = false
+      
+      // Check each process
+      for (const [processType, pid] of Object.entries(pids)) {
+        if (pid) {
+          try {
+            await exec('kill', ['-0', pid.toString()])
+            anyAlive = true
+          } catch {
+            // Process is dead
+            console.log(`${processType} (PID ${pid}) has terminated`)
+          }
+        }
+      }
+      
+      if (!anyAlive) {
+        clearInterval(checkInterval)
+        console.log(`All processes for task ${this.taskId} have terminated`)
+        
+        // Update phase based on what was running
+        if (this.currentPhase === 'reviewer' && pids.reviewerPid) {
+          this.currentPhase = 'finished'
+          this.emit('status', 'finished')
+          this.emit('phase', 'done')
+          this.emit('completed', true)
+        } else if (this.currentPhase === 'editor' && pids.editorPid && !pids.reviewerPid) {
+          // Editor finished but no reviewer started - task might be in no_review mode
+          this.currentPhase = 'finished'
+          this.emit('status', 'finished')
+          this.emit('phase', 'done')
+          this.emit('completed', true)
+        }
+      }
+    }, 5000) // Check every 5 seconds
+  }
+
   async startProcesses(
     worktreePath: string,
     prompt: string,

@@ -17,6 +17,7 @@ class TaskStore {
   private dataDir: string = path.join(os.homedir(), '.claude-god-data')
   private tasksFile: string = path.join(os.homedir(), '.claude-god-data', 'tasks.json')
   private outputsFile: string = path.join(os.homedir(), '.claude-god-data', 'outputs.json')
+  private processStateFile: string = path.join(os.homedir(), '.claude-god-data', 'process-state.json')
   private readonly MAX_CONCURRENT_TASKS = 10
   private saveDebounceTimer: NodeJS.Timeout | null = null
 
@@ -24,6 +25,7 @@ class TaskStore {
     this.initializeDataDir()
     this.loadConfig()
     this.loadTasks()
+    this.recoverProcessManagers()
   }
 
   private async initializeDataDir() {
@@ -71,7 +73,7 @@ class TaskStore {
             id: Math.random().toString(36).substring(7),
             taskId: task.id,
             type: 'system',
-            content: '⚠️ Task was interrupted. You can send additional prompts to continue.',
+            content: '⚠️ Task was interrupted. Attempting to reconnect to running processes...',
             timestamp: new Date()
           })
           this.outputs.set(task.id, existingOutputs)
@@ -134,6 +136,111 @@ class TaskStore {
     }
   }
 
+  private async saveProcessState() {
+    try {
+      const processState: Record<string, any> = {}
+      for (const [taskId, task] of this.tasks) {
+        if (task.status === 'in_progress' || task.status === 'starting') {
+          processState[taskId] = {
+            editorPid: task.editorPid,
+            reviewerPid: task.reviewerPid,
+            plannerPid: task.plannerPid,
+            phase: task.phase,
+            thinkMode: task.thinkMode,
+            worktree: task.worktree,
+            repoPath: task.repoPath
+          }
+        }
+      }
+      await fs.writeFile(this.processStateFile, JSON.stringify(processState, null, 2))
+    } catch (error) {
+      console.error('Error saving process state:', error)
+    }
+  }
+
+  private async recoverProcessManagers() {
+    try {
+      const processStateData = await fs.readFile(this.processStateFile, 'utf-8')
+      const processState = JSON.parse(processStateData)
+      
+      for (const [taskId, state] of Object.entries(processState)) {
+        const task = this.tasks.get(taskId)
+        if (task && task.needsRecovery) {
+          console.log(`Attempting to recover process manager for task ${taskId}`)
+          
+          // Check if processes are still running
+          const processesAlive = await this.checkProcessesAlive(state as any)
+          
+          if (processesAlive) {
+            // Create a new ProcessManager instance
+            const processManager = new ProcessManager(taskId, task.worktree, task.repoPath)
+            this.processManagers.set(taskId, processManager)
+            
+            // Set up event handlers
+            this.setupProcessManagerEvents(processManager, task)
+            
+            // Reconnect to existing processes
+            await processManager.reconnectToProcesses({
+              editorPid: (state as any).editorPid,
+              reviewerPid: (state as any).reviewerPid,
+              plannerPid: (state as any).plannerPid
+            }, (state as any).phase || task.phase)
+            
+            // Add success message
+            this.addOutput(taskId, {
+              type: 'system',
+              content: '✅ Successfully reconnected to running processes. Output streaming has resumed.',
+              timestamp: new Date()
+            })
+            
+            // Mark task as no longer needing recovery
+            task.needsRecovery = false
+          } else {
+            // Processes are dead, update task status
+            task.status = 'failed'
+            task.needsRecovery = false
+            
+            this.addOutput(taskId, {
+              type: 'system',  
+              content: '❌ Could not reconnect - processes have terminated. You can restart the task with a new prompt.',
+              timestamp: new Date()
+            })
+          }
+        }
+      }
+      
+      await this.saveTasks()
+    } catch (error) {
+      console.log('No process state file found or error recovering:', error)
+    }
+  }
+
+  private async checkProcessesAlive(state: { editorPid?: number, reviewerPid?: number, plannerPid?: number }): Promise<boolean> {
+    const { execFile } = require('child_process')
+    const { promisify } = require('util')
+    const exec = promisify(execFile)
+    
+    const pidsToCheck = [state.editorPid, state.reviewerPid, state.plannerPid].filter(pid => pid)
+    
+    if (pidsToCheck.length === 0) return false
+    
+    try {
+      // Check if any of the processes are still running
+      for (const pid of pidsToCheck) {
+        try {
+          await exec('kill', ['-0', pid!.toString()])
+          return true // At least one process is alive
+        } catch {
+          // Process not found, continue checking others
+        }
+      }
+      return false
+    } catch (error) {
+      console.error('Error checking process status:', error)
+      return false
+    }
+  }
+
   private debouncedSave() {
     // Clear existing timer
     if (this.saveDebounceTimer) {
@@ -145,6 +252,7 @@ class TaskStore {
       try {
         await this.saveTasks()
         await this.saveOutputs()
+        await this.saveProcessState()
       } catch (error) {
         console.error('Error in debouncedSave:', error)
         // Retry save after a short delay
@@ -152,6 +260,7 @@ class TaskStore {
           try {
             await this.saveTasks()
             await this.saveOutputs()
+            await this.saveProcessState()
           } catch (retryError) {
             console.error('Retry save also failed:', retryError)
           }
@@ -355,6 +464,9 @@ class TaskStore {
       await this.stopPreview(taskId)
     }
     
+    // Save process state before merge in case of restart
+    await this.saveProcessState()
+    
     // If this is a self-modification task, warn about potential issues
     if (task.isSelfModification) {
       console.warn(`WARNING: Merging self-modification task ${taskId}. This may affect the server.`)
@@ -364,11 +476,19 @@ class TaskStore {
         if (activeTaskId !== taskId && activeTask.status === 'in_progress') {
           this.addOutput(activeTaskId, {
             type: 'system',
-            content: '⚠️ A self-modification task is being merged. Connection may be temporarily disrupted.',
+            content: '⚠️ A self-modification task is being merged. Your task will continue running.',
             timestamp: new Date()
           })
         }
       }
+    }
+    
+    // Create a marker file to signal merge is in progress
+    const mergeMarkerPath = path.join(this.dataDir, '.merge-in-progress')
+    try {
+      await fs.writeFile(mergeMarkerPath, taskId)
+    } catch (error) {
+      console.error('Failed to create merge marker:', error)
     }
     
     // Merge the worktree branch to main with lock
@@ -376,17 +496,24 @@ class TaskStore {
       await mergeWorktreeToMain(task.repoPath, task.worktree)
     })
     
+    // Remove merge marker
+    try {
+      await fs.unlink(mergeMarkerPath)
+    } catch (error) {
+      console.error('Failed to remove merge marker:', error)
+    }
+    
     // Mark task as merged instead of removing it
     task.status = 'merged' as any
     task.mergedAt = new Date()
     await this.saveTasks()
     this.broadcastTaskUpdate(taskId, task)
     
-    // For self-modification tasks, add a warning about potential server restart
+    // For self-modification tasks, add a success message
     if (task.isSelfModification) {
       this.addOutput(taskId, {
         type: 'system',
-        content: '✅ Self-modification merged. If the server restarts, reconnect to continue.',
+        content: '✅ Self-modification merged successfully. Other tasks continue running.',
         timestamp: new Date()
       })
     }

@@ -19,6 +19,7 @@ export interface Task {
   initiativeId?: string
   stepNumber?: number
   globalContext?: string
+  needsRecovery?: boolean
 }
 
 export interface PromptCycle {
@@ -31,7 +32,7 @@ export interface PromptCycle {
 export interface TaskOutput {
   id: string
   taskId: string
-  type: 'planner' | 'editor' | 'reviewer'
+  type: 'planner' | 'editor' | 'reviewer' | 'system'
   content: string
   timestamp: Date
 }

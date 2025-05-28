@@ -9,7 +9,13 @@ const nextConfig = {
       '**/.claude-god-data/**',
       '**/.next/**',
       '**/.env*',
-      '**/*.log'
+      '**/*.log',
+      // Ignore main repo files to prevent restarts during merges
+      '**/app/**',
+      '**/lib/**',
+      '**/components/**',
+      '**/public/**',
+      '**/styles/**'
     ],
     // Increase polling interval to reduce file system watching overhead
     poll: 5000

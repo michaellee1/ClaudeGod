@@ -2,6 +2,7 @@ const { createServer } = require('http')
 const { parse } = require('url')
 const next = require('next')
 const { WebSocketServer } = require('ws')
+const { mergeProtectionMiddleware } = require('./lib/utils/merge-protection')
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -82,6 +83,9 @@ function cleanupTaskConnections(taskId) {
 global.broadcastTaskUpdate = broadcastTaskUpdate
 global.broadcastTaskOutput = broadcastTaskOutput
 global.cleanupTaskConnections = cleanupTaskConnections
+
+// Enable merge protection
+mergeProtectionMiddleware()
 
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
