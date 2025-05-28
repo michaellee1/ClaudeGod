@@ -1027,6 +1027,9 @@ Begin with 'git diff'.`
   private setupPlannerHandlers() {
     if (!this.plannerProcess) return
     
+    // Emit in_progress status when planner starts processing
+    this.emit('status', 'in_progress')
+    
     if (this.plannerProcess.stdout) {
       this.plannerProcess.stdout.setEncoding('utf8')
       this.plannerProcess.stdout.on('data', (data) => {
