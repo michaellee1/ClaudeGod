@@ -23,6 +23,8 @@ export interface Initiative {
   isActive: boolean
   status?: string
   tasksCreated?: number
+  yoloMode?: boolean
+  currentStepIndex?: number
 }
 
 class InitiativeStore {
@@ -141,7 +143,9 @@ class InitiativeStore {
       directory,
       createdAt: new Date(),
       updatedAt: new Date(),
-      isActive: true
+      isActive: true,
+      yoloMode: true,
+      currentStepIndex: 0
     }
 
     this.initiatives.set(id, initiative)

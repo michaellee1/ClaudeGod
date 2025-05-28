@@ -84,6 +84,8 @@ export const GET = withErrorHandler(async (
       createdAt: initiative.createdAt,
       updatedAt: initiative.updatedAt,
       tasksCreated: (initiative.phaseData?.tasksCreated as number) || 0,
+      yoloMode: initiative.yoloMode ?? true,
+      currentStepIndex: initiative.currentStepIndex ?? 0,
       phaseFiles,
       progress: {
         phase: initiative.phase,
@@ -96,6 +98,46 @@ export const GET = withErrorHandler(async (
     }
 
     return NextResponse.json(response)
+})
+
+export const PATCH = withErrorHandler(async (
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) => {
+    const { id } = params
+
+    if (!id || typeof id !== 'string') {
+      throw new ValidationError('Invalid initiative ID', 'id', id)
+    }
+
+    const initiative = initiativeStore.get(id)
+    if (!initiative) {
+      throw new InitiativeNotFoundError(id)
+    }
+
+    let body;
+    try {
+      body = await request.json()
+    } catch (error) {
+      throw new ValidationError('Invalid JSON in request body')
+    }
+
+    // Update initiative with provided fields
+    const updates: any = {}
+    
+    if (body.yoloMode !== undefined) {
+      updates.yoloMode = body.yoloMode
+    }
+
+    const updatedInitiative = await initiativeStore.update(id, updates)
+
+    return NextResponse.json({
+      id: updatedInitiative.id,
+      objective: updatedInitiative.objective,
+      phase: updatedInitiative.phase,
+      yoloMode: updatedInitiative.yoloMode,
+      updatedAt: updatedInitiative.updatedAt
+    })
 })
 
 // Prevent static caching

@@ -157,6 +157,10 @@ global.cleanupInitiativeConnections = cleanupInitiativeConnections
 // Enable merge protection
 mergeProtectionMiddleware()
 
+// Initialize YOLO mode handler
+const { YoloModeHandler } = require('./lib/utils/yolo-mode-handler')
+YoloModeHandler.getInstance()
+
 app.prepare().then(async () => {
   // Run database migrations on startup
   try {

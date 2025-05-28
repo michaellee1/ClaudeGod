@@ -94,6 +94,10 @@ export interface Initiative {
   // Metadata
   totalTasks?: number
   submittedTasks?: number
+  
+  // YOLO mode
+  yoloMode?: boolean
+  currentStepIndex?: number
 }
 
 export interface InitiativeOutput {
