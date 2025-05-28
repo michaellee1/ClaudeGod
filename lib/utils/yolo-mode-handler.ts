@@ -1,11 +1,11 @@
 import { taskStore } from './task-store'
-import initiativeStore from './initiative-store'
-import { Initiative } from '@/lib/types/initiative'
+import initiativeStore, { Initiative } from './initiative-store'
 import { Task } from '@/lib/types/task'
 
 export class YoloModeHandler {
   private static instance: YoloModeHandler
   private taskCompletionHandlers: Map<string, NodeJS.Timeout> = new Map()
+  private processingSteps: Set<string> = new Set() // Track steps being processed
   
   private constructor() {
     this.setupGlobalTaskListener()
@@ -55,6 +55,15 @@ export class YoloModeHandler {
     const allStepTasksComplete = currentStepTasks.every(t => t.status === 'finished')
     
     if (allStepTasksComplete && currentStepTasks.length > 0) {
+      const stepKey = `${completedTask.initiativeId}-${completedTask.stepNumber}`
+      
+      // Prevent multiple concurrent processing of the same step
+      if (this.processingSteps.has(stepKey)) {
+        console.log(`[YOLO] Step ${completedTask.stepNumber} is already being processed`)
+        return
+      }
+      
+      this.processingSteps.add(stepKey)
       console.log(`[YOLO] All tasks in step ${completedTask.stepNumber} are complete`)
       
       // Add a small delay to ensure all task outputs are saved
@@ -70,6 +79,8 @@ export class YoloModeHandler {
         } catch (error) {
           console.error('[YOLO] Error in auto-progression:', error)
           await this.disableYoloMode(initiative.id, error instanceof Error ? error.message : 'Unknown error')
+        } finally {
+          this.processingSteps.delete(stepKey)
         }
       }, 2000) // 2 second delay
     }
@@ -118,7 +129,9 @@ export class YoloModeHandler {
     
     try {
       // Submit the step via API
-      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/initiatives/${initiative.id}/tasks`, {
+      // Use relative URL for better security and flexibility
+      const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+      const response = await fetch(`${baseUrl}/api/initiatives/${initiative.id}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -147,8 +160,8 @@ export class YoloModeHandler {
   
   private async loadPhaseData(directory: string, filename: string): Promise<any> {
     try {
-      const fs = require('fs/promises')
-      const path = require('path')
+      const fs = await import('fs/promises')
+      const path = await import('path')
       const filePath = path.join(directory, filename)
       const data = await fs.readFile(filePath, 'utf-8')
       return JSON.parse(data)

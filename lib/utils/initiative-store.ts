@@ -25,6 +25,7 @@ export interface Initiative {
   tasksCreated?: number
   yoloMode?: boolean
   currentStepIndex?: number
+  lastError?: string
 }
 
 class InitiativeStore {
