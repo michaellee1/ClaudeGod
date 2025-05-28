@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Initiative, InitiativeOutput, InitiativePhase, InitiativeStatus } from '../types/initiative'
+import { Initiative } from '../utils/initiative-store'
+import { InitiativeOutput, InitiativePhase } from '../types/initiative'
 
 export interface InitiativeWebSocketMessage {
   type: 'connected' | 'initiative-update' | 'initiative-output' | 'initiative-removed' | 
