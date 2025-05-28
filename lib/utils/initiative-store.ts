@@ -21,6 +21,8 @@ export interface Initiative {
   phaseData?: any
   claudeCodePid?: number
   isActive: boolean
+  status?: string
+  tasksCreated?: number
 }
 
 class InitiativeStore {
