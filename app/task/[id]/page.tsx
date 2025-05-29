@@ -448,6 +448,11 @@ export default function TaskDetail() {
                 </div>
               </div>
               <CardDescription className="text-xs mt-1">{task.prompt}</CardDescription>
+              {task.repoPath && (
+                <CardDescription className="text-xs mt-1 text-muted-foreground">
+                  Repository: {task.repoPath}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="pt-0 space-y-2">
               <Button
