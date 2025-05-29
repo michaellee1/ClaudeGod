@@ -1,8 +1,13 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 
+interface LockInfo {
+  promise: Promise<void>
+  timestamp: number
+}
+
 export class FileLock {
-  private static locks = new Map<string, Promise<void>>()
+  private static locks = new Map<string, LockInfo>()
   private static lockDir = path.join(process.env.TMPDIR || '/tmp', 'claude-god-locks')
   
   static async ensureLockDir(): Promise<void> {
@@ -13,21 +18,36 @@ export class FileLock {
     }
   }
   
+  static clearAllLocks(): void {
+    console.log(`Clearing ${this.locks.size} in-memory locks`)
+    this.locks.clear()
+  }
+  
   static async acquireLock(filePath: string, timeout: number = 30000): Promise<() => void> {
     const lockKey = path.resolve(filePath)
     const startTime = Date.now()
     
+    // Check if lock exists and if it's stale (older than timeout)
+    const existingLock = this.locks.get(lockKey)
+    if (existingLock && existingLock.timestamp && Date.now() - existingLock.timestamp > timeout) {
+      console.warn(`Removing stale lock for ${filePath} (age: ${Date.now() - existingLock.timestamp}ms)`)
+      this.locks.delete(lockKey)
+    }
+    
     // Wait for existing lock to be released with timeout
     while (this.locks.has(lockKey)) {
       if (Date.now() - startTime > timeout) {
-        throw new Error(`Failed to acquire lock for ${filePath} after ${timeout}ms`)
+        // Force remove the lock if it's been too long
+        console.error(`Force removing lock for ${filePath} after ${timeout}ms timeout`)
+        this.locks.delete(lockKey)
+        break
       }
       
       const lockPromise = this.locks.get(lockKey)
-      if (lockPromise) {
+      if (lockPromise && lockPromise.promise) {
         // Wait for lock with a smaller timeout
         await Promise.race([
-          lockPromise,
+          lockPromise.promise,
           new Promise(resolve => setTimeout(resolve, 1000))
         ])
       }
@@ -42,7 +62,11 @@ export class FileLock {
       releaseLock = resolve
     })
     
-    this.locks.set(lockKey, lockPromise)
+    // Store lock with timestamp for stale detection
+    this.locks.set(lockKey, {
+      promise: lockPromise,
+      timestamp: Date.now()
+    })
     
     // Return release function
     return () => {
@@ -51,8 +75,8 @@ export class FileLock {
     }
   }
   
-  static async withLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-    const release = await this.acquireLock(filePath)
+  static async withLock<T>(filePath: string, operation: () => Promise<T>, timeout?: number): Promise<T> {
+    const release = await this.acquireLock(filePath, timeout)
     try {
       return await operation()
     } finally {

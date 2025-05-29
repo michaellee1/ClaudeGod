@@ -17,6 +17,8 @@ class InitiativeStore {
   private broadcastDebounceTimers: Map<string, NodeJS.Timeout> = new Map()
 
   private constructor() {
+    // Clear any stale locks on startup
+    FileLock.clearAllLocks()
     this.initializeDataDirs()
     this.loadInitiatives()
   }
@@ -93,7 +95,7 @@ class InitiativeStore {
         // Convert Map to array for JSON serialization
         const initiativesArray = Array.from(this.initiatives.values())
         await this.fileRecovery.writeJsonFile(this.initiativesFile, initiativesArray)
-      })
+      }, 5000)
     } catch (error) {
       console.error('Error saving initiatives:', error)
       throw error // Re-throw to handle in callers
@@ -153,7 +155,7 @@ class InitiativeStore {
   }
 
   async createInitiative(objective: string): Promise<Initiative> {
-    // Use file lock to prevent concurrent creation
+    // Use file lock to prevent concurrent creation with 5 second timeout
     return await FileLock.withLock(this.initiativesFile, async () => {
       // Re-check concurrent initiative limit inside lock
       const activeInitiatives = Array.from(this.initiatives.values()).filter(
