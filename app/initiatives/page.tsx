@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 // API response type for initiatives
 interface InitiativeResponse {
@@ -108,32 +108,24 @@ export default function InitiativesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const lastUpdateRef = useRef<{ [key: string]: number }>({})
 
   // WebSocket for real-time updates
   const { lastMessage } = useInitiativeWebSocket('/ws', {
     onInitiativeUpdate: (initiative) => {
+      // Debounce duplicate updates within 100ms
+      const now = Date.now()
+      const lastUpdate = lastUpdateRef.current[initiative.id] || 0
+      if (now - lastUpdate < 100) {
+        return // Skip duplicate update
+      }
+      lastUpdateRef.current[initiative.id] = now
+      
       setInitiatives(prev => {
-        const index = prev.findIndex(i => i.id === initiative.id)
-        if (index >= 0) {
-          const updated = [...prev]
-          // Map Initiative to InitiativeResponse
-          const response: InitiativeResponse = {
-            id: initiative.id,
-            objective: initiative.objective,
-            phase: initiative.currentPhase,
-            status: initiative.status,
-            createdAt: typeof initiative.createdAt === 'string' ? initiative.createdAt : 
-                      initiative.createdAt ? new Date(initiative.createdAt).toISOString() : new Date().toISOString(),
-            updatedAt: typeof initiative.updatedAt === 'string' ? initiative.updatedAt :
-                      initiative.updatedAt ? new Date(initiative.updatedAt).toISOString() : new Date().toISOString(),
-            isActive: initiative.status !== 'completed' && initiative.status !== 'tasks_submitted',
-            yoloMode: initiative.yoloMode,
-            currentStepIndex: initiative.currentStepIndex
-          }
-          updated[index] = response
-          return updated
-        }
-        // Map new Initiative to InitiativeResponse
+        // Check if initiative already exists
+        const existingIndex = prev.findIndex(i => i.id === initiative.id)
+        
+        // Map Initiative to InitiativeResponse
         const response: InitiativeResponse = {
           id: initiative.id,
           objective: initiative.objective,
@@ -147,7 +139,16 @@ export default function InitiativesPage() {
           yoloMode: initiative.yoloMode,
           currentStepIndex: initiative.currentStepIndex
         }
-        return [...prev, response]
+        
+        if (existingIndex >= 0) {
+          // Update existing initiative
+          const updated = [...prev]
+          updated[existingIndex] = response
+          return updated
+        } else {
+          // Add new initiative at the beginning
+          return [response, ...prev]
+        }
       })
     },
     onInitiativeRemoved: (initiativeId) => {
@@ -198,8 +199,8 @@ export default function InitiativesPage() {
         throw new Error(data.error || 'Failed to create initiative')
       }
 
-      const newInitiative = await response.json()
-      setInitiatives(prev => [newInitiative, ...prev])
+      await response.json()
+      // Don't add to state here - let WebSocket handle it
       setNewObjective('')
       setIsCreateDialogOpen(false)
     } catch (err: any) {
