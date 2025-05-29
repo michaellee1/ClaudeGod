@@ -72,6 +72,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       phase: phaseString,
       objective: initiative.objective,
       createdAt: initiative.createdAt,
+      updatedAt: initiative.updatedAt,
       isActive: true,
       yoloMode: initiative.yoloMode
     })

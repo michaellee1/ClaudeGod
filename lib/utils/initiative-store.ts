@@ -41,7 +41,8 @@ class InitiativeStore {
       // Convert array back to Map and restore Date objects
       for (const initiative of initiatives) {
         initiative.createdAt = new Date(initiative.createdAt)
-        initiative.updatedAt = new Date(initiative.updatedAt)
+        // Handle missing updatedAt field for older initiatives
+        initiative.updatedAt = initiative.updatedAt ? new Date(initiative.updatedAt) : new Date(initiative.createdAt || new Date())
         if (initiative.completedAt) {
           initiative.completedAt = new Date(initiative.completedAt)
         }
@@ -88,7 +89,7 @@ class InitiativeStore {
   private broadcastInitiativeUpdate(initiativeId: string, initiative: Initiative) {
     // Broadcast via WebSocket if available
     if (typeof global !== 'undefined' && (global as any).broadcastInitiativeUpdate) {
-      (global as any).broadcastInitiativeUpdate(initiativeId, initiative)
+      (global as any).broadcastInitiativeUpdate(initiative)
     }
   }
 

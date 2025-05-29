@@ -87,10 +87,21 @@ function cleanupTaskConnections(taskId) {
 function broadcastInitiativeUpdate(initiative) {
   if (!wss) return
 
+  // Ensure dates are properly serializable
+  const safeInitiative = {
+    ...initiative,
+    createdAt: initiative.createdAt instanceof Date ? initiative.createdAt.toISOString() : 
+               initiative.createdAt || new Date().toISOString(),
+    updatedAt: initiative.updatedAt instanceof Date ? initiative.updatedAt.toISOString() : 
+               initiative.updatedAt || new Date().toISOString(),
+    completedAt: initiative.completedAt instanceof Date ? initiative.completedAt.toISOString() : 
+                 initiative.completedAt || null
+  }
+
   const message = JSON.stringify({
     type: 'initiative-update',
     initiativeId: initiative.id,
-    data: initiative
+    data: safeInitiative
   })
 
   // Broadcast to all clients (for initiative list)

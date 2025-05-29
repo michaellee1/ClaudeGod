@@ -122,8 +122,10 @@ export default function InitiativesPage() {
             objective: initiative.objective,
             phase: initiative.currentPhase,
             status: initiative.status,
-            createdAt: initiative.createdAt.toString(),
-            updatedAt: initiative.updatedAt.toString(),
+            createdAt: typeof initiative.createdAt === 'string' ? initiative.createdAt : 
+                      initiative.createdAt ? new Date(initiative.createdAt).toISOString() : new Date().toISOString(),
+            updatedAt: typeof initiative.updatedAt === 'string' ? initiative.updatedAt :
+                      initiative.updatedAt ? new Date(initiative.updatedAt).toISOString() : new Date().toISOString(),
             isActive: initiative.status !== 'completed' && initiative.status !== 'tasks_submitted',
             yoloMode: initiative.yoloMode,
             currentStepIndex: initiative.currentStepIndex
@@ -137,8 +139,10 @@ export default function InitiativesPage() {
           objective: initiative.objective,
           phase: initiative.currentPhase,
           status: initiative.status,
-          createdAt: initiative.createdAt.toString(),
-          updatedAt: initiative.updatedAt.toString(),
+          createdAt: typeof initiative.createdAt === 'string' ? initiative.createdAt : 
+                    initiative.createdAt ? new Date(initiative.createdAt).toISOString() : new Date().toISOString(),
+          updatedAt: typeof initiative.updatedAt === 'string' ? initiative.updatedAt :
+                    initiative.updatedAt ? new Date(initiative.updatedAt).toISOString() : new Date().toISOString(),
           isActive: initiative.status !== 'completed' && initiative.status !== 'tasks_submitted',
           yoloMode: initiative.yoloMode,
           currentStepIndex: initiative.currentStepIndex
