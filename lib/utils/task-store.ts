@@ -27,8 +27,6 @@ class TaskStore {
   private readonly MAX_RETRY_COUNT = 1
   private saveQueue: Promise<void> = Promise.resolve()
   private isInCriticalOperation: boolean = false
-  private taskCreationQueue: Promise<void> = Promise.resolve()
-  private pendingTaskAdditions: Map<string, Task> = new Map()
 
   constructor() {
     this.initializeDataDir()
@@ -147,24 +145,8 @@ class TaskStore {
           // Ignore if file doesn't exist yet
         }
         
-<<<<<<< HEAD
-        // CRITICAL: Apply any pending task additions before saving
-        // This ensures tasks created during save operations aren't lost
-        if (this.pendingTaskAdditions.size > 0) {
-          console.log(`[TaskStore] Applying ${this.pendingTaskAdditions.size} pending task additions before save`)
-          for (const [taskId, task] of this.pendingTaskAdditions) {
-            this.tasks.set(taskId, task)
-          }
-          this.pendingTaskAdditions.clear()
-        }
-        
         // Convert Map to array for JSON serialization
         const tasksArray = Array.from(this.tasks.values())
-        console.log(`[TaskStore] Saving ${tasksArray.length} tasks to disk (Map size: ${this.tasks.size})`)
-=======
-        // Convert Map to array for JSON serialization
-        const tasksArray = Array.from(this.tasks.values())
->>>>>>> 9b7fbf5 (Fix critical bug: merging tasks no longer deletes other tasks)
         await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
       } catch (error) {
         console.error('Error saving tasks:', error)
@@ -339,7 +321,6 @@ class TaskStore {
 
   // Immediate save method for critical operations (merge, delete, etc)
   private async saveTasksImmediately() {
-<<<<<<< HEAD
     // Cancel any pending debounced save
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer)
@@ -348,37 +329,6 @@ class TaskStore {
     
     // Use the save queue to ensure this save happens in order
     return this.enqueueSave(async () => {
-=======
-    // CRITICAL FIX: The issue was that clearing the debounce timer would
-    // cancel pending saves without ensuring those changes were persisted.
-    // This could cause tasks created/updated after the last save to be lost.
-    
-    // If there's a pending debounced save, we need to execute it first
-    // to ensure all in-memory changes are persisted before we proceed
-    if (this.saveDebounceTimer) {
-      clearTimeout(this.saveDebounceTimer)
-      this.saveDebounceTimer = null
-      
-      // Execute the pending save operations immediately
-      try {
-        await this.saveTasks()
-        await this.saveOutputs()
-        await this.saveProcessState()
-        console.log('[TaskStore] Executed pending saves before immediate save')
-      } catch (error) {
-        console.error('[TaskStore] Error executing pending saves:', error)
-        // Continue anyway - we'll try to save again below
-      }
-    }
-    
-    // Now perform the immediate save
-    try {
-      await this.saveTasks()
-      console.log('[TaskStore] Tasks saved immediately')
-    } catch (error) {
-      console.error('[TaskStore] Error saving tasks immediately:', error)
-      // Retry once
->>>>>>> 9b7fbf5 (Fix critical bug: merging tasks no longer deletes other tasks)
       try {
         // Set flag to prevent new debounced saves during this operation
         this.isInCriticalOperation = true
@@ -387,18 +337,6 @@ class TaskStore {
         await this.saveOutputs()
         await this.saveProcessState()
         console.log('[TaskStore] Tasks saved immediately')
-        
-        // Apply any pending task additions that occurred during save
-        if (this.pendingTaskAdditions.size > 0) {
-          console.log(`[TaskStore] Applying ${this.pendingTaskAdditions.size} pending task additions after save`)
-          for (const [taskId, task] of this.pendingTaskAdditions) {
-            this.tasks.set(taskId, task)
-          }
-          this.pendingTaskAdditions.clear()
-          // Save again to persist the newly added tasks
-          await this.saveTasks()
-          await this.saveOutputs()
-        }
         
         // Keep the flag set for a short time to prevent race conditions
         // with operations that might trigger debounced saves right after
@@ -516,25 +454,9 @@ class TaskStore {
       ...(initiativeParams?.globalContext && { globalContext: initiativeParams.globalContext })
     }
     
-    // Queue task creation to prevent race conditions
-    await this.taskCreationQueue
-    this.taskCreationQueue = this.taskCreationQueue.then(async () => {
-      // If a critical operation is in progress, store task in pending queue
-      if (this.isInCriticalOperation) {
-        console.log(`[TaskStore] Critical operation in progress, queueing task ${taskId} creation`)
-        this.pendingTaskAdditions.set(taskId, task)
-        this.outputs.set(taskId, [])
-      } else {
-        this.tasks.set(taskId, task)
-        this.outputs.set(taskId, [])
-      }
-      console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}, pending: ${this.pendingTaskAdditions.size}`)
-    }).catch(error => {
-      console.error(`[TaskStore] Error in task creation queue for ${taskId}:`, error)
-    })
-    
-    // Wait for queue to complete
-    await this.taskCreationQueue
+    this.tasks.set(taskId, task)
+    this.outputs.set(taskId, [])
+    console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}`)
     
     // Use immediate save for task creation to prevent loss
     await this.saveTasksImmediately()
@@ -596,22 +518,11 @@ class TaskStore {
   }
 
   getTasks(): Task[] {
-    // Include both regular tasks and pending tasks
-    const allTasks = [...this.tasks.values()]
-    
-    // Add any pending tasks that aren't in the main map yet
-    for (const [taskId, task] of this.pendingTaskAdditions) {
-      if (!this.tasks.has(taskId)) {
-        allTasks.push(task)
-      }
-    }
-    
-    return allTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    return Array.from(this.tasks.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   }
 
   getTask(id: string): Task | undefined {
-    // Check main map first, then pending additions
-    return this.tasks.get(id) || this.pendingTaskAdditions.get(id)
+    return this.tasks.get(id)
   }
 
   getOutputs(taskId: string): TaskOutput[] {
@@ -742,26 +653,6 @@ class TaskStore {
     
     // CRITICAL: Use immediate save for merge operations to prevent data loss
     await this.saveTasksImmediately()
-    
-    // Verify no tasks were lost
-    const tasksAfterMerge = Array.from(this.tasks.keys()).sort()
-    console.log(`[TaskStore] Tasks after merge: ${tasksAfterMerge.join(', ')}`)
-    
-    // Check if any tasks were lost
-    const lostTasks = tasksBeforeMerge.filter(id => !tasksAfterMerge.includes(id))
-    if (lostTasks.length > 0) {
-      console.error(`[TaskStore] CRITICAL: Lost ${lostTasks.length} tasks during merge: ${lostTasks.join(', ')}`)
-      // Try to recover from backup
-      try {
-        const backupPath = this.tasksFile + '.backup'
-        const backupData = await fs.readFile(backupPath, 'utf-8')
-        const backupTasks = JSON.parse(backupData)
-        console.log(`[TaskStore] Attempting recovery from backup with ${backupTasks.length} tasks`)
-      } catch (error) {
-        console.error('[TaskStore] Failed to read backup for recovery:', error)
-      }
-    }
-    
     console.log(`[TaskStore] Merge save completed, total tasks after save: ${this.tasks.size}`)
     this.broadcastTaskUpdate(taskId, task)
     
