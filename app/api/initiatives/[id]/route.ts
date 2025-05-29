@@ -102,14 +102,10 @@ export const GET = withErrorHandler(async (
       updatedAt: initiative.updatedAt,
       yoloMode: initiative.yoloMode ?? true,
       currentStepIndex: initiative.currentStepIndex ?? 0,
-<<<<<<< HEAD
       processId: initiative.processId,
       isActive: initiative.isActive ?? false,
-      questions: phaseFiles.questions?.questions || [],
-=======
       questions: Array.isArray(phaseFiles.questions) ? phaseFiles.questions : 
                 (phaseFiles.questions?.questions || []),
->>>>>>> 86e4f40 (Complete task: Find and fix bugs in the initiatives flow. Think hard)
       userAnswers: phaseFiles.answers || {},
       researchNeeds: phaseFiles.research || '',
       researchResults: phaseFiles.research || '',
