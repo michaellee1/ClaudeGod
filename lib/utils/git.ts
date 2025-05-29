@@ -4,6 +4,8 @@ import path from 'path'
 import os from 'os'
 import crypto from 'crypto'
 import fs from 'fs/promises'
+import { mergeConflictResolver } from './merge-conflict-resolver'
+import { Task } from '../types/task'
 
 const execFileAsync = promisify(execFile)
 
@@ -204,7 +206,16 @@ export async function getLastCommitHash(repoPath: string): Promise<string> {
   }
 }
 
-export async function mergeWorktreeToMain(repoPath: string, worktreePath: string): Promise<void> {
+// Safe branch name pattern - alphanumeric, hyphens, underscores, max 63 chars
+const SAFE_BRANCH_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-_]{0,62}$/
+
+function validateBranchName(branchName: string): void {
+  if (!SAFE_BRANCH_PATTERN.test(branchName)) {
+    throw new Error(`Invalid branch name format: ${branchName}`)
+  }
+}
+
+export async function mergeWorktreeToMain(repoPath: string, worktreePath: string, task?: Task): Promise<void> {
   let cleanBranchName = ''
   let originalBranch = ''
   let tempBranchCreated = false
@@ -221,10 +232,8 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     const { stdout: branchName } = await execFileAsync('git', ['-C', worktreePath, 'branch', '--show-current'])
     cleanBranchName = branchName.trim()
     
-    // Validate branch name to prevent command injection
-    if (!/^[a-zA-Z0-9_\-\/\.]+$/.test(cleanBranchName)) {
-      throw new Error(`Invalid branch name: ${cleanBranchName}`)
-    }
+    // Validate branch name BEFORE using it anywhere to prevent command injection
+    validateBranchName(cleanBranchName)
     
     // Store the current branch in main repo to restore later
     try {
@@ -278,13 +287,51 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     
     // Check if this is a merge conflict
     if (error.message && error.message.includes('CONFLICT')) {
-      // Abort the merge to clean up
-      try {
-        await execFileAsync('git', ['-C', repoPath, 'merge', '--abort'])
-      } catch (abortError) {
-        console.error('Failed to abort merge:', abortError)
+      // If we have task context and Claude Code is available, try to resolve automatically
+      if (task && process.env.CLAUDE_CODE_AUTO_RESOLVE_CONFLICTS !== 'false') {
+        console.log('[git] Merge conflict detected, attempting automatic resolution with Claude Code')
+        
+        try {
+          // Get conflicted files before attempting resolution
+          const { stdout: conflictStatus } = await execFileAsync('git', [
+            '-C', repoPath,
+            'diff', '--name-only', '--diff-filter=U'
+          ])
+          const conflictFiles = conflictStatus.trim().split('\n').filter(f => f)
+          
+          await mergeConflictResolver.resolveConflicts({
+            task,
+            worktreePath,
+            repoPath,
+            branchName: cleanBranchName,
+            taskPrompt: task.prompt,
+            conflictFiles
+          })
+          
+          console.log('[git] Conflicts resolved successfully with Claude Code')
+          return // Success!
+        } catch (resolveError: any) {
+          console.error('[git] Failed to auto-resolve conflicts:', resolveError)
+          
+          // Abort the merge to clean up
+          try {
+            await execFileAsync('git', ['-C', repoPath, 'merge', '--abort'])
+          } catch (abortError) {
+            console.error('Failed to abort merge:', abortError)
+          }
+          
+          // Re-throw with more context
+          throw new Error(`MERGE_CONFLICT_UNRESOLVED:${cleanBranchName}:${resolveError.message}`)
+        }
+      } else {
+        // No auto-resolution, abort and report conflict
+        try {
+          await execFileAsync('git', ['-C', repoPath, 'merge', '--abort'])
+        } catch (abortError) {
+          console.error('Failed to abort merge:', abortError)
+        }
+        throw new Error(`MERGE_CONFLICT:${cleanBranchName}`)
       }
-      throw new Error(`MERGE_CONFLICT:${cleanBranchName}`)
     }
     
     // For other git errors, try to abort merge if in progress

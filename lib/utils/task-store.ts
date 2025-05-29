@@ -584,7 +584,7 @@ class TaskStore {
     
     // Merge the worktree branch to main with lock
     await gitLock.withLock(task.repoPath, async () => {
-      await mergeWorktreeToMain(task.repoPath, task.worktree)
+      await mergeWorktreeToMain(task.repoPath, task.worktree, task)
     })
     
     // Remove merge marker

@@ -135,9 +135,21 @@ export default function TaskDetail() {
       } else {
         const errorData = await response.json()
         const errorMessage = errorData.error || 'Unknown error'
-        if (errorMessage.startsWith('MERGE_CONFLICT:')) {
+        const errorCode = errorData.code
+        const errorDetails = errorData.details
+        
+        if (errorCode === 'MERGE_IN_PROGRESS') {
+          // Another merge is in progress
+          setError(errorMessage)
+        } else if (errorMessage.startsWith('MERGE_CONFLICT:')) {
           const branchName = errorMessage.split(':')[1]
           setMergeConflictBranchName(branchName)
+          
+          // If we have details about failed auto-resolution, show them
+          if (errorDetails) {
+            setError(`Automatic conflict resolution attempted but failed: ${errorDetails}`)
+          }
+          
           setShowMergeConflict(true)
         } else if (errorMessage.startsWith('UNCOMMITTED_CHANGES:')) {
           // Extract the descriptive error message after the prefix
@@ -671,7 +683,7 @@ git cherry-pick --continue`}
             <h3 className="text-lg font-semibold mb-2 text-red-600">Merge Conflict Detected</h3>
             <div className="space-y-4">
               <p className="text-gray-600">
-                A merge conflict was detected while trying to merge to main. You have two options:
+                A merge conflict was detected while trying to merge to main. {error?.includes('Automatic conflict resolution attempted') ? 'Claude Code attempted to resolve the conflicts automatically but was unable to complete the resolution. ' : ''}You have two options:
               </p>
               
               <div className="bg-gray-50 p-4 rounded-md">

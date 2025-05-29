@@ -158,6 +158,16 @@ git stash
 # Then use the Merge button in ClaudeGod
 ```
 
+### Automatic Merge Conflict Resolution
+
+ClaudeGod now includes automatic merge conflict resolution using Claude Code:
+- **Smart Conflict Resolution**: When merge conflicts occur, Claude Code automatically attempts to resolve them
+- **Context-Aware**: Uses the original task prompt and changes to make intelligent merge decisions
+- **Fallback Options**: If automatic resolution fails, you can still resolve manually
+- **Merge Queue**: Only one merge proceeds at a time to prevent concurrent conflicts
+
+See [MERGE_CONFLICT_RESOLUTION.md](docs/MERGE_CONFLICT_RESOLUTION.md) for details.
+
 ## Self-Modification
 
 ClaudeGod can even improve itself - just point it at its own directory:
