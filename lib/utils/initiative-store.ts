@@ -95,15 +95,7 @@ class InitiativeStore {
         // Convert Map to array for JSON serialization
         const initiativesArray = Array.from(this.initiatives.values())
         await this.fileRecovery.writeJsonFile(this.initiativesFile, initiativesArray)
-<<<<<<< HEAD
-<<<<<<< HEAD
       }, 5000)
-=======
-      })
->>>>>>> 4977329 (Complete task: Find and fix bugs within the initiatives pipeline. Ultrathink)
-=======
-      }, 5000)
->>>>>>> 84df07a (Complete task: I get \"Failed to acquire lock for /Users/michaellee/.claude-god-data/initiatives.json after 30000ms\" when creating an initiative.)
     } catch (error) {
       console.error('Error saving initiatives:', error)
       throw error // Re-throw to handle in callers
@@ -163,15 +155,7 @@ class InitiativeStore {
   }
 
   async createInitiative(objective: string): Promise<Initiative> {
-<<<<<<< HEAD
-<<<<<<< HEAD
     // Use file lock to prevent concurrent creation with 5 second timeout
-=======
-    // Use file lock to prevent concurrent creation
->>>>>>> 4977329 (Complete task: Find and fix bugs within the initiatives pipeline. Ultrathink)
-=======
-    // Use file lock to prevent concurrent creation with 5 second timeout
->>>>>>> 84df07a (Complete task: I get \"Failed to acquire lock for /Users/michaellee/.claude-god-data/initiatives.json after 30000ms\" when creating an initiative.)
     return await FileLock.withLock(this.initiativesFile, async () => {
       // Re-check concurrent initiative limit inside lock
       const activeInitiatives = Array.from(this.initiatives.values()).filter(
