@@ -54,8 +54,9 @@ export class ProcessManager extends EventEmitter {
   }
 
   // Method to reconnect to existing processes after restart
-  async reconnectToProcesses(pids: { editorPid?: number, reviewerPid?: number, plannerPid?: number }, phase: string) {
+  async reconnectToProcesses(pids: { editorPid?: number, reviewerPid?: number, plannerPid?: number }, phase: string, thinkMode?: string) {
     this.currentPhase = phase as any
+    this.thinkMode = thinkMode
     
     // Since we can't reconnect to existing process streams, 
     // we'll at least track that the processes are running
@@ -63,7 +64,8 @@ export class ProcessManager extends EventEmitter {
       editorPid: pids.editorPid,
       reviewerPid: pids.reviewerPid,
       plannerPid: pids.plannerPid,
-      phase: phase
+      phase: phase,
+      thinkMode: thinkMode
     })
     
     // Monitor the processes to detect when they complete
@@ -103,11 +105,19 @@ export class ProcessManager extends EventEmitter {
           this.emit('phase', 'done')
           this.emit('completed', true)
         } else if (this.currentPhase === 'editor' && pids.editorPid && !pids.reviewerPid) {
-          // Editor finished but no reviewer started - task might be in no_review mode
-          this.currentPhase = 'finished'
-          this.emit('status', 'finished')
-          this.emit('phase', 'done')
-          this.emit('completed', true)
+          // Editor finished but no reviewer started
+          // Only mark as finished if we're in no_review mode
+          if (this.thinkMode === 'no_review') {
+            this.currentPhase = 'finished'
+            this.emit('status', 'finished')
+            this.emit('phase', 'done')
+            this.emit('completed', true)
+          } else {
+            // For other modes, the task failed if editor exited without starting reviewer
+            console.log(`Task ${this.taskId} editor exited without starting reviewer (thinkMode: ${this.thinkMode})`)
+            this.emit('status', 'failed')
+            this.emit('error', new Error('Editor process exited without starting reviewer'))
+          }
         }
       }
     }, 5000) // Check every 5 seconds
@@ -722,12 +732,14 @@ Begin with 'git diff'.`
     
     // Check if we should skip the reviewer
     if (thinkMode === 'no_review') {
-      console.log('Skipping reviewer phase due to no_review mode')
+      console.log(`[ProcessManager ${taskId}] Skipping reviewer phase due to no_review mode`)
       this.currentPhase = 'finished'
       this.emit('status', 'finished')
       this.emit('phase', 'done')
       this.emit('completed', true) // Pass true to indicate successful completion
       return
+    } else {
+      console.log(`[ProcessManager ${taskId}] Will start reviewer phase after editor completes (thinkMode: ${thinkMode || 'none'})`)
     }
     
     // Phase 2: Start and monitor reviewer

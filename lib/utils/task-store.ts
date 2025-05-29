@@ -204,7 +204,7 @@ class TaskStore {
               editorPid: (state as any).editorPid,
               reviewerPid: (state as any).reviewerPid,
               plannerPid: (state as any).plannerPid
-            }, (state as any).phase || task.phase)
+            }, (state as any).phase || task.phase, task.thinkMode)
             
             // Add success message
             this.addOutput(taskId, {
