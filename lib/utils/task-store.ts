@@ -25,6 +25,8 @@ class TaskStore {
   private readonly HUNG_TASK_TIMEOUT = 600000 // 10 minutes
   private readonly HEARTBEAT_CHECK_INTERVAL = 60000 // 1 minute
   private readonly MAX_RETRY_COUNT = 1
+  private saveQueue: Promise<void> = Promise.resolve()
+  private isInCriticalOperation: boolean = false
 
   constructor() {
     this.initializeDataDir()
@@ -145,6 +147,7 @@ class TaskStore {
         
         // Convert Map to array for JSON serialization
         const tasksArray = Array.from(this.tasks.values())
+        console.log(`[TaskStore] Saving ${tasksArray.length} tasks to disk (Map size: ${this.tasks.size})`)
         await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
       } catch (error) {
         console.error('Error saving tasks:', error)
@@ -275,21 +278,28 @@ class TaskStore {
   }
 
   private debouncedSave() {
+    // Skip debounced saves during critical operations to prevent race conditions
+    if (this.isInCriticalOperation) {
+      console.log('[TaskStore] Skipping debounced save during critical operation')
+      return
+    }
+    
     // Clear existing timer
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer)
     }
     
     // Set new timer to save after 1 second of no changes
-    this.saveDebounceTimer = setTimeout(async () => {
-      try {
-        await this.saveTasks()
-        await this.saveOutputs()
-        await this.saveProcessState()
-      } catch (error) {
-        console.error('Error in debouncedSave:', error)
-        // Retry save after a short delay
-        setTimeout(async () => {
+    this.saveDebounceTimer = setTimeout(() => {
+      this.enqueueSave(async () => {
+        try {
+          await this.saveTasks()
+          await this.saveOutputs()
+          await this.saveProcessState()
+        } catch (error) {
+          console.error('Error in debouncedSave:', error)
+          // Retry save after a short delay
+          await new Promise(resolve => setTimeout(resolve, 2000))
           try {
             await this.saveTasks()
             await this.saveOutputs()
@@ -297,51 +307,58 @@ class TaskStore {
           } catch (retryError) {
             console.error('Retry save also failed:', retryError)
           }
-        }, 2000)
-      }
+        }
+      })
     }, 1000)
+  }
+
+  // Helper method to enqueue save operations to prevent race conditions
+  private enqueueSave(operation: () => Promise<void>): Promise<void> {
+    this.saveQueue = this.saveQueue.then(operation).catch(error => {
+      console.error('[TaskStore] Error in save queue:', error)
+    })
+    return this.saveQueue
   }
 
   // Immediate save method for critical operations (merge, delete, etc)
   private async saveTasksImmediately() {
-    // CRITICAL FIX: The issue was that clearing the debounce timer would
-    // cancel pending saves without ensuring those changes were persisted.
-    // This could cause tasks created/updated after the last save to be lost.
-    
-    // If there's a pending debounced save, we need to execute it first
-    // to ensure all in-memory changes are persisted before we proceed
+    // Cancel any pending debounced save
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer)
       this.saveDebounceTimer = null
-      
-      // Execute the pending save operations immediately
+    }
+    
+    // Use the save queue to ensure this save happens in order
+    return this.enqueueSave(async () => {
       try {
+        // Set flag to prevent new debounced saves during this operation
+        this.isInCriticalOperation = true
+        
         await this.saveTasks()
         await this.saveOutputs()
         await this.saveProcessState()
-        console.log('[TaskStore] Executed pending saves before immediate save')
+        console.log('[TaskStore] Tasks saved immediately')
+        
+        // Keep the flag set for a short time to prevent race conditions
+        // with operations that might trigger debounced saves right after
+        setTimeout(() => {
+          this.isInCriticalOperation = false
+        }, 100)
       } catch (error) {
-        console.error('[TaskStore] Error executing pending saves:', error)
-        // Continue anyway - we'll try to save again below
+        console.error('[TaskStore] Error saving tasks immediately:', error)
+        this.isInCriticalOperation = false
+        
+        // Retry once
+        try {
+          await new Promise(resolve => setTimeout(resolve, 100))
+          await this.saveTasks()
+          console.log('[TaskStore] Tasks saved on retry')
+        } catch (retryError) {
+          console.error('[TaskStore] Failed to save tasks even after retry:', retryError)
+          throw retryError
+        }
       }
-    }
-    
-    // Now perform the immediate save
-    try {
-      await this.saveTasks()
-      console.log('[TaskStore] Tasks saved immediately')
-    } catch (error) {
-      console.error('[TaskStore] Error saving tasks immediately:', error)
-      // Retry once
-      try {
-        await new Promise(resolve => setTimeout(resolve, 100))
-        await this.saveTasks()
-        console.log('[TaskStore] Tasks saved on retry')
-      } catch (retryError) {
-        console.error('[TaskStore] Failed to save tasks even after retry:', retryError)
-        throw retryError
-      }
-    }
+    })
   }
 
   private broadcastTaskUpdate(taskId: string, task: Task) {
@@ -440,6 +457,7 @@ class TaskStore {
     
     this.tasks.set(taskId, task)
     this.outputs.set(taskId, [])
+    console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}`)
     // Use immediate save for task creation to prevent loss
     await this.saveTasksImmediately()
     this.broadcastTaskUpdate(taskId, task)
@@ -628,8 +646,10 @@ class TaskStore {
     // Mark task as merged instead of removing it
     task.status = 'merged' as any
     task.mergedAt = new Date()
+    console.log(`[TaskStore] Merging task ${taskId}, total tasks before save: ${this.tasks.size}`)
     // CRITICAL: Use immediate save for merge operations to prevent data loss
     await this.saveTasksImmediately()
+    console.log(`[TaskStore] Merge save completed, total tasks after save: ${this.tasks.size}`)
     this.broadcastTaskUpdate(taskId, task)
     
     // For self-modification tasks, add a success message
@@ -882,16 +902,19 @@ ${gitDiff}
     
     console.log(`[TaskStore] Marking task ${taskId} as failed due to hung state`)
     
-    // Add system output
+    // Update task status first
+    task.status = 'failed'
+    
+    // Save immediately before adding output to prevent race condition
+    await this.saveTasksImmediately()
+    
+    // Now add system output (this will trigger a debounced save but won't race)
     this.addOutput(taskId, {
       type: 'system',
       content: '❌ Task marked as failed - no activity for 10 minutes',
       timestamp: new Date()
     })
     
-    // Update task status
-    task.status = 'failed'
-    await this.saveTasksImmediately()
     this.broadcastTaskUpdate(taskId, task)
     
     // Clean up process manager
@@ -929,13 +952,6 @@ ${gitDiff}
     // Increment retry count
     task.retryCount++
     
-    // Add retry message
-    this.addOutput(taskId, {
-      type: 'system',
-      content: `🔄 Retrying task (attempt ${task.retryCount + 1}/${this.MAX_RETRY_COUNT + 1})`,
-      timestamp: new Date()
-    })
-    
     // Reset task status
     task.status = 'starting'
     task.phase = task.thinkMode === 'planning' ? 'planner' : 'editor'
@@ -945,8 +961,16 @@ ${gitDiff}
     task.lastActivityTime = new Date()
     task.lastHeartbeatTime = new Date()
     
+    // Save immediately before adding output to prevent race condition
     await this.saveTasksImmediately()
     this.broadcastTaskUpdate(taskId, task)
+    
+    // Add retry message after save
+    this.addOutput(taskId, {
+      type: 'system',
+      content: `🔄 Retrying task (attempt ${task.retryCount + 1}/${this.MAX_RETRY_COUNT + 1})`,
+      timestamp: new Date()
+    })
     
     // Create new process manager and restart
     const processManager = new ProcessManager(taskId, task.worktree, task.repoPath)
