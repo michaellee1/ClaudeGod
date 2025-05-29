@@ -3,6 +3,7 @@ import path from 'path'
 import os from 'os'
 import { Initiative, InitiativePhase, InitiativeStatus } from '../types/initiative'
 import { FileRecovery } from './file-recovery'
+import { FileLock } from './file-lock'
 
 class InitiativeStore {
   private static instance: InitiativeStore
@@ -82,14 +83,17 @@ class InitiativeStore {
 
   private async saveInitiatives() {
     try {
-      // Create backup before saving
-      if (await this.fileRecovery.fileExists(this.initiativesFile)) {
-        await fs.copyFile(this.initiativesFile, `${this.initiativesFile}.backup`)
-      }
-      
-      // Convert Map to array for JSON serialization
-      const initiativesArray = Array.from(this.initiatives.values())
-      await this.fileRecovery.writeJsonFile(this.initiativesFile, initiativesArray)
+      // Use file locking for the main initiatives file
+      await FileLock.withLock(this.initiativesFile, async () => {
+        // Create backup before saving
+        if (await this.fileRecovery.fileExists(this.initiativesFile)) {
+          await fs.copyFile(this.initiativesFile, `${this.initiativesFile}.backup`)
+        }
+        
+        // Convert Map to array for JSON serialization
+        const initiativesArray = Array.from(this.initiatives.values())
+        await this.fileRecovery.writeJsonFile(this.initiativesFile, initiativesArray)
+      })
     } catch (error) {
       console.error('Error saving initiatives:', error)
       throw error // Re-throw to handle in callers
@@ -104,7 +108,19 @@ class InitiativeStore {
     
     // Set new timer to save after 1 second of no changes
     this.saveDebounceTimer = setTimeout(async () => {
-      await this.saveInitiatives()
+      try {
+        await this.saveInitiatives()
+      } catch (error) {
+        console.error('Error in debouncedSave:', error)
+        // Broadcast error to WebSocket clients if available
+        if (typeof global !== 'undefined' && (global as any).broadcastError) {
+          (global as any).broadcastError({
+            type: 'save-error',
+            message: 'Failed to save initiatives',
+            error: error instanceof Error ? error.message : String(error)
+          })
+        }
+      }
     }, 1000)
   }
 
@@ -137,44 +153,55 @@ class InitiativeStore {
   }
 
   async createInitiative(objective: string): Promise<Initiative> {
-    // Check concurrent initiative limit
-    const activeInitiatives = Array.from(this.initiatives.values()).filter(
-      i => i.status !== InitiativeStatus.COMPLETED && i.status !== InitiativeStatus.TASKS_SUBMITTED
-    )
-    if (activeInitiatives.length >= this.MAX_CONCURRENT_INITIATIVES) {
-      throw new Error(`Resource limit reached: ${activeInitiatives.length}/${this.MAX_CONCURRENT_INITIATIVES} concurrent initiatives`)
-    }
+    // Use file lock to prevent concurrent creation
+    return await FileLock.withLock(this.initiativesFile, async () => {
+      // Re-check concurrent initiative limit inside lock
+      const activeInitiatives = Array.from(this.initiatives.values()).filter(
+        i => i.status !== InitiativeStatus.COMPLETED && i.status !== InitiativeStatus.TASKS_SUBMITTED
+      )
+      if (activeInitiatives.length >= this.MAX_CONCURRENT_INITIATIVES) {
+        throw new Error(`Resource limit reached: ${activeInitiatives.length}/${this.MAX_CONCURRENT_INITIATIVES} concurrent initiatives`)
+      }
 
-    const id = this.generateId()
-    const directory = path.join(this.initiativesDir, id)
-    
-    // Create initiative directory
-    try {
-      await fs.mkdir(directory, { recursive: true })
-    } catch (error) {
-      console.error(`Error creating initiative directory ${directory}:`, error)
-      throw new Error('Failed to create initiative directory')
-    }
+      const id = this.generateId()
+      const directory = path.join(this.initiativesDir, id)
+      
+      // Create initiative directory
+      try {
+        await fs.mkdir(directory, { recursive: true })
+      } catch (error) {
+        console.error(`Error creating initiative directory ${directory}:`, error)
+        throw new Error('Failed to create initiative directory')
+      }
 
-    const initiative: Initiative = {
-      id,
-      objective,
-      status: InitiativeStatus.EXPLORING,
-      currentPhase: InitiativePhase.EXPLORATION,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      yoloMode: true,
-      currentStepIndex: 0
-    }
+      const initiative: Initiative = {
+        id,
+        objective,
+        status: InitiativeStatus.EXPLORING,
+        currentPhase: InitiativePhase.EXPLORATION,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        yoloMode: true,
+        currentStepIndex: 0
+      }
 
-    this.initiatives.set(id, initiative)
-    // Save immediately and wait for completion to avoid race conditions
-    await this.saveInitiatives()
-    // Only broadcast after save is complete
-    this.broadcastInitiativeUpdate(id, initiative)
+      this.initiatives.set(id, initiative)
+      
+      try {
+        // Save immediately and wait for completion to avoid race conditions
+        await this.saveInitiatives()
+        // Only broadcast after save is complete
+        this.broadcastInitiativeUpdate(id, initiative)
+      } catch (error) {
+        // If save failed, remove from memory to maintain consistency
+        this.initiatives.delete(id)
+        console.error(`Failed to save initiative ${id}, rolled back:`, error)
+        throw error
+      }
 
-    console.log(`Created initiative ${id} with objective: ${objective}`)
-    return initiative
+      console.log(`Created initiative ${id} with objective: ${objective}`)
+      return initiative
+    })
   }
 
   get(id: string): Initiative | undefined {
@@ -235,9 +262,38 @@ class InitiativeStore {
       'task_generation': InitiativeStatus.PLANNING,
       'ready': InitiativeStatus.READY_FOR_TASKS
     }
+    
+    // Validate phase transition
+    const newPhase = phaseMap[phase]
+    if (!newPhase) {
+      throw new Error(`Invalid phase: ${phase}`)
+    }
+    
+    // Get phase order for validation
+    const phaseOrder = [
+      InitiativePhase.EXPLORATION,
+      InitiativePhase.QUESTIONS,
+      InitiativePhase.RESEARCH_PREP,
+      InitiativePhase.RESEARCH_REVIEW,
+      InitiativePhase.TASK_GENERATION,
+      InitiativePhase.READY
+    ]
+    
+    const currentIndex = phaseOrder.indexOf(initiative.currentPhase)
+    const newIndex = phaseOrder.indexOf(newPhase)
+    
+    // Allow moving forward or staying in same phase, but not backwards
+    if (newIndex < currentIndex) {
+      throw new Error(`Cannot transition from ${initiative.currentPhase} back to ${phase}`)
+    }
+
+    // Store original state for rollback
+    const originalPhase = initiative.currentPhase
+    const originalStatus = initiative.status
+    const originalUpdatedAt = initiative.updatedAt
 
     // Update phase and status
-    initiative.currentPhase = phaseMap[phase] || InitiativePhase.EXPLORATION
+    initiative.currentPhase = newPhase
     initiative.status = statusMap[phase] || InitiativeStatus.EXPLORING
     initiative.updatedAt = new Date()
 
@@ -247,11 +303,21 @@ class InitiativeStore {
     }
 
     this.initiatives.set(id, initiative)
-    // Phase updates are critical, save immediately
-    await this.saveInitiatives()
-    this.broadcastInitiativeUpdate(id, initiative)
-
-    console.log(`Updated initiative ${id} to phase: ${phase}`)
+    
+    try {
+      // Phase updates are critical, save immediately
+      await this.saveInitiatives()
+      this.broadcastInitiativeUpdate(id, initiative)
+      console.log(`Updated initiative ${id} to phase: ${phase}`)
+    } catch (error) {
+      // Rollback on save failure
+      initiative.currentPhase = originalPhase
+      initiative.status = originalStatus
+      initiative.updatedAt = originalUpdatedAt
+      this.initiatives.set(id, initiative)
+      console.error(`Failed to save phase update for ${id}, rolled back:`, error)
+      throw error
+    }
   }
 
   async savePhaseFile(id: string, filename: string, content: string): Promise<void> {
@@ -322,6 +388,14 @@ class InitiativeStore {
 
     // Remove from map
     this.initiatives.delete(id)
+    
+    // Clean up debounce timer to prevent memory leak
+    const timer = this.broadcastDebounceTimers.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      this.broadcastDebounceTimers.delete(id)
+    }
+    
     this.debouncedSave()
 
     // Clean up WebSocket connections if available

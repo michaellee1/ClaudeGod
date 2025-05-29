@@ -59,20 +59,25 @@ export class InitiativeManager extends EventEmitter {
   }
 
   private async loadPromptTemplate(phase: InitiativePhase): Promise<string> {
-    // Use embedded prompts to avoid filesystem issues in Next.js server context
-    switch (phase) {
-      case InitiativePhase.EXPLORATION:
-        return PROMPTS.exploration
-      case InitiativePhase.RESEARCH_PREP:
-        return PROMPTS.refinement
-      case InitiativePhase.TASK_GENERATION:
-        return PROMPTS.planning
-      case InitiativePhase.QUESTIONS:
-      case InitiativePhase.RESEARCH_REVIEW:
-      case InitiativePhase.READY:
-        throw new Error(`No template available for phase: ${phase}`)
-      default:
-        throw new Error(`Unknown phase: ${phase}`)
+    try {
+      // Use embedded prompts to avoid filesystem issues in Next.js server context
+      switch (phase) {
+        case InitiativePhase.EXPLORATION:
+          return PROMPTS.exploration
+        case InitiativePhase.RESEARCH_PREP:
+          return PROMPTS.refinement
+        case InitiativePhase.TASK_GENERATION:
+          return PROMPTS.planning
+        case InitiativePhase.QUESTIONS:
+        case InitiativePhase.RESEARCH_REVIEW:
+        case InitiativePhase.READY:
+          throw new Error(`No template available for phase: ${phase}`)
+        default:
+          throw new Error(`Unknown phase: ${phase}`)
+      }
+    } catch (error) {
+      console.error(`Error loading prompt template for phase ${phase}:`, error)
+      throw new Error(`Failed to load prompt template: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -178,7 +183,11 @@ export class InitiativeManager extends EventEmitter {
     try {
       await this.initiativeStore.loadPhaseFile(initiativeId, filename)
       return true
-    } catch {
+    } catch (error) {
+      // Log only if it's not a file not found error
+      if (error instanceof Error && !error.message.includes('not found')) {
+        console.error(`Error checking phase file ${filename} for initiative ${initiativeId}:`, error)
+      }
       return false
     }
   }
@@ -257,14 +266,25 @@ export class InitiativeManager extends EventEmitter {
     const timeoutId = setTimeout(async () => {
       if (this.activeProcesses.has(processInfo.initiativeId)) {
         console.error(`Process timeout for initiative ${processInfo.initiativeId}`)
-        processManager.stopProcesses()
-        await this.cleanupProcess(processInfo.initiativeId)
+        try {
+          processManager.stopProcesses()
+          await this.cleanupProcess(processInfo.initiativeId)
+        } catch (cleanupError) {
+          console.error(`Error during timeout cleanup for ${processInfo.initiativeId}:`, cleanupError)
+        }
         this.emit(INITIATIVE_EVENTS.TIMEOUT, { initiativeId: processInfo.initiativeId, phase: processInfo.phase })
       }
     }, this.PROCESS_TIMEOUT)
     
     // Store timeout ID in process info
     processInfo.timeoutId = timeoutId
+    
+    // Clear timeout on successful completion
+    processManager.once('completed', () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    })
   }
 
   private async handlePhaseCompletion(initiativeId: string, phase: InitiativePhase): Promise<void> {
@@ -640,25 +660,37 @@ export class InitiativeManager extends EventEmitter {
 
   private async cleanupProcess(initiativeId: string): Promise<void> {
     const processInfo = this.activeProcesses.get(initiativeId)
-    if (processInfo) {
+    if (!processInfo) {
+      // Already cleaned up
+      return
+    }
+    
+    try {
+      // First, update the store to mark as inactive (do this first to prevent race conditions)
+      await this.initiativeStore.update(initiativeId, {
+        processId: undefined,
+        isActive: false
+      })
+      
+      // Then clean up local resources
       // Clear timeout if exists
       if (processInfo.timeoutId) {
         clearTimeout(processInfo.timeoutId)
       }
       // Remove all listeners to prevent memory leaks
       processInfo.processManager.removeAllListeners()
-      // Delete from active processes
+      // Delete from active processes only after everything else is cleaned up
       this.activeProcesses.delete(initiativeId)
-    }
-    
-    // Clear process ID and active flag from initiative store
-    try {
-      await this.initiativeStore.update(initiativeId, {
-        processId: undefined,
-        isActive: false
-      })
     } catch (error) {
-      console.error(`Error clearing process info for initiative ${initiativeId}:`, error)
+      console.error(`Error during cleanup for initiative ${initiativeId}:`, error)
+      // Even if store update fails, we should still clean up local resources
+      if (processInfo.timeoutId) {
+        clearTimeout(processInfo.timeoutId)
+      }
+      processInfo.processManager.removeAllListeners()
+      this.activeProcesses.delete(initiativeId)
+      // Re-throw to let caller handle the error
+      throw error
     }
   }
 
@@ -723,7 +755,8 @@ ${initiative.objective}
           return `Phase ${phase} completed.`
       }
     } catch (error) {
-      return `Phase ${phase} completed (details unavailable).`
+      console.error(`Error extracting key info for phase ${phase} in initiative ${initiativeId}:`, error)
+      return `Phase ${phase} completed (details unavailable due to: ${error instanceof Error ? error.message : 'unknown error'}).`
     }
   }
 

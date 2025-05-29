@@ -15,6 +15,7 @@ import {
 import { withRetry, ErrorLogger, CircuitBreaker } from './error-handler'
 import { InitiativeRecovery, RecoveryWorkflows } from './error-recovery'
 import { InitiativeTransaction } from './rollback-manager'
+import { Mutex } from './mutex'
 
 interface QueuedPhase {
   initiativeId: string
@@ -59,7 +60,7 @@ export class InitiativeProcessor extends EventEmitter {
   }
   private circuitBreaker: CircuitBreaker
   private errorLogger: ErrorLogger
-  private queueLock: boolean = false
+  private queueMutex: Mutex = new Mutex()
   
   private readonly MAX_CONCURRENT_PROCESSES = 3
   private readonly HEALTH_CHECK_INTERVAL = 30000 // 30 seconds
@@ -836,25 +837,9 @@ export class InitiativeProcessor extends EventEmitter {
   }
   
   private async modifyQueueSafely(modifier: () => void): Promise<void> {
-    const maxRetries = 10
-    let retries = 0
-    
-    while (retries < maxRetries) {
-      if (!this.queueLock) {
-        this.queueLock = true
-        try {
-          modifier()
-          return
-        } finally {
-          this.queueLock = false
-        }
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 50))
-      retries++
-    }
-    
-    throw new ConcurrentModificationError('queue', 'modify')
+    return await this.queueMutex.runExclusive(async () => {
+      modifier()
+    })
   }
   
   private async checkProcessHealth(pid?: number): Promise<boolean> {
