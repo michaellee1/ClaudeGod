@@ -54,6 +54,12 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       throw error
     }
 
+    // Reload the initiative to get the updated processId
+    const updatedInitiative = initiativeStore.get(initiative.id)
+    if (!updatedInitiative) {
+      throw new Error('Initiative not found after creation')
+    }
+
     // Map InitiativePhase enum back to string for backward compatibility
     const phaseToString: Record<string, string> = {
       [InitiativePhase.EXPLORATION]: 'exploration',
@@ -64,17 +70,18 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       [InitiativePhase.READY]: 'ready'
     }
     
-    const phaseString = phaseToString[initiative.currentPhase] || 'exploration'
+    const phaseString = phaseToString[updatedInitiative.currentPhase] || 'exploration'
     
     return NextResponse.json({
-      id: initiative.id,
-      status: initiative.status,
+      id: updatedInitiative.id,
+      status: updatedInitiative.status,
       phase: phaseString,
-      objective: initiative.objective,
-      createdAt: initiative.createdAt,
-      updatedAt: initiative.updatedAt,
+      objective: updatedInitiative.objective,
+      createdAt: updatedInitiative.createdAt,
+      updatedAt: updatedInitiative.updatedAt,
       isActive: true,
-      yoloMode: initiative.yoloMode
+      processId: updatedInitiative.processId,
+      yoloMode: updatedInitiative.yoloMode
     })
 })
 
@@ -104,6 +111,7 @@ export const GET = withErrorHandler(async () => {
         createdAt: initiative.createdAt,
         updatedAt: initiative.updatedAt,
         isActive,
+        processId: initiative.processId,
         yoloMode: initiative.yoloMode,
         currentStepIndex: initiative.currentStepIndex
       }

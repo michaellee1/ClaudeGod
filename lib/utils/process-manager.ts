@@ -196,10 +196,11 @@ Begin with 'git diff'.`
         this.emit('status', 'in_progress')
         
         // Return early - planner will trigger editor when done
+        // At this point, plannerProcess must exist with a valid PID (startPlannerProcess throws if not)
         return {
           editorPid: 0,
           reviewerPid: 0,
-          plannerPid: this.plannerProcess?.pid || 0
+          plannerPid: this.plannerProcess!.pid
         }
       } catch (error) {
         console.error('Error in planning mode:', error)

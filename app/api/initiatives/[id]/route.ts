@@ -99,6 +99,8 @@ export const GET = withErrorHandler(async (
       updatedAt: initiative.updatedAt,
       yoloMode: initiative.yoloMode ?? true,
       currentStepIndex: initiative.currentStepIndex ?? 0,
+      processId: initiative.processId,
+      isActive: initiative.isActive ?? false,
       questions: phaseFiles.questions?.questions || [],
       userAnswers: phaseFiles.answers || {},
       researchNeeds: phaseFiles.research || '',
@@ -168,6 +170,8 @@ export const PATCH = withErrorHandler(async (
       currentPhase: updatedInitiative.currentPhase,
       status: updatedInitiative.status,
       yoloMode: updatedInitiative.yoloMode,
+      processId: updatedInitiative.processId,
+      isActive: updatedInitiative.isActive ?? false,
       updatedAt: updatedInitiative.updatedAt
     })
 })

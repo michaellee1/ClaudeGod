@@ -240,25 +240,25 @@ export class InitiativeManager extends EventEmitter {
         await this.handlePhaseCompletion(processInfo.initiativeId, processInfo.phase)
 
         // Cleanup
-        this.cleanupProcess(processInfo.initiativeId)
+        await this.cleanupProcess(processInfo.initiativeId)
       } catch (error) {
         console.error(`Error handling phase completion for ${processInfo.initiativeId}:`, error)
         this.emit(INITIATIVE_EVENTS.ERROR, { initiativeId: processInfo.initiativeId, phase: processInfo.phase, error })
       }
     })
 
-    processManager.on('error', (error: Error) => {
+    processManager.on('error', async (error: Error) => {
       console.error(`Process error for initiative ${processInfo.initiativeId}:`, error)
-      this.cleanupProcess(processInfo.initiativeId)
+      await this.cleanupProcess(processInfo.initiativeId)
       this.emit(INITIATIVE_EVENTS.ERROR, { initiativeId: processInfo.initiativeId, phase: processInfo.phase, error })
     })
 
     // Set up timeout
-    const timeoutId = setTimeout(() => {
+    const timeoutId = setTimeout(async () => {
       if (this.activeProcesses.has(processInfo.initiativeId)) {
         console.error(`Process timeout for initiative ${processInfo.initiativeId}`)
         processManager.stopProcesses()
-        this.cleanupProcess(processInfo.initiativeId)
+        await this.cleanupProcess(processInfo.initiativeId)
         this.emit(INITIATIVE_EVENTS.TIMEOUT, { initiativeId: processInfo.initiativeId, phase: processInfo.phase })
       }
     }, this.PROCESS_TIMEOUT)
@@ -454,7 +454,13 @@ export class InitiativeManager extends EventEmitter {
     await this.setupProcessManagerEvents(processManager, processInfo)
 
     // Start the process with planning mode
-    await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
+    const { plannerPid } = await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
+    
+    // Update initiative with process ID
+    await this.initiativeStore.update(initiativeId, {
+      processId: String(plannerPid),
+      isActive: true
+    })
   }
 
   async processAnswers(initiativeId: string, answers: Record<string, string>): Promise<void> {
@@ -513,7 +519,13 @@ export class InitiativeManager extends EventEmitter {
     await this.setupProcessManagerEvents(processManager, processInfo)
 
     // Start the process with planning mode
-    await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
+    const { plannerPid } = await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
+    
+    // Update initiative with process ID
+    await this.initiativeStore.update(initiativeId, {
+      processId: String(plannerPid),
+      isActive: true
+    })
   }
 
   async processResearch(initiativeId: string, research: string): Promise<void> {
@@ -588,7 +600,13 @@ export class InitiativeManager extends EventEmitter {
     await this.setupProcessManagerEvents(processManager, processInfo)
 
     // Start the process with planning mode
-    await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
+    const { plannerPid } = await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
+    
+    // Update initiative with process ID
+    await this.initiativeStore.update(initiativeId, {
+      processId: String(plannerPid),
+      isActive: true
+    })
   }
 
   async generateTasks(initiativeId: string): Promise<InitiativeTaskStep[]> {
@@ -622,7 +640,7 @@ export class InitiativeManager extends EventEmitter {
     }
   }
 
-  private cleanupProcess(initiativeId: string): void {
+  private async cleanupProcess(initiativeId: string): Promise<void> {
     const processInfo = this.activeProcesses.get(initiativeId)
     if (processInfo) {
       // Clear timeout if exists
@@ -633,6 +651,16 @@ export class InitiativeManager extends EventEmitter {
       processInfo.processManager.removeAllListeners()
       // Delete from active processes
       this.activeProcesses.delete(initiativeId)
+    }
+    
+    // Clear process ID and active flag from initiative store
+    try {
+      await this.initiativeStore.update(initiativeId, {
+        processId: undefined,
+        isActive: false
+      })
+    } catch (error) {
+      console.error(`Error clearing process info for initiative ${initiativeId}:`, error)
     }
   }
 
@@ -818,10 +846,10 @@ ${initiative.objective}
         (async () => {
           try {
             await processInfo.processManager.stopProcesses()
-            this.cleanupProcess(initiativeId)
+            await this.cleanupProcess(initiativeId)
           } catch (error: any) {
             console.error(`Error cleaning up process ${initiativeId}:`, error)
-            this.cleanupProcess(initiativeId)
+            await this.cleanupProcess(initiativeId)
           }
         })()
       )
