@@ -95,7 +95,11 @@ class InitiativeStore {
         // Convert Map to array for JSON serialization
         const initiativesArray = Array.from(this.initiatives.values())
         await this.fileRecovery.writeJsonFile(this.initiativesFile, initiativesArray)
+<<<<<<< HEAD
       }, 5000)
+=======
+      })
+>>>>>>> 4977329 (Complete task: Find and fix bugs within the initiatives pipeline. Ultrathink)
     } catch (error) {
       console.error('Error saving initiatives:', error)
       throw error // Re-throw to handle in callers
@@ -155,7 +159,11 @@ class InitiativeStore {
   }
 
   async createInitiative(objective: string): Promise<Initiative> {
+<<<<<<< HEAD
     // Use file lock to prevent concurrent creation with 5 second timeout
+=======
+    // Use file lock to prevent concurrent creation
+>>>>>>> 4977329 (Complete task: Find and fix bugs within the initiatives pipeline. Ultrathink)
     return await FileLock.withLock(this.initiativesFile, async () => {
       // Re-check concurrent initiative limit inside lock
       const activeInitiatives = Array.from(this.initiatives.values()).filter(
