@@ -479,9 +479,25 @@ class TaskStore {
       ...(initiativeParams?.globalContext && { globalContext: initiativeParams.globalContext })
     }
     
-    this.tasks.set(taskId, task)
-    this.outputs.set(taskId, [])
-    console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}`)
+    // Queue task creation to prevent race conditions
+    await this.taskCreationQueue
+    this.taskCreationQueue = this.taskCreationQueue.then(async () => {
+      // If a critical operation is in progress, store task in pending queue
+      if (this.isInCriticalOperation) {
+        console.log(`[TaskStore] Critical operation in progress, queueing task ${taskId} creation`)
+        this.pendingTaskAdditions.set(taskId, task)
+        this.outputs.set(taskId, [])
+      } else {
+        this.tasks.set(taskId, task)
+        this.outputs.set(taskId, [])
+      }
+      console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}, pending: ${this.pendingTaskAdditions.size}`)
+    }).catch(error => {
+      console.error(`[TaskStore] Error in task creation queue for ${taskId}:`, error)
+    })
+    
+    // Wait for queue to complete
+    await this.taskCreationQueue
     
     // Use immediate save for task creation to prevent loss
     await this.saveTasksImmediately()
