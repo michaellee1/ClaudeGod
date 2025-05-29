@@ -110,7 +110,8 @@ export const POST = withErrorHandler(async (
           {
             initiativeId: id,
             stepNumber: stepNumber,
-            globalContext: globalContext
+            globalContext: globalContext,
+            taskContext: task.context // Pass the contextual information if available
           }
         )
         createdTasks.push({

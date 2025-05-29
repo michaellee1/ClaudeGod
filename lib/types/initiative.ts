@@ -58,6 +58,12 @@ export interface InitiativeTask {
   taskId?: string // Reference to created task in task system
   taskData?: Partial<Task> // Contains task data when submitted to task system
   createdAt: Date
+  context?: {
+    source?: string
+    relatedFindings?: string[]
+    userRequirement?: string
+    researchApplied?: string
+  }
 }
 
 export interface InitiativeTaskStep {

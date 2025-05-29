@@ -354,6 +354,12 @@ class TaskStore {
       initiativeId?: string
       stepNumber?: number
       globalContext?: string
+      taskContext?: {
+        source?: string
+        relatedFindings?: string[]
+        userRequirement?: string
+        researchApplied?: string
+      }
     }
   ): Promise<Task> {
     // Check concurrent task limit
@@ -413,9 +419,37 @@ class TaskStore {
     this.setupProcessManagerEvents(processManager, task)
     
     try {
+      // Construct enhanced prompt with global context and task context if available
+      let enhancedPrompt = prompt
+      
+      // Add global context if available
+      if (task.globalContext) {
+        enhancedPrompt = `## Context from Initiative Planning\n${task.globalContext}\n\n`
+      }
+      
+      // Add task-specific context if available
+      if (initiativeParams?.taskContext) {
+        enhancedPrompt += `## Task Context\n`
+        if (initiativeParams.taskContext.source) {
+          enhancedPrompt += `**Origin:** ${initiativeParams.taskContext.source}\n`
+        }
+        if (initiativeParams.taskContext.userRequirement) {
+          enhancedPrompt += `**User Requirement:** ${initiativeParams.taskContext.userRequirement}\n`
+        }
+        if (initiativeParams.taskContext.researchApplied) {
+          enhancedPrompt += `**Research Applied:** ${initiativeParams.taskContext.researchApplied}\n`
+        }
+        if (initiativeParams.taskContext.relatedFindings?.length) {
+          enhancedPrompt += `**Related Findings:**\n${initiativeParams.taskContext.relatedFindings.map(f => `- ${f}`).join('\n')}\n`
+        }
+        enhancedPrompt += '\n'
+      }
+      
+      enhancedPrompt += `## Current Task\n${prompt}`
+      
       const { editorPid, reviewerPid } = await processManager.startProcesses(
         worktreePath,
-        prompt,
+        enhancedPrompt,
         taskId,
         thinkMode
       )

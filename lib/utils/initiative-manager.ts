@@ -76,7 +76,7 @@ export class InitiativeManager extends EventEmitter {
     }
   }
 
-  private constructPrompt(template: string, initiative: StoreInitiative, context: Record<string, string> = {}): string {
+  private async constructPrompt(template: string, initiative: StoreInitiative, context: Record<string, string> = {}): Promise<string> {
     let prompt = template
 
     // Replace standard variables
@@ -84,13 +84,103 @@ export class InitiativeManager extends EventEmitter {
     prompt = prompt.replace(/{{outputDir}}/g, this.getInitiativeDir(initiative.id))
     prompt = prompt.replace(/{{id}}/g, initiative.id)
 
-    // Replace any additional context variables
-    for (const [key, value] of Object.entries(context)) {
+    // Build cumulative context from all previous phases
+    const cumulativeContext: Record<string, string> = { ...context }
+    
+    try {
+      // Always include INITIATIVE.md if it exists - this is the memory file
+      if (await this.phaseFileExists(initiative.id, 'INITIATIVE.md')) {
+        const initiativeMemory = await this.initiativeStore.loadPhaseFile(initiative.id, 'INITIATIVE.md')
+        cumulativeContext.initiativeMemory = initiativeMemory
+      }
+      
+      // Load exploration output if it exists
+      if (await this.phaseFileExists(initiative.id, 'exploration_output.json')) {
+        const explorationOutput = await this.initiativeStore.loadPhaseFile(initiative.id, 'exploration_output.json')
+        const explorationContent = this.extractContentFromOutput(explorationOutput)
+        if (explorationContent) {
+          cumulativeContext.exploration = explorationContent
+        }
+      }
+
+      // Load questions if they exist
+      if (await this.phaseFileExists(initiative.id, 'questions.json')) {
+        const questions = await this.initiativeStore.loadPhaseFile(initiative.id, 'questions.json')
+        cumulativeContext.questions = questions
+      }
+
+      // Load answers if they exist
+      if (await this.phaseFileExists(initiative.id, 'answers.json')) {
+        const answers = await this.initiativeStore.loadPhaseFile(initiative.id, 'answers.json')
+        cumulativeContext.answers = answers
+      }
+
+      // Load research needs if they exist
+      if (await this.phaseFileExists(initiative.id, 'research-needs.md')) {
+        const researchNeeds = await this.initiativeStore.loadPhaseFile(initiative.id, 'research-needs.md')
+        cumulativeContext.researchNeeds = researchNeeds
+      }
+
+      // Load research if it exists (and not already in context)
+      if (!cumulativeContext.research && await this.phaseFileExists(initiative.id, 'research.md')) {
+        const research = await this.initiativeStore.loadPhaseFile(initiative.id, 'research.md')
+        cumulativeContext.research = research
+      }
+    } catch (error) {
+      console.error('Error loading cumulative context:', error)
+    }
+
+    // Replace all context variables
+    for (const [key, value] of Object.entries(cumulativeContext)) {
       const regex = new RegExp(`{{${key}}}`, 'g')
       prompt = prompt.replace(regex, value)
     }
 
+    // Handle conditional sections (e.g., {{#initiativeMemory}}...{{/initiativeMemory}})
+    for (const [key, value] of Object.entries(cumulativeContext)) {
+      const conditionalRegex = new RegExp(`{{#${key}}}([\\s\\S]*?){{/${key}}}`, 'g')
+      if (value) {
+        // Replace the conditional markers but keep the content
+        prompt = prompt.replace(conditionalRegex, '$1')
+      } else {
+        // Remove the entire conditional section if value is empty
+        prompt = prompt.replace(conditionalRegex, '')
+      }
+    }
+
     return prompt
+  }
+
+  private extractContentFromOutput(output: string): string {
+    try {
+      let content = ''
+      const lines = output.split('\n').filter(line => line.trim())
+      
+      for (const line of lines) {
+        try {
+          const parsed: PhaseOutput = JSON.parse(line)
+          if (parsed.type === 'output' && parsed.data) {
+            content += parsed.data + '\n'
+          }
+        } catch {
+          content += line + '\n'
+        }
+      }
+      
+      return content.trim()
+    } catch (error) {
+      console.error('Error extracting content from output:', error)
+      return ''
+    }
+  }
+
+  private async phaseFileExists(initiativeId: string, filename: string): Promise<boolean> {
+    try {
+      await this.initiativeStore.loadPhaseFile(initiativeId, filename)
+      return true
+    } catch {
+      return false
+    }
   }
 
   private getInitiativeDir(initiativeId: string): string {
@@ -182,6 +272,9 @@ export class InitiativeManager extends EventEmitter {
     if (!initiative) {
       throw new Error(`Initiative ${initiativeId} not found`)
     }
+
+    // Update INITIATIVE.md with phase results
+    await this.updateInitiativeMemory(initiativeId, phase)
 
     // Parse phase outputs and update initiative
     switch (phase) {
@@ -342,7 +435,7 @@ export class InitiativeManager extends EventEmitter {
 
     // Load prompt template
     const template = await this.loadPromptTemplate(InitiativePhase.EXPLORATION)
-    const prompt = this.constructPrompt(template, initiative)
+    const prompt = await this.constructPrompt(template, initiative)
 
     // Create process manager
     const workDir = this.getInitiativeDir(initiativeId)
@@ -396,7 +489,7 @@ export class InitiativeManager extends EventEmitter {
 
     // Load prompt template and inject answers
     const template = await this.loadPromptTemplate(InitiativePhase.RESEARCH_PREP)
-    const prompt = this.constructPrompt(template, initiative, {
+    const prompt = await this.constructPrompt(template, initiative, {
       answers: JSON.stringify(sanitizedAnswers, null, 2)
     })
 
@@ -471,7 +564,7 @@ export class InitiativeManager extends EventEmitter {
 
     // Load prompt template and inject research
     const template = await this.loadPromptTemplate(InitiativePhase.TASK_GENERATION)
-    const prompt = this.constructPrompt(template, initiative, {
+    const prompt = await this.constructPrompt(template, initiative, {
       research: research
     })
 
@@ -541,6 +634,171 @@ export class InitiativeManager extends EventEmitter {
       // Delete from active processes
       this.activeProcesses.delete(initiativeId)
     }
+  }
+
+  private async updateInitiativeMemory(initiativeId: string, completedPhase: InitiativePhase): Promise<void> {
+    try {
+      // Load existing INITIATIVE.md or create new content
+      let memoryContent = ''
+      try {
+        memoryContent = await this.initiativeStore.loadPhaseFile(initiativeId, 'INITIATIVE.md')
+      } catch {
+        // File doesn't exist yet, create initial content
+        const initiative = this.initiativeStore.get(initiativeId)
+        if (!initiative) return
+        
+        memoryContent = `# Initiative Memory: ${initiative.objective}
+
+**Initiative ID:** ${initiativeId}  
+**Created:** ${new Date().toISOString()}  
+**Status:** In Progress
+
+## Objective
+${initiative.objective}
+
+## Key Decisions and Constraints
+
+## Phase Progress
+`
+      }
+
+      // Extract key information from the completed phase
+      const phaseUpdate = await this.extractPhaseKeyInfo(initiativeId, completedPhase)
+      
+      // Append phase update to memory
+      const timestamp = new Date().toISOString()
+      memoryContent += `\n### ${this.getPhaseDisplayName(completedPhase)} - ${timestamp}\n${phaseUpdate}\n`
+
+      // Save updated memory file
+      await this.initiativeStore.savePhaseFile(initiativeId, 'INITIATIVE.md', memoryContent)
+    } catch (error) {
+      console.error(`Error updating initiative memory for ${initiativeId}:`, error)
+      // Don't throw - this is supplementary functionality
+    }
+  }
+
+  private async extractPhaseKeyInfo(initiativeId: string, phase: InitiativePhase): Promise<string> {
+    try {
+      switch (phase) {
+        case InitiativePhase.EXPLORATION:
+          const explorationContent = await this.loadPhaseContent(initiativeId, 'exploration.md')
+          return this.extractExplorationKeyInfo(explorationContent)
+          
+        case InitiativePhase.RESEARCH_PREP:
+          const researchNeeds = await this.loadPhaseContent(initiativeId, 'research-needs.md')
+          const answers = await this.loadPhaseContent(initiativeId, 'answers.json')
+          return this.extractRefinementKeyInfo(researchNeeds, answers)
+          
+        case InitiativePhase.TASK_GENERATION:
+          const tasks = await this.loadPhaseContent(initiativeId, 'tasks.json')
+          return this.extractPlanningKeyInfo(tasks)
+          
+        default:
+          return `Phase ${phase} completed.`
+      }
+    } catch (error) {
+      return `Phase ${phase} completed (details unavailable).`
+    }
+  }
+
+  private async loadPhaseContent(initiativeId: string, filename: string): Promise<string> {
+    try {
+      if (filename.endsWith('_output.json')) {
+        const output = await this.initiativeStore.loadPhaseFile(initiativeId, filename)
+        return this.extractContentFromOutput(output)
+      }
+      return await this.initiativeStore.loadPhaseFile(initiativeId, filename)
+    } catch {
+      return ''
+    }
+  }
+
+  private extractExplorationKeyInfo(content: string): string {
+    const lines = content.split('\n')
+    let keyInfo = '**Key Findings:**\n'
+    let inImportantSection = false
+    let bulletPoints: string[] = []
+    
+    for (const line of lines) {
+      // Look for key sections
+      if (line.includes('## Context') || line.includes('## Intermediate Plan')) {
+        inImportantSection = true
+      } else if (line.startsWith('## Questions')) {
+        inImportantSection = false
+      }
+      
+      // Extract bullet points from important sections
+      if (inImportantSection && line.trim().startsWith('-')) {
+        bulletPoints.push(line.trim())
+      }
+    }
+    
+    // Take first 5 most important points
+    keyInfo += bulletPoints.slice(0, 5).join('\n')
+    
+    return keyInfo
+  }
+
+  private extractRefinementKeyInfo(researchNeeds: string, answersJson: string): string {
+    let keyInfo = '**Key Decisions from User Feedback:**\n'
+    
+    try {
+      const answers = JSON.parse(answersJson)
+      // Extract key answers that indicate decisions
+      const decisions = Object.entries(answers)
+        .filter(([_, answer]) => answer && typeof answer === 'string' && answer.length > 20)
+        .slice(0, 3)
+        .map(([question, answer]) => `- ${question}: ${answer}`)
+      
+      keyInfo += decisions.join('\n')
+    } catch {
+      keyInfo += '- User feedback incorporated into plan'
+    }
+    
+    keyInfo += '\n\n**Research Areas Identified:**\n'
+    const researchTopics = researchNeeds.match(/### Topic \d+: (.+)/g) || []
+    keyInfo += researchTopics.slice(0, 3).map(topic => `- ${topic.replace(/### Topic \d+: /, '')}`).join('\n')
+    
+    return keyInfo
+  }
+
+  private extractPlanningKeyInfo(tasksJson: string): string {
+    let keyInfo = '**Implementation Plan:**\n'
+    
+    try {
+      const taskData = JSON.parse(tasksJson)
+      
+      // Extract global context key points
+      if (taskData.globalContext) {
+        keyInfo += '\n**Global Architecture Decisions:**\n'
+        const contextLines = taskData.globalContext.split('\n').filter((line: string) => line.trim())
+        keyInfo += contextLines.slice(0, 3).map((line: string) => `- ${line.trim()}`).join('\n')
+      }
+      
+      // Extract step summary
+      if (taskData.steps && Array.isArray(taskData.steps)) {
+        keyInfo += '\n\n**Implementation Steps:**\n'
+        keyInfo += taskData.steps.map((step: any, index: number) => 
+          `${index + 1}. ${step.name} (${step.tasks?.length || 0} tasks)`
+        ).join('\n')
+      }
+    } catch {
+      keyInfo += '- Detailed task breakdown created'
+    }
+    
+    return keyInfo
+  }
+
+  private getPhaseDisplayName(phase: InitiativePhase): string {
+    const displayNames: Record<InitiativePhase, string> = {
+      [InitiativePhase.EXPLORATION]: 'Exploration Phase',
+      [InitiativePhase.QUESTIONS]: 'Questions Phase',
+      [InitiativePhase.RESEARCH_PREP]: 'Refinement Phase',
+      [InitiativePhase.RESEARCH_REVIEW]: 'Research Review',
+      [InitiativePhase.TASK_GENERATION]: 'Planning Phase',
+      [InitiativePhase.READY]: 'Ready for Implementation'
+    }
+    return displayNames[phase] || phase
   }
 
   private async savePhaseOutput(initiativeId: string, phase: InitiativePhase, output: string): Promise<void> {

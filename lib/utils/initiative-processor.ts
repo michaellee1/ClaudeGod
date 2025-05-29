@@ -350,6 +350,16 @@ export class InitiativeProcessor extends EventEmitter {
     
     console.log(`Starting process for initiative ${initiativeId}, phase ${phase}`)
     
+    // Validate required files exist before processing
+    const validationError = await this.validatePhasePrerequisites(initiativeId, phase)
+    if (validationError) {
+      throw new InitiativeError(
+        validationError,
+        ErrorCode.INITIATIVE_INVALID_STATE,
+        { initiativeId, phase }
+      )
+    }
+    
     // Create recovery context
     const recovery = new InitiativeRecovery(initiativeId)
     const transaction = new InitiativeTransaction(initiativeId)
@@ -856,6 +866,60 @@ export class InitiativeProcessor extends EventEmitter {
     } catch (error) {
       // Process doesn't exist
       return false
+    }
+  }
+  
+  /**
+   * Validate that required files exist for a phase
+   */
+  private async validatePhasePrerequisites(initiativeId: string, phase: InitiativePhase): Promise<string | null> {
+    try {
+      switch (phase) {
+        case InitiativePhase.EXPLORATION:
+          // No prerequisites for exploration
+          return null
+          
+        case InitiativePhase.RESEARCH_PREP:
+          // Requires answers.json from questions phase
+          try {
+            await initiativeStore.loadPhaseFile(initiativeId, 'answers.json')
+          } catch (error) {
+            return 'Missing required file: answers.json. Questions phase must be completed first.'
+          }
+          
+          // Also validate exploration output exists
+          try {
+            await initiativeStore.loadPhaseFile(initiativeId, 'exploration.md')
+          } catch (error) {
+            return 'Missing required file: exploration.md. Exploration phase must be completed first.'
+          }
+          return null
+          
+        case InitiativePhase.TASK_GENERATION:
+          // Requires research.md from research phase
+          try {
+            await initiativeStore.loadPhaseFile(initiativeId, 'research.md')
+          } catch (error) {
+            return 'Missing required file: research.md. Research phase must be completed first.'
+          }
+          
+          // Also validate previous phase outputs exist
+          const requiredFiles = ['exploration.md', 'questions.json', 'answers.json', 'research-needs.md']
+          for (const file of requiredFiles) {
+            try {
+              await initiativeStore.loadPhaseFile(initiativeId, file)
+            } catch (error) {
+              console.warn(`Optional file missing for better context: ${file}`)
+              // These are optional for better context, don't fail
+            }
+          }
+          return null
+          
+        default:
+          return `Phase ${phase} cannot be processed automatically`
+      }
+    } catch (error) {
+      return `Error validating prerequisites: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 }
