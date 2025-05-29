@@ -147,7 +147,6 @@ class TaskStore {
           // Ignore if file doesn't exist yet
         }
         
-<<<<<<< HEAD
         // CRITICAL: Apply any pending task additions before saving
         // This ensures tasks created during save operations aren't lost
         if (this.pendingTaskAdditions.size > 0) {
@@ -158,10 +157,9 @@ class TaskStore {
           this.pendingTaskAdditions.clear()
         }
         
-=======
->>>>>>> 9b7fbf5 (Fix critical bug: merging tasks no longer deletes other tasks)
         // Convert Map to array for JSON serialization
         const tasksArray = Array.from(this.tasks.values())
+        console.log(`[TaskStore] Saving ${tasksArray.length} tasks to disk (Map size: ${this.tasks.size})`)
         await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
       } catch (error) {
         console.error('Error saving tasks:', error)
@@ -336,7 +334,6 @@ class TaskStore {
 
   // Immediate save method for critical operations (merge, delete, etc)
   private async saveTasksImmediately() {
-<<<<<<< HEAD
     // Cancel any pending debounced save
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer)
@@ -345,37 +342,6 @@ class TaskStore {
     
     // Use the save queue to ensure this save happens in order
     return this.enqueueSave(async () => {
-=======
-    // CRITICAL FIX: The issue was that clearing the debounce timer would
-    // cancel pending saves without ensuring those changes were persisted.
-    // This could cause tasks created/updated after the last save to be lost.
-    
-    // If there's a pending debounced save, we need to execute it first
-    // to ensure all in-memory changes are persisted before we proceed
-    if (this.saveDebounceTimer) {
-      clearTimeout(this.saveDebounceTimer)
-      this.saveDebounceTimer = null
-      
-      // Execute the pending save operations immediately
-      try {
-        await this.saveTasks()
-        await this.saveOutputs()
-        await this.saveProcessState()
-        console.log('[TaskStore] Executed pending saves before immediate save')
-      } catch (error) {
-        console.error('[TaskStore] Error executing pending saves:', error)
-        // Continue anyway - we'll try to save again below
-      }
-    }
-    
-    // Now perform the immediate save
-    try {
-      await this.saveTasks()
-      console.log('[TaskStore] Tasks saved immediately')
-    } catch (error) {
-      console.error('[TaskStore] Error saving tasks immediately:', error)
-      // Retry once
->>>>>>> 9b7fbf5 (Fix critical bug: merging tasks no longer deletes other tasks)
       try {
         // Set flag to prevent new debounced saves during this operation
         this.isInCriticalOperation = true
@@ -513,25 +479,9 @@ class TaskStore {
       ...(initiativeParams?.globalContext && { globalContext: initiativeParams.globalContext })
     }
     
-    // Queue task creation to prevent race conditions
-    await this.taskCreationQueue
-    this.taskCreationQueue = this.taskCreationQueue.then(async () => {
-      // If a critical operation is in progress, store task in pending queue
-      if (this.isInCriticalOperation) {
-        console.log(`[TaskStore] Critical operation in progress, queueing task ${taskId} creation`)
-        this.pendingTaskAdditions.set(taskId, task)
-        this.outputs.set(taskId, [])
-      } else {
-        this.tasks.set(taskId, task)
-        this.outputs.set(taskId, [])
-      }
-      console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}, pending: ${this.pendingTaskAdditions.size}`)
-    }).catch(error => {
-      console.error(`[TaskStore] Error in task creation queue for ${taskId}:`, error)
-    })
-    
-    // Wait for queue to complete
-    await this.taskCreationQueue
+    this.tasks.set(taskId, task)
+    this.outputs.set(taskId, [])
+    console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}`)
     
     // Use immediate save for task creation to prevent loss
     await this.saveTasksImmediately()
