@@ -275,9 +275,11 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     // Verify the temporary branch exists before merging
     try {
       const { stdout: branches } = await execFileAsync('git', ['-C', repoPath, 'branch', '--list', `temp-${cleanBranchName}`])
+      console.log(`[mergeWorktreeToMain] Branch list result:`, branches)
       if (!branches.trim()) {
         throw new Error(`Temporary branch temp-${cleanBranchName} was not created successfully`)
       }
+      console.log(`[mergeWorktreeToMain] Verified temp-${cleanBranchName} exists`)
     } catch (verifyError: any) {
       console.error(`[mergeWorktreeToMain] Failed to verify temp branch:`, verifyError)
       throw new Error(`Failed to verify temporary branch: ${verifyError.message}`)
@@ -290,14 +292,21 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
       console.log(`[mergeWorktreeToMain] Successfully merged temp-${cleanBranchName}`)
     } catch (mergeError: any) {
       console.error(`[mergeWorktreeToMain] Merge failed:`, mergeError)
+      console.error(`[mergeWorktreeToMain] Error details:`, {
+        stderr: mergeError.stderr,
+        code: mergeError.code,
+        command: mergeError.cmd
+      })
       
       // If merge fails, provide a properly formatted command for manual execution
-      const quotedMessage = `"Merge branch '${cleanBranchName}'"`
-      const manualCommand = `git -C "${repoPath}" merge --no-ff temp-${cleanBranchName} -m ${quotedMessage}`
+      // For shell safety, we'll use single quotes for the repo path and properly escape the merge message
+      const shellEscapedRepoPath = repoPath.replace(/'/g, "'\\''")
+      const shellEscapedBranchName = cleanBranchName.replace(/'/g, "'\\''")
+      const manualCommand = `git -C '${shellEscapedRepoPath}' merge --no-ff 'temp-${shellEscapedBranchName}' -m 'Merge branch '"'"'${shellEscapedBranchName}'"'"''`
       
       // Include both the original error and the manual command
       const enhancedError = new Error(
-        `Merge failed: ${mergeError.message}\n` +
+        `Merge failed: ${mergeError.stderr || mergeError.message}\n` +
         `You can try running this command manually:\n${manualCommand}`
       )
       ;(enhancedError as any).originalError = mergeError
