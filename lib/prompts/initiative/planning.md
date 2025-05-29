@@ -60,6 +60,9 @@ Before defining individual tasks, establish a global context that will be provid
 
 This global context ensures continuity across all tasks and prevents divergent implementations.
 
+**Good Global Context Example:**
+"This initiative implements real-time WebSocket updates for the initiative system. Key decisions: Use existing WebSocket infrastructure in server.js, follow the task-update message pattern, store state in InitiativeStore. Constraints: Must maintain backward compatibility with existing clients. Architecture: Event-driven updates triggered by store changes."
+
 ## Task Sizing Guidelines
 
 - **Each task should be completable in 1-4 hours**
@@ -92,12 +95,7 @@ Structure:
         {
           "title": "Specific task title",
           "description": "Detailed description of what needs to be done",
-          "context": {
-            "source": "Which exploration finding or user requirement led to this task",
-            "relatedFindings": ["Finding from exploration that this addresses"],
-            "userRequirement": "Which user answer or requirement this satisfies",
-            "researchApplied": "Which research finding is being implemented"
-          },
+          "rationale": "Which exploration finding, user requirement, or research result necessitates this task",
           "acceptanceCriteria": [
             "Specific, testable criteria 1",
             "Specific, testable criteria 2"
@@ -113,13 +111,13 @@ Structure:
 ```
 
 ## Step Organization Guidelines
-Many of the tasks may depend on previous tasks and/or may have some overlap areas, so we can't just send things off all at once.  Steps are a way to order groups of tasks to solve this.  Previous steps will be merged in before the next step completes.  Tasks in a step should be independent, they will not see code written by other tasks in that step, only code from the step before.
+**CRITICAL**: Steps exist to prevent merge conflicts and ensure proper code visibility. Tasks within a step run in parallel and CANNOT see each other's code changes.
 
-1. **Steps are not**: Steps are NOT logical groupings of tasks. 
-2. **Steps purpose**: Create a run order that will not lead to merge conflicts, AND will lead to better performance as future steps will be able to see and reference the code written by the previous step.
-3. **Dependencies**: Order steps considering dependencies and merge conflicts.
-4. **Testing**: If you want to include testing or other things that are better when referencing the actual code that is there, either include it in the same task (preferred) or in the next step.  If you include it as a separate task in the same step then it not be able to see the code.
-5. **Safety**: Err on the side of more steps than less (without too many), when there is likely to be tasks in a step that change the same parts of the same files (merge conflicts)
+1. **Primary Rule**: If two tasks modify the same file, they MUST be in different steps
+2. **Code Visibility**: Tasks can only see code from previous steps, not from tasks in their current step
+3. **Dependencies**: If Task B needs to see Task A's code, Task B must be in a later step
+4. **Testing Strategy**: Include tests in the same task as the feature (preferred) OR in a subsequent step
+5. **Step Size**: Aim for 2-5 tasks per step. More steps is safer than fewer when avoiding conflicts
 
 ## Task Description Best Practices
 
@@ -129,6 +127,8 @@ Many of the tasks may depend on previous tasks and/or may have some overlap area
 - Include technical decisions from research
 - Mention integration points clearly
 - Specify expected outputs or changes
+- Always connect tasks back to exploration findings and user requirements
+- Keep task descriptions focused on WHAT to do, use rationale for WHY
 
 ## Example Task Structure
 
@@ -136,12 +136,7 @@ Many of the tasks may depend on previous tasks and/or may have some overlap area
 {
   "title": "Implement WebSocket message handler for initiative updates",
   "description": "Create a new WebSocket message handler in server.js that broadcasts initiative state changes to connected clients. Should handle message types: initiative-created, initiative-updated, initiative-phase-changed.",
-  "context": {
-    "source": "Exploration finding: No real-time updates for initiative status",
-    "relatedFindings": ["Current WebSocket only handles task updates", "InitiativeStore has no broadcast mechanism"],
-    "userRequirement": "Q3 Answer: Yes, real-time updates are critical for user experience",
-    "researchApplied": "Research confirmed WebSocket is the best approach for real-time updates"
-  },
+  "rationale": "From exploration: 'No real-time updates for initiative status' + User confirmed in Q3 that real-time updates are critical",
   "acceptanceCriteria": [
     "New message types added to WebSocket message handler",
     "Broadcasts sent when InitiativeStore updates",
