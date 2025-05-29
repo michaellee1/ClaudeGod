@@ -732,14 +732,14 @@ Begin with 'git diff'.`
     
     // Check if we should skip the reviewer
     if (thinkMode === 'no_review') {
-      console.log(`[ProcessManager ${taskId}] Skipping reviewer phase due to no_review mode`)
+      console.log(`[ProcessManager ${this.taskId}] Skipping reviewer phase due to no_review mode`)
       this.currentPhase = 'finished'
       this.emit('status', 'finished')
       this.emit('phase', 'done')
       this.emit('completed', true) // Pass true to indicate successful completion
       return
     } else {
-      console.log(`[ProcessManager ${taskId}] Will start reviewer phase after editor completes (thinkMode: ${thinkMode || 'none'})`)
+      console.log(`[ProcessManager ${this.taskId}] Will start reviewer phase after editor completes (thinkMode: ${thinkMode || 'none'})`)
     }
     
     // Phase 2: Start and monitor reviewer
