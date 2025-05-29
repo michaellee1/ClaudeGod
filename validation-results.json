@@ -4,111 +4,107 @@
     "status": "INFO",
     "message": "Running Node.js v16.13.0",
     "details": null,
-    "timestamp": "2025-05-29T00:00:41.923Z"
+    "timestamp": "2025-05-29T18:32:54.592Z"
   },
   {
     "test": "OS Info",
     "status": "INFO",
     "message": "Platform: darwin, Release: 24.3.0",
     "details": null,
-    "timestamp": "2025-05-29T00:00:41.923Z"
+    "timestamp": "2025-05-29T18:32:54.592Z"
   },
   {
     "test": "Temp Directory",
     "status": "PASS",
     "message": "Temp dir accessible: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T",
     "details": null,
-    "timestamp": "2025-05-29T00:00:41.924Z"
+    "timestamp": "2025-05-29T18:32:54.593Z"
   },
   {
     "test": "Worktree Base",
     "status": "PASS",
-    "message": "Found 26 worktrees",
+    "message": "Found 22 worktrees",
     "details": [
       ".claude",
-      "task-0oufkf",
       "task-0za0xm",
       "task-1cvboa",
       "task-2prymk",
       "task-2spp0l",
-      "task-454a4q",
-      "task-5k3mft",
       "task-61w56l",
       "task-ci884r",
-      "task-fv1rkc",
       "task-g14a8r",
-      "task-h6nrok",
+      "task-i34w1co",
       "task-ikor1",
       "task-iktkcl",
+      "task-jopw5to",
       "task-ks5mgd",
       "task-kuk9r6",
-      "task-ldw5nx",
       "task-lhaoua",
+      "task-os43f",
       "task-pzyewv",
       "task-sjjh3k",
-      "task-tfnam6",
-      "task-vch36",
+      "task-u0e4rc",
       "task-yj9ww",
       "task-yjg7f",
       "task-zo9vb"
     ],
-    "timestamp": "2025-05-29T00:00:41.925Z"
+    "timestamp": "2025-05-29T18:32:54.593Z"
   },
   {
     "test": "Git Available",
     "status": "PASS",
     "message": "Git found: git version 2.39.5 (Apple Git-154)",
     "details": null,
-    "timestamp": "2025-05-29T00:00:41.946Z"
+    "timestamp": "2025-05-29T18:32:54.610Z"
   },
   {
     "test": "Current Repo",
     "status": "PASS",
-    "message": "Valid git repository: /private/var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/task-ks5mgd",
+    "message": "Valid git repository: /private/var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/task-u0e4rc",
     "details": null,
-    "timestamp": "2025-05-29T00:00:41.964Z"
+    "timestamp": "2025-05-29T18:32:54.628Z"
   },
   {
     "test": "Git Branch",
     "status": "PASS",
-    "message": "Current branch: task-ks5mgd",
+    "message": "Current branch: task-u0e4rc",
     "details": null,
-    "timestamp": "2025-05-29T00:00:41.981Z"
+    "timestamp": "2025-05-29T18:32:54.645Z"
   },
   {
     "test": "Git Status",
     "status": "INFO",
-    "message": "Working tree status: M app/api/initiatives/route.ts\n M app/initiatives/page.tsx\n M lib/utils/initiative-store.ts\n M server.js",
+    "message": "Working tree status: M app/api/initiatives/[id]/route.ts\n M app/initiatives/page.tsx\n M lib/hooks/useInitiativeWebSocket.ts\n M lib/utils/initiative-store.ts\n M lib/utils/initiative-validation.ts\n M server.js\n?? lib/utils/file-recovery.ts\n?? test-duplicate-initiatives.js",
     "details": null,
-    "timestamp": "2025-05-29T00:00:42.005Z"
+    "timestamp": "2025-05-29T18:32:54.672Z"
   },
   {
     "test": "Worktree Creation",
     "status": "PASS",
-    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748476842005",
+    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748543574672",
     "details": null,
-    "timestamp": "2025-05-29T00:00:42.202Z"
+    "timestamp": "2025-05-29T18:32:54.805Z"
   },
   {
     "test": "Worktree Cleanup",
     "status": "PASS",
     "message": "Successfully cleaned up test worktree",
     "details": null,
-    "timestamp": "2025-05-29T00:00:42.261Z"
+    "timestamp": "2025-05-29T18:32:54.860Z"
   },
   {
     "test": "Claude Command",
     "status": "FAIL",
     "message": "Claude CLI not found in PATH",
     "details": "Command failed: claude --version\nReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:18633\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:32045\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:1364:6636\n",
-    "timestamp": "2025-05-29T00:00:42.770Z"
+    "timestamp": "2025-05-29T18:32:55.284Z"
   },
   {
     "test": "Claude Alt Path",
     "status": "INFO",
     "message": "Found claude at: /Users/michaellee/.nvm/versions/node/v20.16.0/bin/claude",
     "details": null,
-    "timestamp": "2025-05-29T00:00:42.770Z"
+    "timestamp": "2025-05-29T18:32:55.286Z"
   },
   {
     "test": "PATH Environment",
@@ -126,13 +122,14 @@
       "/node_modules/.bin",
       "/Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin"
     ],
-    "timestamp": "2025-05-29T00:00:42.770Z"
+    "timestamp": "2025-05-29T18:32:55.286Z"
   },
   {
     "test": "Data Directory",
     "status": "PASS",
-    "message": "Data dir exists with 12 files",
+    "message": "Data dir exists with 13 files",
     "details": [
+      ".merge-in-progress",
       "checkpoints",
       "initiatives",
       "initiatives.json",
@@ -146,54 +143,22 @@
       "tasks.json.backup",
       "tasks.json.backup.recovery.1748468050965.json"
     ],
-    "timestamp": "2025-05-29T00:00:42.771Z"
+    "timestamp": "2025-05-29T18:32:55.286Z"
   },
   {
     "test": "Config File",
     "status": "PASS",
     "message": "Config file exists and is valid JSON",
     "details": {
-      "repoPath": "/Users/michaellee/Code/personal/cue"
+      "repoPath": "/Users/michaellee/Code/personal/claude-god/claude-god"
     },
-    "timestamp": "2025-05-29T00:00:42.772Z"
+    "timestamp": "2025-05-29T18:32:55.287Z"
   },
   {
     "test": "Tasks File",
     "status": "PASS",
-    "message": "Found 14 tasks in storage",
+    "message": "Found 10 tasks in storage",
     "details": [
-      {
-        "id": "5k3mft",
-        "status": "merged"
-      },
-      {
-        "id": "fv1rkc",
-        "status": "merged"
-      },
-      {
-        "id": "ldw5nx",
-        "status": "merged"
-      },
-      {
-        "id": "h6nrok",
-        "status": "merged"
-      },
-      {
-        "id": "tfnam6",
-        "status": "finished"
-      },
-      {
-        "id": "454a4q",
-        "status": "failed"
-      },
-      {
-        "id": "vch36",
-        "status": "failed"
-      },
-      {
-        "id": "0oufkf",
-        "status": "failed"
-      },
       {
         "id": "lhaoua",
         "status": "failed"
@@ -208,23 +173,39 @@
       },
       {
         "id": "iktkcl",
-        "status": "finished"
+        "status": "merged"
       },
       {
         "id": "ks5mgd",
-        "status": "in_progress"
+        "status": "merged"
       },
       {
         "id": "ikor1",
+        "status": "failed"
+      },
+      {
+        "id": "i34w1co",
+        "status": "merged"
+      },
+      {
+        "id": "jopw5to",
+        "status": "merged"
+      },
+      {
+        "id": "os43f",
+        "status": "finished"
+      },
+      {
+        "id": "u0e4rc",
         "status": "in_progress"
       }
     ],
-    "timestamp": "2025-05-29T00:00:42.772Z"
+    "timestamp": "2025-05-29T18:32:55.287Z"
   },
   {
     "test": "Outputs File",
     "status": "PASS",
-    "message": "Found outputs for 32 tasks",
+    "message": "Found outputs for 37 tasks",
     "details": [
       "lhaoua",
       "2spp0l",
@@ -257,9 +238,14 @@
       "2prymk",
       "iktkcl",
       "ks5mgd",
-      "ikor1"
+      "ikor1",
+      "i34w1co",
+      "jopw5to",
+      "a346h4",
+      "os43f",
+      "u0e4rc"
     ],
-    "timestamp": "2025-05-29T00:00:42.781Z"
+    "timestamp": "2025-05-29T18:32:55.300Z"
   },
   {
     "test": "Output Structure",
@@ -279,143 +265,159 @@
       "contentLength": 72,
       "contentPreview": "⚠️ Task was interrupted. Attempting to reconnect to running processes..."
     },
-    "timestamp": "2025-05-29T00:00:42.781Z"
+    "timestamp": "2025-05-29T18:32:55.300Z"
   },
   {
     "test": "Process Spawn",
     "status": "PASS",
     "message": "Successfully spawned process, output: test",
     "details": null,
-    "timestamp": "2025-05-29T00:00:42.787Z"
+    "timestamp": "2025-05-29T18:32:55.307Z"
   },
   {
     "test": "Basic Claude Test",
     "status": "FAIL",
     "message": "Basic Claude command failed",
     "details": "Command failed: claude --help\nReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:18633\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:32045\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:1364:6636\n",
-    "timestamp": "2025-05-29T00:00:43.163Z"
+    "timestamp": "2025-05-29T18:32:55.722Z"
   },
   {
     "test": "Test Worktree",
     "status": "PASS",
-    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748476843163",
+    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748543575722",
     "details": null,
-    "timestamp": "2025-05-29T00:00:43.225Z"
+    "timestamp": "2025-05-29T18:32:55.800Z"
   },
   {
     "test": "Claude Test: Print Mode File Path",
     "status": "INFO",
     "message": "Testing: claude -p /tmp/test-prompt.txt",
     "details": null,
-    "timestamp": "2025-05-29T00:00:43.227Z"
+    "timestamp": "2025-05-29T18:32:55.802Z"
   },
   {
     "test": "Claude Print Mode File Path",
     "status": "PASS",
     "message": "Exited: 1",
     "details": {
-      "pid": 93397,
+      "pid": 10136,
       "outputReceived": true,
       "stdoutLength": 0,
       "stderrLength": 640,
       "stdoutPreview": "",
       "stderrPreview": "ReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22"
     },
-    "timestamp": "2025-05-29T00:00:43.606Z"
+    "timestamp": "2025-05-29T18:32:56.196Z"
   },
   {
     "test": "Claude Test: Print Mode Stdin",
     "status": "INFO",
     "message": "Testing: claude -p",
     "details": null,
-    "timestamp": "2025-05-29T00:00:43.606Z"
+    "timestamp": "2025-05-29T18:32:56.196Z"
   },
   {
     "test": "Claude Print Mode Stdin",
     "status": "PASS",
     "message": "Exited: 1",
     "details": {
-      "pid": 93398,
+      "pid": 10137,
       "outputReceived": true,
       "stdoutLength": 0,
       "stderrLength": 640,
       "stdoutPreview": "",
       "stderrPreview": "ReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22"
     },
-    "timestamp": "2025-05-29T00:00:43.975Z"
+    "timestamp": "2025-05-29T18:32:56.589Z"
   },
   {
     "test": "Claude Test: Print Mode Basic",
     "status": "INFO",
     "message": "Testing: claude -p echo \"Hello World\"",
     "details": null,
-    "timestamp": "2025-05-29T00:00:43.975Z"
+    "timestamp": "2025-05-29T18:32:56.589Z"
   },
   {
     "test": "Claude Print Mode Basic",
     "status": "PASS",
     "message": "Exited: 1",
     "details": {
-      "pid": 93414,
+      "pid": 10138,
       "outputReceived": true,
       "stdoutLength": 0,
       "stderrLength": 640,
       "stdoutPreview": "",
       "stderrPreview": "ReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22"
     },
-    "timestamp": "2025-05-29T00:00:44.344Z"
+    "timestamp": "2025-05-29T18:32:56.980Z"
   },
   {
     "test": "Test Cleanup",
     "status": "PASS",
     "message": "Cleaned up test worktree",
     "details": null,
-    "timestamp": "2025-05-29T00:00:44.391Z"
+    "timestamp": "2025-05-29T18:32:57.037Z"
   },
   {
     "test": "Env HOME",
     "status": "PASS",
     "message": "HOME=/Users/michaellee",
     "details": null,
-    "timestamp": "2025-05-29T00:00:44.392Z"
+    "timestamp": "2025-05-29T18:32:57.037Z"
   },
   {
     "test": "Env PATH",
     "status": "PASS",
     "message": "PATH=/usr/local/bin:/opt/homebrew/bin:/Users/michaellee...",
     "details": null,
-    "timestamp": "2025-05-29T00:00:44.392Z"
+    "timestamp": "2025-05-29T18:32:57.037Z"
   },
   {
     "test": "Env USER",
     "status": "PASS",
     "message": "USER=michaellee",
     "details": null,
-    "timestamp": "2025-05-29T00:00:44.392Z"
+    "timestamp": "2025-05-29T18:32:57.037Z"
   },
   {
     "test": "API Server",
     "status": "PASS",
     "message": "API server responding (status: 200)",
     "details": null,
-    "timestamp": "2025-05-29T00:00:44.407Z"
+    "timestamp": "2025-05-29T18:32:57.053Z"
   },
   {
     "test": "Tasks API",
     "status": "PASS",
-    "message": "Tasks endpoint returned 14 tasks",
+    "message": "Tasks endpoint returned 10 tasks",
     "details": [
       {
-        "id": "ikor1",
+        "id": "u0e4rc",
         "status": "in_progress"
+      },
+      {
+        "id": "os43f",
+        "status": "finished"
+      },
+      {
+        "id": "jopw5to",
+        "status": "merged"
+      },
+      {
+        "id": "i34w1co",
+        "status": "merged"
+      },
+      {
+        "id": "ikor1",
+        "status": "failed"
       },
       {
         "id": "ks5mgd",
-        "status": "in_progress"
+        "status": "merged"
       },
       {
         "id": "iktkcl",
-        "status": "finished"
+        "status": "merged"
       },
       {
         "id": "2prymk",
@@ -428,85 +430,53 @@
       {
         "id": "lhaoua",
         "status": "failed"
-      },
-      {
-        "id": "0oufkf",
-        "status": "failed"
-      },
-      {
-        "id": "vch36",
-        "status": "failed"
-      },
-      {
-        "id": "454a4q",
-        "status": "failed"
-      },
-      {
-        "id": "tfnam6",
-        "status": "finished"
-      },
-      {
-        "id": "h6nrok",
-        "status": "merged"
-      },
-      {
-        "id": "ldw5nx",
-        "status": "merged"
-      },
-      {
-        "id": "fv1rkc",
-        "status": "merged"
-      },
-      {
-        "id": "5k3mft",
-        "status": "merged"
       }
     ],
-    "timestamp": "2025-05-29T00:00:44.412Z"
+    "timestamp": "2025-05-29T18:32:57.061Z"
   },
   {
-    "test": "Outputs API (ikor1)",
+    "test": "Outputs API (u0e4rc)",
     "status": "PASS",
-    "message": "Task ikor1 has 27 outputs",
+    "message": "Task u0e4rc has 108 outputs",
     "details": {
-      "taskId": "ikor1",
-      "outputCount": 27,
+      "taskId": "u0e4rc",
+      "outputCount": 108,
       "sampleOutput": {
         "type": "editor",
         "contentLength": 10,
-        "timestamp": "2025-05-28T23:55:10.964Z"
+        "timestamp": "2025-05-29T18:06:52.121Z"
       }
     },
-    "timestamp": "2025-05-29T00:00:44.423Z"
+    "timestamp": "2025-05-29T18:32:58.194Z"
   },
   {
-    "test": "Outputs API (ks5mgd)",
+    "test": "Outputs API (os43f)",
     "status": "PASS",
-    "message": "Task ks5mgd has 45 outputs",
+    "message": "Task os43f has 41 outputs",
     "details": {
-      "taskId": "ks5mgd",
-      "outputCount": 45,
+      "taskId": "os43f",
+      "outputCount": 41,
       "sampleOutput": {
         "type": "editor",
         "contentLength": 10,
-        "timestamp": "2025-05-28T23:54:45.587Z"
+        "timestamp": "2025-05-29T18:06:30.943Z"
       }
     },
-    "timestamp": "2025-05-29T00:00:44.430Z"
+    "timestamp": "2025-05-29T18:32:58.207Z"
   },
   {
-    "test": "Outputs API (iktkcl)",
+    "test": "Outputs API (jopw5to)",
     "status": "PASS",
-    "message": "Task iktkcl has 37 outputs",
+    "message": "Task jopw5to has 54 outputs",
     "details": {
-      "taskId": "iktkcl",
-      "outputCount": 37,
+      "taskId": "jopw5to",
+      "outputCount": 54,
       "sampleOutput": {
         "type": "editor",
         "contentLength": 10,
-        "timestamp": "2025-05-28T23:53:02.515Z"
+        "timestamp": "2025-05-29T04:35:34.317Z"
       }
     },
-    "timestamp": "2025-05-29T00:00:44.436Z"
+    "timestamp": "2025-05-29T18:32:58.247Z"
   }
 ]

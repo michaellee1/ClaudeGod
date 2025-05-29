@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { Initiative, InitiativePhase, InitiativeStatus } from '../types/initiative'
+import { FileRecovery } from './file-recovery'
 
 class InitiativeStore {
   private static instance: InitiativeStore
@@ -11,6 +12,8 @@ class InitiativeStore {
   private initiativesFile: string = path.join(os.homedir(), '.claude-god-data', 'initiatives.json')
   private readonly MAX_CONCURRENT_INITIATIVES = 5
   private saveDebounceTimer: NodeJS.Timeout | null = null
+  private fileRecovery: FileRecovery = new FileRecovery()
+  private broadcastDebounceTimers: Map<string, NodeJS.Timeout> = new Map()
 
   private constructor() {
     this.initializeDataDirs()
@@ -35,8 +38,7 @@ class InitiativeStore {
 
   private async loadInitiatives() {
     try {
-      const data = await fs.readFile(this.initiativesFile, 'utf-8')
-      const initiatives = JSON.parse(data)
+      const initiatives = await this.fileRecovery.readJsonFile<Initiative[]>(this.initiativesFile)
       
       // Convert array back to Map and restore Date objects
       for (const initiative of initiatives) {
@@ -50,18 +52,47 @@ class InitiativeStore {
       }
       
       console.log(`Loaded ${this.initiatives.size} initiatives from disk`)
-    } catch (error) {
-      console.log('No existing initiatives found, starting fresh')
+    } catch (error: any) {
+      if (error.message?.includes('File not found')) {
+        console.log('No existing initiatives found, starting fresh')
+      } else {
+        console.error('Error loading initiatives:', error)
+        // Try to recover from backup if available
+        try {
+          const backupPath = `${this.initiativesFile}.backup`
+          if (await this.fileRecovery.fileExists(backupPath)) {
+            console.log('Attempting to recover from backup...')
+            const backup = await this.fileRecovery.readJsonFile<Initiative[]>(backupPath)
+            for (const initiative of backup) {
+              initiative.createdAt = new Date(initiative.createdAt)
+              initiative.updatedAt = initiative.updatedAt ? new Date(initiative.updatedAt) : new Date(initiative.createdAt || new Date())
+              if (initiative.completedAt) {
+                initiative.completedAt = new Date(initiative.completedAt)
+              }
+              this.initiatives.set(initiative.id, initiative)
+            }
+            console.log(`Recovered ${this.initiatives.size} initiatives from backup`)
+          }
+        } catch (backupError) {
+          console.error('Failed to recover from backup:', backupError)
+        }
+      }
     }
   }
 
   private async saveInitiatives() {
     try {
+      // Create backup before saving
+      if (await this.fileRecovery.fileExists(this.initiativesFile)) {
+        await fs.copyFile(this.initiativesFile, `${this.initiativesFile}.backup`)
+      }
+      
       // Convert Map to array for JSON serialization
       const initiativesArray = Array.from(this.initiatives.values())
-      await fs.writeFile(this.initiativesFile, JSON.stringify(initiativesArray, null, 2))
+      await this.fileRecovery.writeJsonFile(this.initiativesFile, initiativesArray)
     } catch (error) {
       console.error('Error saving initiatives:', error)
+      throw error // Re-throw to handle in callers
     }
   }
 
@@ -89,7 +120,19 @@ class InitiativeStore {
   private broadcastInitiativeUpdate(initiativeId: string, initiative: Initiative) {
     // Broadcast via WebSocket if available
     if (typeof global !== 'undefined' && (global as any).broadcastInitiativeUpdate) {
-      (global as any).broadcastInitiativeUpdate(initiative)
+      // Cancel any pending broadcast for this initiative
+      const existingTimer = this.broadcastDebounceTimers.get(initiativeId)
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+      }
+      
+      // Debounce broadcasts per initiative to prevent duplicates
+      const timer = setTimeout(() => {
+        (global as any).broadcastInitiativeUpdate(initiative)
+        this.broadcastDebounceTimers.delete(initiativeId)
+      }, 100)
+      
+      this.broadcastDebounceTimers.set(initiativeId, timer)
     }
   }
 
@@ -125,7 +168,9 @@ class InitiativeStore {
     }
 
     this.initiatives.set(id, initiative)
-    this.debouncedSave()
+    // Save immediately and wait for completion to avoid race conditions
+    await this.saveInitiatives()
+    // Only broadcast after save is complete
     this.broadcastInitiativeUpdate(id, initiative)
 
     console.log(`Created initiative ${id} with objective: ${objective}`)
@@ -155,7 +200,12 @@ class InitiativeStore {
     }
 
     this.initiatives.set(id, updatedInitiative)
-    this.debouncedSave()
+    // For critical updates like status changes, save immediately
+    if (updates.status || updates.currentPhase || updates.processId) {
+      await this.saveInitiatives()
+    } else {
+      this.debouncedSave()
+    }
     this.broadcastInitiativeUpdate(id, updatedInitiative)
 
     return updatedInitiative
@@ -197,7 +247,8 @@ class InitiativeStore {
     }
 
     this.initiatives.set(id, initiative)
-    this.debouncedSave()
+    // Phase updates are critical, save immediately
+    await this.saveInitiatives()
     this.broadcastInitiativeUpdate(id, initiative)
 
     console.log(`Updated initiative ${id} to phase: ${phase}`)
@@ -213,7 +264,7 @@ class InitiativeStore {
     const filePath = path.join(directory, filename)
     
     try {
-      await fs.writeFile(filePath, content, 'utf-8')
+      await this.fileRecovery.safeWriteFile(filePath, content)
       console.log(`Saved phase file ${filename} for initiative ${id}`)
     } catch (error) {
       console.error(`Error saving phase file ${filename} for initiative ${id}:`, error)
@@ -231,11 +282,23 @@ class InitiativeStore {
     const filePath = path.join(directory, filename)
     
     try {
-      const content = await fs.readFile(filePath, 'utf-8')
+      const content = await this.fileRecovery.safeReadFile(filePath)
       return content
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error loading phase file ${filename} for initiative ${id}:`, error)
-      throw new Error(`Failed to load phase file: ${error}`)
+      // Check for alternative file extensions
+      if (error.message?.includes('File not found') && filename.endsWith('.json')) {
+        try {
+          // Try .md extension
+          const mdPath = filePath.replace('.json', '.md')
+          const mdContent = await this.fileRecovery.safeReadFile(mdPath)
+          console.log(`Found .md file instead of .json for ${filename}`)
+          return mdContent
+        } catch {
+          // Ignore and throw original error
+        }
+      }
+      throw new Error(`Failed to load phase file: ${error.message || error}`)
     }
   }
 

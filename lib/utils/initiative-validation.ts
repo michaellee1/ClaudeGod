@@ -358,12 +358,8 @@ export function validateInitiative(initiative: Partial<Initiative>): ValidationR
     });
   }
   
-  // Warnings
-  if ((initiative.status === InitiativeStatus.EXPLORING || 
-       initiative.status === InitiativeStatus.RESEARCHING || 
-       initiative.status === InitiativeStatus.PLANNING) && !initiative.processId) {
-    warnings.push('Active initiative without process ID');
-  }
+  // Warnings - only show actionable warnings
+  // Process ID is set asynchronously, so don't warn about it
   
   if (initiative.currentPhase === InitiativePhase.QUESTIONS && (!initiative.questions || initiative.questions.length === 0)) {
     warnings.push('Initiative in questions phase but no questions generated');
@@ -544,11 +540,14 @@ export function generateValidationReport(
   });
   
   validation.warnings.forEach(warning => {
-    if (warning.includes('process ID')) {
-      recommendations.push('Check if Claude Code process needs to be restarted');
-    }
     if (warning.includes('brief')) {
       recommendations.push('Provide more detailed information for better results');
+    }
+    if (warning.includes('no questions generated')) {
+      recommendations.push('Wait for exploration phase to complete or restart the initiative');
+    }
+    if (warning.includes('no task steps generated')) {
+      recommendations.push('Ensure all previous phases completed successfully');
     }
   });
   

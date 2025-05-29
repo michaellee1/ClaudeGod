@@ -113,10 +113,10 @@ export default function InitiativesPage() {
   // WebSocket for real-time updates
   const { lastMessage } = useInitiativeWebSocket('/ws', {
     onInitiativeUpdate: (initiative) => {
-      // Debounce duplicate updates within 100ms
+      // Debounce duplicate updates within 300ms
       const now = Date.now()
       const lastUpdate = lastUpdateRef.current[initiative.id] || 0
-      if (now - lastUpdate < 100) {
+      if (now - lastUpdate < 300) {
         return // Skip duplicate update
       }
       lastUpdateRef.current[initiative.id] = now
@@ -141,11 +141,26 @@ export default function InitiativesPage() {
         }
         
         if (existingIndex >= 0) {
-          // Update existing initiative
-          const updated = [...prev]
-          updated[existingIndex] = response
-          return updated
+          // Update existing initiative only if it's actually newer
+          const existing = prev[existingIndex]
+          if (new Date(response.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
+            const updated = [...prev]
+            updated[existingIndex] = response
+            return updated
+          }
+          return prev // Skip update if not newer
         } else {
+          // Check for duplicate by creation time (within 5 seconds)
+          const createdAt = new Date(response.createdAt).getTime()
+          const isDuplicate = prev.some(i => {
+            const iCreatedAt = new Date(i.createdAt).getTime()
+            return Math.abs(createdAt - iCreatedAt) < 5000 && i.objective === response.objective
+          })
+          
+          if (isDuplicate) {
+            return prev // Skip duplicate
+          }
+          
           // Add new initiative at the beginning
           return [response, ...prev]
         }

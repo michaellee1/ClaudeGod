@@ -101,7 +101,9 @@ function broadcastInitiativeUpdate(initiative) {
   const message = JSON.stringify({
     type: 'initiative-update',
     initiativeId: initiative.id,
-    data: safeInitiative
+    data: safeInitiative,
+    messageId: `init-${initiative.id}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    timestamp: Date.now()
   })
 
   // Broadcast to all clients (for initiative list)
@@ -123,7 +125,9 @@ function broadcastInitiativeOutput(initiativeId, output) {
   const message = JSON.stringify({
     type: 'initiative-output',
     initiativeId,
-    data: output
+    data: output,
+    messageId: `output-${initiativeId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    timestamp: Date.now()
   })
 
   // Send to initiative-specific connections only
@@ -309,6 +313,9 @@ app.prepare().then(async () => {
           console.log(`Client unsubscribed from initiative ${data.initiativeId}`)
           // Send acknowledgment
           ws.send(JSON.stringify({ type: 'unsubscribed', initiativeId: data.initiativeId }))
+        } else if (data.type === 'ping') {
+          // Respond to ping with pong
+          ws.send(JSON.stringify({ type: 'pong' }))
         }
       } catch (error) {
         console.error('Error processing WebSocket message:', error)
