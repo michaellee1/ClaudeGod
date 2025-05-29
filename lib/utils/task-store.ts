@@ -2,6 +2,7 @@ import { Task, TaskOutput, PromptCycle } from '@/lib/types/task'
 import { ProcessManager } from './process-manager'
 import { createWorktree, removeWorktree, commitChanges, cherryPickCommit, undoCherryPick, mergeWorktreeToMain } from './git'
 import { gitLock } from './git-lock'
+import { FileLock } from './file-lock'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -55,65 +56,71 @@ class TaskStore {
   }
 
   private async loadTasks() {
-    try {
-      const tasksData = await fs.readFile(this.tasksFile, 'utf-8')
-      const tasks = JSON.parse(tasksData)
-      
-      // Convert array back to Map and restore Date objects
-      for (const task of tasks) {
-        task.createdAt = new Date(task.createdAt)
-        if (task.mergedAt) {
-          task.mergedAt = new Date(task.mergedAt)
-        }
-        if (task.lastActivityTime) {
-          task.lastActivityTime = new Date(task.lastActivityTime)
-        }
-        if (task.lastHeartbeatTime) {
-          task.lastHeartbeatTime = new Date(task.lastHeartbeatTime)
-        }
-        this.tasks.set(task.id, task)
+    // Use file lock to prevent reading while another process is writing
+    await FileLock.withLock(this.tasksFile, async () => {
+      try {
+        const tasksData = await fs.readFile(this.tasksFile, 'utf-8')
+        const tasks = JSON.parse(tasksData)
         
-        // Check if task was in progress and mark for recovery
-        if (task.status === 'in_progress' || task.status === 'starting') {
-          console.log(`Task ${task.id} was in progress during shutdown, marking for recovery`)
-          task.needsRecovery = true
+        // Convert array back to Map and restore Date objects
+        for (const task of tasks) {
+          task.createdAt = new Date(task.createdAt)
+          if (task.mergedAt) {
+            task.mergedAt = new Date(task.mergedAt)
+          }
+          if (task.lastActivityTime) {
+            task.lastActivityTime = new Date(task.lastActivityTime)
+          }
+          if (task.lastHeartbeatTime) {
+            task.lastHeartbeatTime = new Date(task.lastHeartbeatTime)
+          }
+          this.tasks.set(task.id, task)
           
-          // Add a system message about the interruption
-          const existingOutputs = this.outputs.get(task.id) || []
-          existingOutputs.push({
-            id: Math.random().toString(36).substring(7),
-            taskId: task.id,
-            type: 'system',
-            content: '⚠️ Task was interrupted. Attempting to reconnect to running processes...',
-            timestamp: new Date()
-          })
-          this.outputs.set(task.id, existingOutputs)
+          // Check if task was in progress and mark for recovery
+          if (task.status === 'in_progress' || task.status === 'starting') {
+            console.log(`Task ${task.id} was in progress during shutdown, marking for recovery`)
+            task.needsRecovery = true
+            
+            // Add a system message about the interruption
+            const existingOutputs = this.outputs.get(task.id) || []
+            existingOutputs.push({
+              id: Math.random().toString(36).substring(7),
+              taskId: task.id,
+              type: 'system',
+              content: '⚠️ Task was interrupted. Attempting to reconnect to running processes...',
+              timestamp: new Date()
+            })
+            this.outputs.set(task.id, existingOutputs)
+          }
         }
+        
+        console.log(`Loaded ${this.tasks.size} tasks from disk`)
+      } catch (error) {
+        console.log('No existing tasks found, starting fresh')
       }
-      
-      console.log(`Loaded ${this.tasks.size} tasks from disk`)
-    } catch (error) {
-      console.log('No existing tasks found, starting fresh')
-    }
+    })
     
-    try {
-      const outputsData = await fs.readFile(this.outputsFile, 'utf-8')
-      const outputs = JSON.parse(outputsData)
-      
-      // Convert back to Map structure
-      for (const [taskId, taskOutputs] of Object.entries(outputs)) {
-        // Restore Date objects in outputs
-        const restoredOutputs = (taskOutputs as any[]).map(output => ({
-          ...output,
-          timestamp: new Date(output.timestamp)
-        }))
-        this.outputs.set(taskId, restoredOutputs)
+    // Load outputs with file lock as well
+    await FileLock.withLock(this.outputsFile, async () => {
+      try {
+        const outputsData = await fs.readFile(this.outputsFile, 'utf-8')
+        const outputs = JSON.parse(outputsData)
+        
+        // Convert back to Map structure
+        for (const [taskId, taskOutputs] of Object.entries(outputs)) {
+          // Restore Date objects in outputs
+          const restoredOutputs = (taskOutputs as any[]).map(output => ({
+            ...output,
+            timestamp: new Date(output.timestamp)
+          }))
+          this.outputs.set(taskId, restoredOutputs)
+        }
+        
+        console.log(`Loaded outputs for ${this.outputs.size} tasks from disk`)
+      } catch (error) {
+        console.log('No existing outputs found')
       }
-      
-      console.log(`Loaded outputs for ${this.outputs.size} tasks from disk`)
-    } catch (error) {
-      console.log('No existing outputs found')
-    }
+    })
   }
 
   private async saveConfig() {
@@ -125,35 +132,41 @@ class TaskStore {
   }
 
   private async saveTasks() {
-    try {
-      // Create backup before overwriting (if file exists)
+    // Use file lock to prevent concurrent access issues
+    await FileLock.withLock(this.tasksFile, async () => {
       try {
-        const backupPath = this.tasksFile + '.backup'
-        await fs.copyFile(this.tasksFile, backupPath)
+        // Create backup before overwriting (if file exists)
+        try {
+          const backupPath = this.tasksFile + '.backup'
+          await fs.copyFile(this.tasksFile, backupPath)
+        } catch (error) {
+          // Ignore if file doesn't exist yet
+        }
+        
+        // Convert Map to array for JSON serialization
+        const tasksArray = Array.from(this.tasks.values())
+        await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
       } catch (error) {
-        // Ignore if file doesn't exist yet
+        console.error('Error saving tasks:', error)
+        throw error // Re-throw to ensure callers know save failed
       }
-      
-      // Convert Map to array for JSON serialization
-      const tasksArray = Array.from(this.tasks.values())
-      await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
-    } catch (error) {
-      console.error('Error saving tasks:', error)
-      throw error // Re-throw to ensure callers know save failed
-    }
+    })
   }
 
   private async saveOutputs() {
-    try {
-      // Convert Map to object for JSON serialization
-      const outputsObject: Record<string, TaskOutput[]> = {}
-      for (const [taskId, outputs] of this.outputs) {
-        outputsObject[taskId] = outputs
+    // Use file lock to prevent concurrent access issues
+    await FileLock.withLock(this.outputsFile, async () => {
+      try {
+        // Convert Map to object for JSON serialization
+        const outputsObject: Record<string, TaskOutput[]> = {}
+        for (const [taskId, outputs] of this.outputs) {
+          outputsObject[taskId] = outputs
+        }
+        await fs.writeFile(this.outputsFile, JSON.stringify(outputsObject, null, 2))
+      } catch (error) {
+        console.error('Error saving outputs:', error)
       }
-      await fs.writeFile(this.outputsFile, JSON.stringify(outputsObject, null, 2))
-    } catch (error) {
-      console.error('Error saving outputs:', error)
-    }
+    })
   }
 
   private async saveProcessState() {
@@ -291,11 +304,29 @@ class TaskStore {
 
   // Immediate save method for critical operations (merge, delete, etc)
   private async saveTasksImmediately() {
-    // Clear any pending debounced saves
+    // CRITICAL FIX: The issue was that clearing the debounce timer would
+    // cancel pending saves without ensuring those changes were persisted.
+    // This could cause tasks created/updated after the last save to be lost.
+    
+    // If there's a pending debounced save, we need to execute it first
+    // to ensure all in-memory changes are persisted before we proceed
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer)
+      this.saveDebounceTimer = null
+      
+      // Execute the pending save operations immediately
+      try {
+        await this.saveTasks()
+        await this.saveOutputs()
+        await this.saveProcessState()
+        console.log('[TaskStore] Executed pending saves before immediate save')
+      } catch (error) {
+        console.error('[TaskStore] Error executing pending saves:', error)
+        // Continue anyway - we'll try to save again below
+      }
     }
     
+    // Now perform the immediate save
     try {
       await this.saveTasks()
       console.log('[TaskStore] Tasks saved immediately')
