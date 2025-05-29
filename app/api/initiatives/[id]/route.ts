@@ -8,9 +8,9 @@ import { InitiativePhase, InitiativeStatus } from '@/lib/types/initiative'
 
 export const GET = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
-    const { id } = params
+    const { id } = await params
 
     if (!id || typeof id !== 'string') {
       throw new ValidationError('Invalid initiative ID', 'id', id)
@@ -126,9 +126,9 @@ export const GET = withErrorHandler(async (
 
 export const PATCH = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
-    const { id } = params
+    const { id } = await params
 
     if (!id || typeof id !== 'string') {
       throw new ValidationError('Invalid initiative ID', 'id', id)
@@ -182,9 +182,9 @@ export const PATCH = withErrorHandler(async (
 
 export const DELETE = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
-    const { id } = params
+    const { id } = await params
 
     if (!id || typeof id !== 'string') {
       throw new ValidationError('Invalid initiative ID', 'id', id)
