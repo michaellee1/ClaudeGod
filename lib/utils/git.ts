@@ -215,7 +215,7 @@ function validateBranchName(branchName: string): void {
   }
 }
 
-export async function mergeWorktreeToMain(repoPath: string, worktreePath: string, task?: Task): Promise<void> {
+export async function mergeWorktreeToMain(repoPath: string, worktreePath: string, task?: Task, onMergeConflictOutput?: (output: any) => void): Promise<void> {
   let cleanBranchName = ''
   let originalBranch = ''
   let tempBranchCreated = false
@@ -351,6 +351,11 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
             'diff', '--name-only', '--diff-filter=U'
           ])
           const conflictFiles = conflictStatus.trim().split('\n').filter(f => f)
+          
+          // Set up output callback if provided
+          if (onMergeConflictOutput) {
+            mergeConflictResolver.setOutputCallback(onMergeConflictOutput)
+          }
           
           await mergeConflictResolver.resolveConflicts({
             task,

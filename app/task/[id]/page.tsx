@@ -35,9 +35,13 @@ export default function TaskDetail() {
   const [showDiffModal, setShowDiffModal] = useState(false)
   const [diffContent, setDiffContent] = useState<string>('')
   const [isLoadingDiff, setIsLoadingDiff] = useState(false)
+  const [isResolvingConflict, setIsResolvingConflict] = useState(false)
+  const [conflictResolutionOutputs, setConflictResolutionOutputs] = useState<string[]>([])
+  const MAX_CONFLICT_OUTPUTS = 500 // Limit to prevent memory issues
   const outputEndRef = useRef<HTMLDivElement>(null)
   const hasScrolledToBottom = useRef(false)
   const outputContainerRef = useRef<HTMLDivElement>(null)
+  const conflictOutputEndRef = useRef<HTMLDivElement>(null)
 
   const taskId = params.id as string
   
@@ -68,6 +72,32 @@ export default function TaskDetail() {
       // Add new output directly
       if (lastMessage.data) {
         setOutputs(prev => [...prev, lastMessage.data])
+        
+        // Check if this is merge conflict resolver output
+        if (lastMessage.data.type === 'merge-conflict-resolver') {
+          setIsResolvingConflict(true)
+          setConflictResolutionOutputs(prev => {
+            const newOutputs = [...prev, lastMessage.data.content]
+            // Keep only the last MAX_CONFLICT_OUTPUTS entries
+            if (newOutputs.length > MAX_CONFLICT_OUTPUTS) {
+              return newOutputs.slice(-MAX_CONFLICT_OUTPUTS)
+            }
+            return newOutputs
+          })
+          
+          // Auto-scroll conflict output
+          setTimeout(() => {
+            conflictOutputEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }, 100)
+          
+          // Check if resolution is complete
+          if (lastMessage.data.content.includes('Successfully resolved conflicts') || 
+              lastMessage.data.content.includes('[ERROR]')) {
+            setTimeout(() => {
+              setIsResolvingConflict(false)
+            }, 2000) // Keep dialog open for 2 seconds after completion
+          }
+        }
       }
     } else if (lastMessage.type === 'task-removed' && lastMessage.taskId === taskId) {
       // Task was removed, redirect to home
@@ -125,6 +155,7 @@ export default function TaskDetail() {
 
   const handleMerge = async () => {
     setIsMerging(true)
+    setConflictResolutionOutputs([]) // Reset conflict outputs
     try {
       const response = await fetch(`/api/tasks/${taskId}/merge`, {
         method: 'POST',
@@ -132,6 +163,7 @@ export default function TaskDetail() {
       if (response.ok) {
         await fetchTask() // Refresh task to show merged status
         setError(null)
+        setIsResolvingConflict(false) // Stop showing progress on success
       } else {
         const errorData = await response.json()
         const errorMessage = errorData.error || 'Unknown error'
@@ -150,6 +182,7 @@ export default function TaskDetail() {
             setError(`Automatic conflict resolution attempted but failed: ${errorDetails}`)
           }
           
+          setIsResolvingConflict(false) // Stop showing progress
           setShowMergeConflict(true)
         } else if (errorMessage.startsWith('UNCOMMITTED_CHANGES:')) {
           // Extract the descriptive error message after the prefix
@@ -825,6 +858,48 @@ git commit`}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Conflict Resolution Progress Dialog */}
+      {isResolvingConflict && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
+            <h3 className="text-lg font-semibold mb-4 text-blue-600">
+              Resolving Merge Conflicts with Claude Code
+            </h3>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                Claude Code is automatically resolving merge conflicts. This may take a few minutes...
+              </p>
+            </div>
+            
+            {/* Rolling output window */}
+            <div className="flex-1 bg-gray-900 text-gray-100 p-4 rounded-lg overflow-y-auto font-mono text-xs mb-4">
+              {conflictResolutionOutputs.map((output, index) => (
+                <div key={index} className="mb-1">
+                  {output}
+                </div>
+              ))}
+              <div ref={conflictOutputEndRef} />
+            </div>
+            
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span className="text-sm text-gray-600">Processing...</span>
+              </div>
+              <Button
+                onClick={() => setIsResolvingConflict(false)}
+                variant="outline"
+                size="sm"
+                disabled={isMerging}
+              >
+                Hide Progress
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

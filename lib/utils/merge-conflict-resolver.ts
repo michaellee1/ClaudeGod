@@ -1,4 +1,4 @@
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
@@ -16,8 +16,29 @@ export interface MergeConflictContext {
   conflictFiles: string[]
 }
 
+export interface MergeConflictOutput {
+  type: 'claude-code' | 'system' | 'error'
+  content: string
+  timestamp: Date
+}
+
 export class MergeConflictResolver {
   private claudeCodeAvailable: boolean | null = null
+  private outputCallback?: (output: MergeConflictOutput) => void
+  
+  setOutputCallback(callback: (output: MergeConflictOutput) => void) {
+    this.outputCallback = callback
+  }
+  
+  private sendOutput(type: MergeConflictOutput['type'], content: string) {
+    if (this.outputCallback) {
+      this.outputCallback({
+        type,
+        content,
+        timestamp: new Date()
+      })
+    }
+  }
   
   async checkClaudeCodeAvailable(): Promise<boolean> {
     if (this.claudeCodeAvailable !== null) {
@@ -36,26 +57,35 @@ export class MergeConflictResolver {
   
   async resolveConflicts(context: MergeConflictContext): Promise<void> {
     console.log(`[MergeConflictResolver] Starting conflict resolution for task ${context.task.id}`)
+    this.sendOutput('system', `Starting automatic conflict resolution for task ${context.task.id}...`)
     
     // Check if Claude Code is available
     const isAvailable = await this.checkClaudeCodeAvailable()
     if (!isAvailable) {
-      throw new Error('Claude Code CLI is not installed or not in PATH')
+      const error = 'Claude Code CLI is not installed or not in PATH'
+      this.sendOutput('error', error)
+      throw new Error(error)
     }
     
     try {
       // Get the list of conflicted files
+      this.sendOutput('system', 'Analyzing merge conflicts...')
       const conflictedFiles = await this.getConflictedFiles(context.repoPath)
       console.log(`[MergeConflictResolver] Found ${conflictedFiles.length} conflicted files`)
+      this.sendOutput('system', `Found ${conflictedFiles.length} conflicted file(s): ${conflictedFiles.join(', ')}`)
       
       if (conflictedFiles.length === 0) {
-        throw new Error('No merge conflicts detected')
+        const error = 'No merge conflicts detected'
+        this.sendOutput('error', error)
+        throw new Error(error)
       }
       
       // Get the diff of changes from the task
+      this.sendOutput('system', 'Retrieving task changes...')
       const taskChanges = await this.getTaskChanges(context.worktreePath, context.branchName)
       
       // Build a comprehensive prompt for Claude Code
+      this.sendOutput('system', 'Preparing Claude Code prompt...')
       const resolutionPrompt = await this.buildResolutionPrompt(
         context,
         conflictedFiles,
@@ -63,24 +93,32 @@ export class MergeConflictResolver {
       )
       
       // Run Claude Code to resolve conflicts
+      this.sendOutput('system', 'Running Claude Code to resolve conflicts...')
       await this.runClaudeCode(context.repoPath, resolutionPrompt)
       
       // Verify all conflicts are resolved
+      this.sendOutput('system', 'Verifying conflict resolution...')
       const remainingConflicts = await this.getConflictedFiles(context.repoPath)
       if (remainingConflicts.length > 0) {
-        throw new Error(`Failed to resolve all conflicts. ${remainingConflicts.length} files still have conflicts.`)
+        const error = `Failed to resolve all conflicts. ${remainingConflicts.length} files still have conflicts.`
+        this.sendOutput('error', error)
+        throw new Error(error)
       }
       
       // Stage all resolved files
+      this.sendOutput('system', 'Staging resolved files...')
       await execFileAsync('git', ['-C', context.repoPath, 'add', '.'])
       
       // Complete the merge
+      this.sendOutput('system', 'Completing merge...')
       const commitMessage = `Merge branch '${context.branchName}' (resolved conflicts with Claude Code)\n\nOriginal task: ${context.taskPrompt}`
       await execFileAsync('git', ['-C', context.repoPath, 'commit', '--no-edit', '-m', commitMessage])
       
       console.log(`[MergeConflictResolver] Successfully resolved conflicts and completed merge`)
+      this.sendOutput('system', 'Successfully resolved conflicts and completed merge!')
     } catch (error) {
       console.error('[MergeConflictResolver] Error resolving conflicts:', error)
+      this.sendOutput('error', `Error: ${error instanceof Error ? error.message : String(error)}`)
       throw error
     }
   }
@@ -205,8 +243,8 @@ IMPORTANT: Focus only on resolving the merge conflicts. Do not make additional c
       const model = process.env.CLAUDE_CODE_MODEL || 'claude-3-5-sonnet-20241022'
       const maxThinkingTime = process.env.CLAUDE_CODE_MAX_THINKING_TIME || '30000'
       
-      // Run Claude Code with the prompt file
-      const { stdout, stderr } = await execFileAsync('claude', [
+      // Use spawn instead of execFile for streaming output
+      const claudeProcess = spawn('claude', [
         'code',
         '--prompt-file', tempPromptFile,
         '--yes', // Auto-confirm any prompts
@@ -217,14 +255,49 @@ IMPORTANT: Focus only on resolving the merge conflicts. Do not make additional c
         env: {
           ...process.env,
           CLAUDE_CODE_NON_INTERACTIVE: '1' // Set non-interactive mode
-        },
-        timeout: 300000 // 5 minute timeout
+        }
       })
       
-      console.log('[MergeConflictResolver] Claude Code completed successfully (via prompt file)')
-      if (stderr) {
-        console.warn('[MergeConflictResolver] Claude Code stderr:', stderr)
-      }
+      // Stream stdout
+      claudeProcess.stdout.on('data', (data) => {
+        const output = data.toString()
+        this.sendOutput('claude-code', output)
+        console.log('[MergeConflictResolver] Claude Code output:', output)
+      })
+      
+      // Stream stderr
+      claudeProcess.stderr.on('data', (data) => {
+        const output = data.toString()
+        this.sendOutput('claude-code', output)
+        console.warn('[MergeConflictResolver] Claude Code stderr:', output)
+      })
+      
+      // Wait for process to complete
+      await new Promise<void>((resolve, reject) => {
+        let timeout: NodeJS.Timeout
+        
+        // Set a 5-minute timeout
+        timeout = setTimeout(() => {
+          claudeProcess.kill()
+          reject(new Error('Claude Code execution timed out after 5 minutes'))
+        }, 300000)
+        
+        claudeProcess.on('close', (code) => {
+          clearTimeout(timeout)
+          if (code !== 0) {
+            reject(new Error(`Claude Code exited with code ${code}`))
+          } else {
+            console.log('[MergeConflictResolver] Claude Code completed successfully (via prompt file)')
+            resolve()
+          }
+        })
+        
+        claudeProcess.on('error', (error) => {
+          clearTimeout(timeout)
+          claudeProcess.kill() // Ensure process is killed
+          reject(error)
+        })
+      })
     } catch (error: any) {
       console.error('[MergeConflictResolver] Error running Claude Code with file:', error)
       throw new Error(`Claude Code failed: ${error.message}`)

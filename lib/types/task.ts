@@ -35,7 +35,7 @@ export interface PromptCycle {
 export interface TaskOutput {
   id: string
   taskId: string
-  type: 'planner' | 'editor' | 'reviewer' | 'system'
+  type: 'planner' | 'editor' | 'reviewer' | 'system' | 'merge-conflict-resolver'
   content: string
   timestamp: Date
 }
