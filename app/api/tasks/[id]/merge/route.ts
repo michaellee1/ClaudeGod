@@ -58,9 +58,15 @@ export async function POST(
       )
     }
     
-    return NextResponse.json(
-      { error: error.message || 'Failed to merge task' },
-      { status: 500 }
-    )
+    // For merge failures, include the full error details
+    const errorMessage = error.message || 'Failed to merge task'
+    const errorDetails: any = { error: errorMessage }
+    
+    // If the error includes manual command instructions, preserve them
+    if (errorMessage.includes('You can try running this command manually:')) {
+      errorDetails.manualCommand = errorMessage.split('You can try running this command manually:')[1]?.trim()
+    }
+    
+    return NextResponse.json(errorDetails, { status: 500 })
   }
 }

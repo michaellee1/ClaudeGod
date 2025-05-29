@@ -262,11 +262,47 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     }
     
     // Push the worktree branch changes first
-    await execFileAsync('git', ['-C', worktreePath, 'push', '-f', repoPath, `${cleanBranchName}:refs/heads/temp-${cleanBranchName}`])
-    tempBranchCreated = true
+    console.log(`[mergeWorktreeToMain] Pushing ${cleanBranchName} to temp-${cleanBranchName}`)
+    try {
+      await execFileAsync('git', ['-C', worktreePath, 'push', '-f', repoPath, `${cleanBranchName}:refs/heads/temp-${cleanBranchName}`])
+      tempBranchCreated = true
+      console.log(`[mergeWorktreeToMain] Successfully created temp-${cleanBranchName}`)
+    } catch (pushError: any) {
+      console.error(`[mergeWorktreeToMain] Failed to push to temp branch:`, pushError)
+      throw new Error(`Failed to create temporary branch for merge: ${pushError.message}`)
+    }
+    
+    // Verify the temporary branch exists before merging
+    try {
+      const { stdout: branches } = await execFileAsync('git', ['-C', repoPath, 'branch', '--list', `temp-${cleanBranchName}`])
+      if (!branches.trim()) {
+        throw new Error(`Temporary branch temp-${cleanBranchName} was not created successfully`)
+      }
+    } catch (verifyError: any) {
+      console.error(`[mergeWorktreeToMain] Failed to verify temp branch:`, verifyError)
+      throw new Error(`Failed to verify temporary branch: ${verifyError.message}`)
+    }
     
     // Now merge the temporary branch with --no-ff to ensure a merge commit
-    await execFileAsync('git', ['-C', repoPath, 'merge', '--no-ff', `temp-${cleanBranchName}`, '-m', `Merge branch '${cleanBranchName}'`])
+    console.log(`[mergeWorktreeToMain] Merging temp-${cleanBranchName} into current branch`)
+    try {
+      await execFileAsync('git', ['-C', repoPath, 'merge', '--no-ff', `temp-${cleanBranchName}`, '-m', `Merge branch '${cleanBranchName}'`])
+      console.log(`[mergeWorktreeToMain] Successfully merged temp-${cleanBranchName}`)
+    } catch (mergeError: any) {
+      console.error(`[mergeWorktreeToMain] Merge failed:`, mergeError)
+      
+      // If merge fails, provide a properly formatted command for manual execution
+      const quotedMessage = `"Merge branch '${cleanBranchName}'"`
+      const manualCommand = `git -C "${repoPath}" merge --no-ff temp-${cleanBranchName} -m ${quotedMessage}`
+      
+      // Include both the original error and the manual command
+      const enhancedError = new Error(
+        `Merge failed: ${mergeError.message}\n` +
+        `You can try running this command manually:\n${manualCommand}`
+      )
+      ;(enhancedError as any).originalError = mergeError
+      throw enhancedError
+    }
     
     // Clean up the temporary branch
     await execFileAsync('git', ['-C', repoPath, 'branch', '-D', `temp-${cleanBranchName}`])
@@ -277,11 +313,19 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     console.error('Error merging worktree to main:', error)
     
     // Clean up temporary branch if it was created
-    if (tempBranchCreated) {
+    if (tempBranchCreated && cleanBranchName) {
+      console.log(`[mergeWorktreeToMain] Cleaning up temporary branch temp-${cleanBranchName}`)
       try {
         await execFileAsync('git', ['-C', repoPath, 'branch', '-D', `temp-${cleanBranchName}`])
+        console.log(`[mergeWorktreeToMain] Successfully cleaned up temp-${cleanBranchName}`)
       } catch (cleanupError) {
-        console.error('Failed to clean up temporary branch:', cleanupError)
+        console.error(`[mergeWorktreeToMain] Failed to clean up temporary branch temp-${cleanBranchName}:`, cleanupError)
+        // Try force delete if normal delete fails
+        try {
+          await execFileAsync('git', ['-C', repoPath, 'branch', '-D', `temp-${cleanBranchName}`, '--force'])
+        } catch (forceError) {
+          console.error(`[mergeWorktreeToMain] Force delete also failed:`, forceError)
+        }
       }
     }
     
