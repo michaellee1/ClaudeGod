@@ -275,11 +275,9 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     // Verify the temporary branch exists before merging
     try {
       const { stdout: branches } = await execFileAsync('git', ['-C', repoPath, 'branch', '--list', `temp-${cleanBranchName}`])
-      console.log(`[mergeWorktreeToMain] Branch list result:`, branches)
       if (!branches.trim()) {
         throw new Error(`Temporary branch temp-${cleanBranchName} was not created successfully`)
       }
-      console.log(`[mergeWorktreeToMain] Verified temp-${cleanBranchName} exists`)
     } catch (verifyError: any) {
       console.error(`[mergeWorktreeToMain] Failed to verify temp branch:`, verifyError)
       throw new Error(`Failed to verify temporary branch: ${verifyError.message}`)
