@@ -99,7 +99,7 @@ class InitiativeStore {
       i => i.status !== InitiativeStatus.COMPLETED && i.status !== InitiativeStatus.TASKS_SUBMITTED
     )
     if (activeInitiatives.length >= this.MAX_CONCURRENT_INITIATIVES) {
-      throw new Error(`Maximum concurrent initiatives (${this.MAX_CONCURRENT_INITIATIVES}) reached`)
+      throw new Error(`Resource limit reached: ${activeInitiatives.length}/${this.MAX_CONCURRENT_INITIATIVES} concurrent initiatives`)
     }
 
     const id = this.generateId()

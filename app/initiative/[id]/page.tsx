@@ -54,8 +54,16 @@ export default function InitiativeDetail() {
     }
   }, [])
 
-  const handleInitiativeOutput = useCallback((output: InitiativeOutput) => {
-    setOutputs(prev => [...prev, output])
+  const handleInitiativeOutput = useCallback((output: any) => {
+    // Transform output to match InitiativeOutput interface
+    const formattedOutput: InitiativeOutput = {
+      timestamp: output.timestamp || new Date(),
+      type: output.type || 'info',
+      content: output.content || output.data || '',
+      phase: output.phase,
+      metadata: output.metadata
+    }
+    setOutputs(prev => [...prev, formattedOutput])
   }, [])
 
   const fetchInitiative = useCallback(async () => {

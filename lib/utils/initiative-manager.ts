@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 import { ProcessManager } from './process-manager'
 import initiativeStore from './initiative-store'
-import { Initiative as StoreInitiative, InitiativePhase, InitiativeTaskStep } from '../types/initiative'
+import { Initiative as StoreInitiative, InitiativePhase, InitiativeTaskStep, InitiativeQuestion } from '../types/initiative'
 import { readFile } from 'fs/promises'
 import { join, normalize, resolve } from 'path'
 import { homedir } from 'os'
@@ -220,7 +220,7 @@ export class InitiativeManager extends EventEmitter {
         (global as any).broadcastInitiativeOutput(processInfo.initiativeId, {
           type: 'output',
           phase: processInfo.phase,
-          data: output,
+          content: typeof output === 'string' ? output : JSON.stringify(output),
           timestamp: new Date()
         })
       }
@@ -283,9 +283,9 @@ export class InitiativeManager extends EventEmitter {
         const explorationOutput = await this.initiativeStore.loadPhaseFile(initiativeId, 'exploration_output.json')
         const questions = this.parseQuestionsFromOutput(explorationOutput)
         // Save questions in the expected format
-        await this.initiativeStore.savePhaseFile(initiativeId, 'questions.json', JSON.stringify(questions))
+        await this.initiativeStore.savePhaseFile(initiativeId, 'questions.json', JSON.stringify({ questions }))
         // Also save the raw markdown output for reference
-        const markdownQuestions = Object.entries(questions).map(([id, q]) => `${id}: ${q}`).join('\n')
+        const markdownQuestions = questions.map(q => `${q.id}: ${q.question}`).join('\n')
         await this.initiativeStore.savePhaseFile(initiativeId, 'questions.md', markdownQuestions)
         // Transition to questions phase
         await this.initiativeStore.updatePhase(initiativeId, 'questions')
@@ -356,10 +356,10 @@ export class InitiativeManager extends EventEmitter {
     }
   }
 
-  private parseQuestionsFromOutput(output: string): Record<string, string> {
+  private parseQuestionsFromOutput(output: string): InitiativeQuestion[] {
     // Parse questions from the exploration phase output
     // First try to extract the actual content from the JSON output
-    const questions: Record<string, string> = {}
+    const questions: InitiativeQuestion[] = []
     try {
       // Extract the markdown content from the output
       let markdownContent = ''
@@ -381,10 +381,8 @@ export class InitiativeManager extends EventEmitter {
       const { parseQuestions } = require('./initiative-parsers')
       const parsedQuestions = parseQuestions(markdownContent)
       
-      // Convert to the expected format
-      parsedQuestions.forEach((q: any) => {
-        questions[q.id] = q.question
-      })
+      // Return the parsed questions array directly
+      return parsedQuestions
     } catch (error) {
       console.error('Error parsing questions:', error)
     }

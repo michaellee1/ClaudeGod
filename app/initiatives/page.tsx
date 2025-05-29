@@ -180,7 +180,7 @@ export default function InitiativesPage() {
   }
 
   const handleCreateInitiative = async () => {
-    if (!newObjective.trim()) return
+    if (!newObjective.trim() || isCreating) return
 
     setIsCreating(true)
     setError(null)
@@ -196,7 +196,8 @@ export default function InitiativesPage() {
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || 'Failed to create initiative')
+        const errorMessage = data.error?.message || data.error || 'Failed to create initiative'
+        throw new Error(errorMessage)
       }
 
       await response.json()

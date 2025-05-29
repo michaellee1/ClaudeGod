@@ -5,7 +5,7 @@ import { Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Select } from '@/components/ui/select'
+// Remove Select import - using native HTML select
 import { InitiativeTask, InitiativeTaskStep } from '@/lib/types/initiative'
 import { cn } from '@/lib/utils'
 
@@ -76,7 +76,7 @@ export function InitiativeTaskPreview({
   const getStepStatus = (step: InitiativeTaskStep) => {
     if (step.status === 'completed') return 'completed'
     if (submittingSteps.has(step.id)) return 'submitting'
-    if (step.tasks.some(t => t.status === 'submitted')) return 'partial'
+    if (step.tasks?.some(t => t.status === 'submitted')) return 'partial'
     return 'pending'
   }
 
@@ -109,7 +109,7 @@ export function InitiativeTaskPreview({
       {steps.map((step) => {
         const stepStatus = getStepStatus(step)
         const isSubmitting = submittingSteps.has(step.id)
-        const pendingTasks = step.tasks.filter(t => t.status !== 'submitted')
+        const pendingTasks = (step.tasks || []).filter(t => t.status !== 'submitted')
 
         return (
           <Card key={step.id} className={cn(
@@ -128,7 +128,7 @@ export function InitiativeTaskPreview({
                   <CardDescription>{step.description}</CardDescription>
                 </div>
                 <Badge variant="secondary" className="ml-4">
-                  {pendingTasks.length} / {step.tasks.length} tasks
+                  {pendingTasks.length} / {step.tasks?.length || 0} tasks
                 </Badge>
               </div>
             </CardHeader>
@@ -139,24 +139,24 @@ export function InitiativeTaskPreview({
                   <label htmlFor={`think-mode-${step.id}`} className="text-sm font-medium">
                     Think Mode:
                   </label>
-                  <Select
+                  <select
                     id={`think-mode-${step.id}`}
                     value={getThinkMode(step.id)}
                     onChange={(e) => setThinkMode(step.id, e.target.value)}
                     disabled={isSubmitting}
-                    className="w-48"
+                    className="w-48 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     {THINK_MODES.map(mode => (
                       <option key={mode.value} value={mode.value}>
                         {mode.label}
                       </option>
                     ))}
-                  </Select>
+                  </select>
                 </div>
               )}
 
               <div className="grid gap-3">
-                {step.tasks.map((task) => {
+                {step.tasks?.map((task) => {
                   const isExpanded = expandedTasks.has(task.id)
                   const isSubmitted = task.status === 'submitted'
                   const shouldTruncate = task.description.length > 150

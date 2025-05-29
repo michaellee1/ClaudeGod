@@ -598,10 +598,10 @@ export class InitiativeProcessor extends EventEmitter {
   private broadcastStatusUpdate(initiativeId: string, status: string, phase?: InitiativePhase, error?: string): void {
     if ((global as any).broadcastInitiativeOutput) {
       (global as any).broadcastInitiativeOutput(initiativeId, {
-        type: 'status',
-        status,
+        type: 'info',
+        content: `Status: ${status}${phase ? ` (Phase: ${phase})` : ''}${error ? ` - Error: ${error}` : ''}`,
         phase,
-        error,
+        metadata: { status, error },
         timestamp: new Date()
       })
     }
@@ -613,8 +613,9 @@ export class InitiativeProcessor extends EventEmitter {
   private broadcastHealthStatus(initiativeId: string, health: any): void {
     if ((global as any).broadcastInitiativeOutput) {
       (global as any).broadcastInitiativeOutput(initiativeId, {
-        type: 'health',
-        ...health,
+        type: 'info',
+        content: `Health check: ${health.healthy ? 'OK' : 'Failed'}`,
+        metadata: { health },
         timestamp: new Date()
       })
     }

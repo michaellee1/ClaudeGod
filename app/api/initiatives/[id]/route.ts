@@ -55,8 +55,11 @@ export const GET = withErrorHandler(async (
       case 'task_generation':
       case 'ready':
         // These phases should have questions available
-        const questions = await loadPhaseFile('questions.json')
-        if (questions) phaseFiles.questions = questions
+        const questionsData = await loadPhaseFile('questions.json')
+        if (questionsData) {
+          // Handle both formats: wrapped or unwrapped questions
+          phaseFiles.questions = questionsData.questions || questionsData
+        }
 
         if (phaseString !== 'questions') {
           // Load answers if past questions phase
@@ -99,9 +102,14 @@ export const GET = withErrorHandler(async (
       updatedAt: initiative.updatedAt,
       yoloMode: initiative.yoloMode ?? true,
       currentStepIndex: initiative.currentStepIndex ?? 0,
+<<<<<<< HEAD
       processId: initiative.processId,
       isActive: initiative.isActive ?? false,
       questions: phaseFiles.questions?.questions || [],
+=======
+      questions: Array.isArray(phaseFiles.questions) ? phaseFiles.questions : 
+                (phaseFiles.questions?.questions || []),
+>>>>>>> 86e4f40 (Complete task: Find and fix bugs in the initiatives flow. Think hard)
       userAnswers: phaseFiles.answers || {},
       researchNeeds: phaseFiles.research || '',
       researchResults: phaseFiles.research || '',

@@ -1496,7 +1496,8 @@ Begin with 'git diff'.`
                   this.emit('initiative-output', {
                     phase,
                     content: content.text,
-                    timestamp: new Date()
+                    timestamp: new Date(),
+                    type: 'output'
                   })
                 }
               }
