@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "node server.js",
+    "dev": "ts-node --project tsconfig.server.json server.ts",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "NODE_ENV=production ts-node --project tsconfig.server.json server.ts",
     "lint": "next lint"
   },
   "keywords": [],
@@ -43,5 +43,8 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.8.3",
     "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
   }
 }

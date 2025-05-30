@@ -107,12 +107,27 @@ export class MergeConflictResolver {
       
       // Stage all resolved files
       this.sendOutput('system', 'Staging resolved files...')
-      await execFileAsync('git', ['-C', context.repoPath, 'add', '.'])
+      await execFileAsync('git', ['-C', context.repoPath, 'add', '-A'])
       
-      // Complete the merge
-      this.sendOutput('system', 'Completing merge...')
-      const commitMessage = `Merge branch '${context.branchName}' (resolved conflicts with Claude Code)\n\nOriginal task: ${context.taskPrompt}`
-      await execFileAsync('git', ['-C', context.repoPath, 'commit', '--no-edit', '-m', commitMessage])
+      // Check if we're in a rebase or merge
+      let inRebase = false
+      try {
+        await execFileAsync('git', ['-C', context.repoPath, 'rev-parse', '--git-path', 'rebase-merge'])
+        const { stdout } = await execFileAsync('git', ['-C', context.repoPath, 'status'])
+        inRebase = stdout.includes('rebase in progress')
+      } catch (e) {
+        // Not in rebase
+      }
+      
+      if (inRebase) {
+        // Don't commit during rebase - let the caller continue the rebase
+        this.sendOutput('system', 'Conflicts resolved, ready to continue rebase')
+      } else {
+        // Complete the merge
+        this.sendOutput('system', 'Completing merge...')
+        const commitMessage = `Merge branch '${context.branchName}' (resolved conflicts with Claude Code)\n\nOriginal task: ${context.taskPrompt}`
+        await execFileAsync('git', ['-C', context.repoPath, 'commit', '--no-edit', '-m', commitMessage])
+      }
       
       console.log(`[MergeConflictResolver] Successfully resolved conflicts and completed merge`)
       this.sendOutput('system', 'Successfully resolved conflicts and completed merge!')

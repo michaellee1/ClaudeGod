@@ -4,9 +4,11 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "target": "ES2017",
-    "allowJs": true,
+    "allowJs": false,
     "esModuleInterop": true,
-    "downlevelIteration": true
+    "downlevelIteration": true,
+    "noEmit": false,
+    "outDir": "."
   },
   "ts-node": {
     "transpileOnly": true,
@@ -14,5 +16,6 @@
       "module": "commonjs"
     }
   },
-  "include": ["server.ts", "lib/**/*"]
+  "include": ["server.ts"],
+  "exclude": ["lib/**/*.js"]
 }

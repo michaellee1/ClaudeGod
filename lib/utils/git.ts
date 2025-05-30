@@ -9,6 +9,14 @@ import { Task } from '../types/task'
 
 const execFileAsync = promisify(execFile)
 
+/**
+ * Stages all changes including deletions.
+ * This is a safer alternative to 'git add .' which doesn't stage deletions.
+ */
+export async function stageAllChanges(repoPath: string): Promise<void> {
+  await execFileAsync('git', ['-C', repoPath, 'add', '-A'])
+}
+
 export async function validateGitRepo(repoPath: string): Promise<boolean> {
   try {
     await fs.access(repoPath)
@@ -126,7 +134,7 @@ export async function commitChanges(worktreePath: string, message: string): Prom
       // Sanitize commit message
       const safeMessage = message.replace(/"/g, '\\"').substring(0, 1000)
       
-      await execFileAsync('git', ['-C', worktreePath, 'add', '.'])
+      await execFileAsync('git', ['-C', worktreePath, 'add', '-A'])
       await execFileAsync('git', ['-C', worktreePath, 'commit', '-m', safeMessage])
     }
     
@@ -215,7 +223,27 @@ function validateBranchName(branchName: string): void {
   }
 }
 
-export async function mergeWorktreeToMain(repoPath: string, worktreePath: string, task?: Task, onMergeConflictOutput?: (output: any) => void): Promise<void> {
+/**
+ * Merges changes from a worktree back to the main branch.
+ * 
+ * This function ALWAYS rebases the worktree branch onto the latest main
+ * before merging. This ensures that any changes made to main after the worktree
+ * was created (including file deletions) are preserved and not overwritten.
+ * 
+ * If rebase conflicts occur, it will attempt to resolve them using Claude Code
+ * if available, otherwise it will provide manual instructions.
+ * 
+ * @param repoPath - Path to the main repository
+ * @param worktreePath - Path to the worktree
+ * @param task - Optional task object for conflict resolution
+ * @param onMergeConflictOutput - Optional callback for merge conflict output
+ */
+export async function mergeWorktreeToMain(
+  repoPath: string, 
+  worktreePath: string, 
+  task?: Task, 
+  onMergeConflictOutput?: (output: any) => void
+): Promise<void> {
   let cleanBranchName = ''
   let originalBranch = ''
   let tempBranchCreated = false
@@ -244,7 +272,7 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     }
     
     // First, ensure the worktree is up to date
-    await execFileAsync('git', ['-C', worktreePath, 'add', '.'])
+    await execFileAsync('git', ['-C', worktreePath, 'add', '-A'])
     try {
       await execFileAsync('git', ['-C', worktreePath, 'commit', '-m', 'Auto-commit before merge'])
     } catch (e) {
@@ -270,6 +298,85 @@ export async function mergeWorktreeToMain(repoPath: string, worktreePath: string
     } catch (pushError: any) {
       console.error(`[mergeWorktreeToMain] Failed to push to temp branch:`, pushError)
       throw new Error(`Failed to create temporary branch for merge: ${pushError.message}`)
+    }
+    
+    // Rebase the temp branch onto main to ensure it includes all latest changes
+    // This is REQUIRED to prevent old file versions from being merged
+    console.log(`[mergeWorktreeToMain] Rebasing temp-${cleanBranchName} onto main`)
+    try {
+      // First checkout the temp branch
+      await execFileAsync('git', ['-C', repoPath, 'checkout', `temp-${cleanBranchName}`])
+      
+      // Rebase onto main
+      await execFileAsync('git', ['-C', repoPath, 'rebase', 'main'])
+      
+      // Switch back to main for the merge
+      await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
+      
+      console.log(`[mergeWorktreeToMain] Successfully rebased temp-${cleanBranchName} onto main`)
+    } catch (rebaseError: any) {
+      console.error(`[mergeWorktreeToMain] Rebase failed:`, rebaseError)
+      
+      // Check if this is a conflict error
+      const hasConflicts = rebaseError.stderr?.includes('CONFLICT') || 
+                          rebaseError.message?.includes('CONFLICT') ||
+                          rebaseError.stderr?.includes('could not apply')
+      
+      if (hasConflicts && task && onMergeConflictOutput) {
+        console.log(`[mergeWorktreeToMain] Attempting to resolve rebase conflicts with Claude Code`)
+        
+        // Switch back to the temp branch to resolve conflicts
+        await execFileAsync('git', ['-C', repoPath, 'checkout', `temp-${cleanBranchName}`])
+        
+        // Set the output callback if provided
+        if (onMergeConflictOutput) {
+          mergeConflictResolver.setOutputCallback(onMergeConflictOutput)
+        }
+        
+        // Use merge conflict resolver for rebase conflicts
+        try {
+          await mergeConflictResolver.resolveConflicts({
+            task,
+            worktreePath,
+            repoPath,
+            branchName: cleanBranchName,
+            taskPrompt: task.prompt || '',
+            conflictFiles: [] // Will be populated by resolveConflicts
+          })
+          
+          // Continue the rebase after conflicts are resolved
+          await execFileAsync('git', ['-C', repoPath, 'rebase', '--continue'])
+          await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
+          console.log(`[mergeWorktreeToMain] Successfully completed rebase after conflict resolution`)
+        } catch (resolveError: any) {
+          console.error(`[mergeWorktreeToMain] Failed to resolve conflicts or continue rebase:`, resolveError)
+          await execFileAsync('git', ['-C', repoPath, 'rebase', '--abort'])
+          await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
+          
+          // Provide manual command for user
+          const manualCommand = `cd '${repoPath}' && git checkout 'temp-${cleanBranchName}' && git rebase main`
+          throw new Error(
+            `Rebase conflicts could not be resolved automatically.\n` +
+            `To manually resolve, run:\n${manualCommand}\n` +
+            `Then complete the rebase and merge.`
+          )
+        }
+      } else {
+        // Non-conflict error or no conflict resolution available
+        try {
+          await execFileAsync('git', ['-C', repoPath, 'rebase', '--abort'])
+        } catch (abortError) {
+          console.error(`[mergeWorktreeToMain] Failed to abort rebase:`, abortError)
+        }
+        
+        await execFileAsync('git', ['-C', repoPath, 'checkout', 'main'])
+        
+        throw new Error(
+          `Rebase failed and cannot proceed with merge: ${rebaseError.message}\n` +
+          `This prevents old file versions from being incorrectly merged.\n` +
+          `Please ensure the task branch can be cleanly rebased onto main.`
+        )
+      }
     }
     
     // Verify the temporary branch exists before merging
