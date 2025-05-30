@@ -44,8 +44,22 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       throw error
     }
 
-    // Start exploration phase
+    // Start exploration phase with a small delay to ensure WebSocket connection is established
     const manager = InitiativeManager.getInstance()
+    
+    // Broadcast initial status
+    if ((global as any).broadcastInitiativeOutput) {
+      (global as any).broadcastInitiativeOutput(initiative.id, {
+        type: 'info',
+        phase: InitiativePhase.EXPLORATION,
+        content: 'Starting exploration phase...',
+        timestamp: new Date()
+      })
+    }
+    
+    // Small delay to ensure WebSocket clients are connected
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
     try {
       await manager.startExploration(initiative.id)
     } catch (error: any) {

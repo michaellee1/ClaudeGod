@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 import { ProcessManager } from './process-manager'
 import initiativeStore from './initiative-store'
-import { Initiative as StoreInitiative, InitiativePhase, InitiativeTaskStep, InitiativeQuestion } from '../types/initiative'
+import { Initiative as StoreInitiative, InitiativePhase, InitiativeTaskStep, InitiativeQuestion, InitiativeStatus } from '../types/initiative'
 import { readFile } from 'fs/promises'
 import { join, normalize, resolve } from 'path'
 import { homedir } from 'os'
@@ -215,8 +215,37 @@ export class InitiativeManager extends EventEmitter {
   private async setupProcessManagerEvents(processManager: ProcessManager, processInfo: ProcessInfo): Promise<void> {
     const outputs: string[] = []
 
-    // Listen to the raw output from process manager
+    // Listen to initiative-specific output events
+    processManager.on('initiative-output', (output: any) => {
+      console.log(`[InitiativeManager] Received initiative-output for ${processInfo.initiativeId} in phase ${processInfo.phase}:`, 
+        typeof output === 'object' ? output.content?.substring(0, 100) : output)
+      
+      // Store output as JSON line
+      const phaseOutput: PhaseOutput = {
+        type: 'output',
+        data: output.content || JSON.stringify(output)
+      }
+      outputs.push(JSON.stringify(phaseOutput))
+      
+      // Broadcast output to WebSocket if available
+      if ((global as any).broadcastInitiativeOutput) {
+        console.log(`[InitiativeManager] Broadcasting output to WebSocket for initiative ${processInfo.initiativeId}`);
+        (global as any).broadcastInitiativeOutput(processInfo.initiativeId, {
+          type: 'output',
+          phase: processInfo.phase,
+          content: output.content || JSON.stringify(output),
+          timestamp: output.timestamp || new Date()
+        })
+      } else {
+        console.warn('[InitiativeManager] broadcastInitiativeOutput is not available')
+      }
+    })
+
+    // Also listen to regular output events (for backward compatibility)
     processManager.on('output', (output: any) => {
+      console.log(`[InitiativeManager] Received output for ${processInfo.initiativeId} in phase ${processInfo.phase}:`, 
+        typeof output === 'string' ? output.substring(0, 100) : output)
+      
       // Store output as JSON line
       const phaseOutput: PhaseOutput = {
         type: 'output',
@@ -226,15 +255,55 @@ export class InitiativeManager extends EventEmitter {
       
       // Broadcast output to WebSocket if available
       if ((global as any).broadcastInitiativeOutput) {
+        console.log(`[InitiativeManager] Broadcasting output to WebSocket for initiative ${processInfo.initiativeId}`);
         (global as any).broadcastInitiativeOutput(processInfo.initiativeId, {
           type: 'output',
           phase: processInfo.phase,
           content: typeof output === 'string' ? output : JSON.stringify(output),
           timestamp: new Date()
         })
+      } else {
+        console.warn('[InitiativeManager] broadcastInitiativeOutput is not available')
       }
     })
 
+    // Listen for initiative-specific phase completion
+    processManager.on('initiative-phase-complete', async (data: any) => {
+      console.log(`[InitiativeManager] Initiative phase complete for ${processInfo.initiativeId}:`, data)
+      if (data.success) {
+        try {
+          // Save all outputs to phase file
+          const outputContent = outputs.join('\n')
+          await this.initiativeStore.savePhaseFile(
+            processInfo.initiativeId,
+            `${processInfo.phase}_output.json`,
+            outputContent
+          )
+
+          // Process phase completion
+          await this.handlePhaseCompletion(processInfo.initiativeId, processInfo.phase)
+
+          // Cleanup
+          await this.cleanupProcess(processInfo.initiativeId)
+        } catch (error) {
+          console.error(`Error handling phase completion for ${processInfo.initiativeId}:`, error)
+          this.emit(INITIATIVE_EVENTS.ERROR, { initiativeId: processInfo.initiativeId, phase: processInfo.phase, error })
+        }
+      }
+    })
+
+    // Listen for initiative-specific errors
+    processManager.on('initiative-error', async (data: any) => {
+      console.error(`Initiative process error for ${processInfo.initiativeId}:`, data)
+      await this.cleanupProcess(processInfo.initiativeId)
+      this.emit(INITIATIVE_EVENTS.ERROR, { 
+        initiativeId: processInfo.initiativeId, 
+        phase: processInfo.phase, 
+        error: new Error(data.error || 'Initiative process failed')
+      })
+    })
+
+    // Also listen for regular events (backward compatibility)
     processManager.on('completed', async () => {
       try {
         // Save all outputs to phase file
@@ -471,13 +540,22 @@ export class InitiativeManager extends EventEmitter {
     // Setup event handlers
     await this.setupProcessManagerEvents(processManager, processInfo)
 
-    // Start the process with planning mode
-    const { plannerPid } = await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
-    
-    // Update initiative with process ID
+    // Update initiative status to exploring
     await this.initiativeStore.update(initiativeId, {
-      processId: String(plannerPid),
+      status: InitiativeStatus.EXPLORING,
       isActive: true
+    })
+
+    // Use initiative-specific method for exploration
+    await processManager.runInitiativeExploration(initiative)
+    
+    // The process ID will be set by the initiative-process-started event
+    processManager.on('initiative-process-started', async (data: any) => {
+      if (data.pid) {
+        await this.initiativeStore.update(initiativeId, {
+          processId: String(data.pid)
+        })
+      }
     })
   }
 
@@ -536,13 +614,23 @@ export class InitiativeManager extends EventEmitter {
     // Setup event handlers
     await this.setupProcessManagerEvents(processManager, processInfo)
 
-    // Start the process with planning mode
-    const { plannerPid } = await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
-    
-    // Update initiative with process ID
+    // Update initiative status
     await this.initiativeStore.update(initiativeId, {
-      processId: String(plannerPid),
-      isActive: true
+      status: InitiativeStatus.RESEARCHING,
+      isActive: true,
+      userAnswers: sanitizedAnswers
+    })
+
+    // Use initiative-specific method for refinement
+    await processManager.runInitiativeRefinement(initiative)
+    
+    // The process ID will be set by the initiative-process-started event
+    processManager.on('initiative-process-started', async (data: any) => {
+      if (data.pid) {
+        await this.initiativeStore.update(initiativeId, {
+          processId: String(data.pid)
+        })
+      }
     })
   }
 
@@ -617,13 +705,23 @@ export class InitiativeManager extends EventEmitter {
     // Setup event handlers
     await this.setupProcessManagerEvents(processManager, processInfo)
 
-    // Start the process with planning mode
-    const { plannerPid } = await processManager.startProcesses(workDir, prompt, initiativeId, 'planning')
-    
-    // Update initiative with process ID
+    // Update initiative status
     await this.initiativeStore.update(initiativeId, {
-      processId: String(plannerPid),
-      isActive: true
+      status: InitiativeStatus.PLANNING,
+      isActive: true,
+      researchResults: research
+    })
+
+    // Use initiative-specific method for planning
+    await processManager.runInitiativePlanning(initiative)
+    
+    // The process ID will be set by the initiative-process-started event
+    processManager.on('initiative-process-started', async (data: any) => {
+      if (data.pid) {
+        await this.initiativeStore.update(initiativeId, {
+          processId: String(data.pid)
+        })
+      }
     })
   }
 

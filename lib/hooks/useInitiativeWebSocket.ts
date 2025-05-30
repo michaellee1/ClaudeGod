@@ -52,7 +52,7 @@ export function useInitiativeWebSocket(
       ws.current = new WebSocket(wsUrl.toString())
 
       ws.current.onopen = () => {
-        console.log('Initiative WebSocket connected')
+        console.log('[useInitiativeWebSocket] WebSocket connected to:', wsUrl.toString())
         setIsConnected(true)
         setConnectionError(null)
         reconnectAttempts.current = 0
@@ -62,6 +62,7 @@ export function useInitiativeWebSocket(
         handlersRef.current?.onConnectionStatusChange?.(true)
 
         // Re-subscribe to all previously subscribed initiatives
+        console.log('[useInitiativeWebSocket] Re-subscribing to initiatives:', Array.from(subscribedInitiatives))
         subscribedInitiatives.forEach(initiativeId => {
           ws.current?.send(JSON.stringify({
             type: 'subscribe',
@@ -99,6 +100,7 @@ export function useInitiativeWebSocket(
               break
 
             case 'initiative-output':
+              console.log('[useInitiativeWebSocket] Received initiative-output message:', message)
               if (message.data && handlersRef.current?.onInitiativeOutput) {
                 handlersRef.current.onInitiativeOutput(message.data as InitiativeOutput)
               }
@@ -245,6 +247,7 @@ export function useInitiativeWebSocket(
   }, [])
 
   const subscribeToInitiative = useCallback((initiativeId: string) => {
+    console.log('[useInitiativeWebSocket] Subscribing to initiative:', initiativeId)
     setSubscribedInitiatives(prev => {
       const next = new Set(prev)
       next.add(initiativeId)

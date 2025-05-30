@@ -55,6 +55,7 @@ export default function InitiativeDetail() {
   }, [])
 
   const handleInitiativeOutput = useCallback((output: any) => {
+    console.log('[InitiativeDetail] Received WebSocket output:', output)
     // Transform output to match InitiativeOutput interface
     const formattedOutput: InitiativeOutput = {
       timestamp: output.timestamp || new Date(),
@@ -295,6 +296,9 @@ export default function InitiativeDetail() {
       case InitiativePhase.EXPLORATION:
         return (
           <div className="space-y-4">
+            <div className="text-xs text-muted-foreground mb-2">
+              Status: {initiative?.status} | Active: {initiative?.isActive ? 'Yes' : 'No'} | Process ID: {initiative?.processId || 'None'}
+            </div>
             {initiative?.status === InitiativeStatus.EXPLORING ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
@@ -306,6 +310,16 @@ export default function InitiativeDetail() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">Exploration phase pending.</p>
+            )}
+            {outputs.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-medium mb-2">Recent output:</p>
+                <div className="bg-gray-100 p-2 rounded text-xs max-h-32 overflow-y-auto">
+                  {outputs.filter(o => o.phase === InitiativePhase.EXPLORATION).slice(-5).map((o, i) => (
+                    <div key={i} className="mb-1">{o.content.substring(0, 100)}...</div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )
@@ -708,6 +722,9 @@ export default function InitiativeDetail() {
         <TabsContent value="output" className="space-y-4">
           <Card>
             <CardContent className="pt-6">
+              <div className="mb-2 text-sm text-muted-foreground">
+                Total outputs: {outputs.length}
+              </div>
               {outputs.length === 0 ? (
                 <OutputEmptyState />
               ) : (
@@ -726,6 +743,11 @@ export default function InitiativeDetail() {
                       <span className="text-gray-500 ml-2">
                         {new Date(output.timestamp).toLocaleTimeString()}
                       </span>
+                      {output.phase && (
+                        <span className="text-yellow-400 ml-2">
+                          [{output.phase}]
+                        </span>
+                      )}
                       <pre className="whitespace-pre-wrap mt-1">{output.content}</pre>
                     </div>
                   ))}

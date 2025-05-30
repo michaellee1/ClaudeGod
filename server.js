@@ -120,7 +120,10 @@ function broadcastInitiativeUpdate(initiative) {
 
 // Broadcast output to initiative-specific connections
 function broadcastInitiativeOutput(initiativeId, output) {
-  if (!wss) return
+  if (!wss) {
+    console.warn('[Server] WebSocket server not initialized')
+    return
+  }
 
   const message = JSON.stringify({
     type: 'initiative-output',
@@ -132,16 +135,21 @@ function broadcastInitiativeOutput(initiativeId, output) {
 
   // Send to initiative-specific connections only
   const connections = initiativeConnections.get(initiativeId)
-  if (connections) {
+  console.log(`[Server] Broadcasting to initiative ${initiativeId}, ${connections ? connections.size : 0} connections`)
+  
+  if (connections && connections.size > 0) {
     connections.forEach((client) => {
       if (client.readyState === 1) { // WebSocket.OPEN
         try {
           client.send(message)
+          console.log(`[Server] Sent output to client for initiative ${initiativeId}`)
         } catch (error) {
-          console.error(`Error sending output to client for initiative ${initiativeId}:`, error)
+          console.error(`[Server] Error sending output to client for initiative ${initiativeId}:`, error)
         }
       }
     })
+  } else {
+    console.warn(`[Server] No active connections for initiative ${initiativeId}`)
   }
 }
 
