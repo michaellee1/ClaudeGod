@@ -23,6 +23,7 @@ export interface Task {
   retryCount?: number
   lastActivityTime?: Date
   lastHeartbeatTime?: Date
+  recovered?: boolean
 }
 
 export interface PromptCycle {

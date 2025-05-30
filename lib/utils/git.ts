@@ -454,32 +454,39 @@ export async function getTaskDiff(worktreePath: string, baseBranch: string = 'ma
       throw new Error(`Invalid git repository: ${worktreePath}`)
     }
     
-    // Get the diff between the worktree and the base branch
+    // Find the merge base between the current branch and the base branch
+    // This ensures we only show changes made in this task, not inherited commits
+    const { stdout: mergeBase } = await execFileAsync('git', [
+      '-C', worktreePath,
+      'merge-base',
+      baseBranch,
+      'HEAD'
+    ])
+    const mergeBaseCommit = mergeBase.trim()
+    
+    // Get the diff from the merge base to HEAD
+    // This shows only the changes made in this task branch
     const { stdout: diff } = await execFileAsync('git', [
       '-C', worktreePath,
       'diff',
-      `origin/${baseBranch}...HEAD`
+      `${mergeBaseCommit}...HEAD`
     ])
     
     return diff
   } catch (error: any) {
     console.error('Error getting task diff:', error)
     
-    // If the base branch doesn't exist remotely, try without origin/
-    if (error.message && error.message.includes('unknown revision')) {
-      try {
-        const { stdout: diff } = await execFileAsync('git', [
-          '-C', worktreePath,
-          'diff',
-          `${baseBranch}...HEAD`
-        ])
-        return diff
-      } catch (fallbackError) {
-        console.error('Error getting task diff with fallback:', fallbackError)
-        throw new Error(`Failed to generate diff: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`)
-      }
+    // Fallback: try a simple diff against the base branch
+    try {
+      const { stdout: diff } = await execFileAsync('git', [
+        '-C', worktreePath,
+        'diff',
+        baseBranch
+      ])
+      return diff
+    } catch (fallbackError) {
+      console.error('Error getting task diff with fallback:', fallbackError)
+      throw new Error(`Failed to generate diff: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`)
     }
-    
-    throw new Error(`Failed to generate diff: ${error.message || 'Unknown error'}`)
   }
 }

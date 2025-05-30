@@ -222,13 +222,13 @@ function triggerWebSocketReconnection(taskId: string): void {
 
 // Export functions for use in other modules
 declare global {
-  var broadcastTaskUpdate: typeof broadcastTaskUpdate
-  var broadcastTaskOutput: typeof broadcastTaskOutput
-  var cleanupTaskConnections: typeof cleanupTaskConnections
-  var broadcastInitiativeUpdate: typeof broadcastInitiativeUpdate
-  var broadcastInitiativeOutput: typeof broadcastInitiativeOutput
-  var cleanupInitiativeConnections: typeof cleanupInitiativeConnections
-  var triggerWebSocketReconnection: typeof triggerWebSocketReconnection
+  var broadcastTaskUpdate: (taskId: string, update: any) => void
+  var broadcastTaskOutput: (taskId: string, output: any) => void
+  var cleanupTaskConnections: (taskId: string) => void
+  var broadcastInitiativeUpdate: (initiativeId: string, update: any) => void
+  var broadcastInitiativeOutput: (initiativeId: string, output: any) => void
+  var cleanupInitiativeConnections: (initiativeId: string) => void
+  var triggerWebSocketReconnection: (taskId: string) => void
   var server: any
   var wss: WebSocketServer | null
 }

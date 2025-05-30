@@ -24,7 +24,7 @@ class TaskStore {
   private readonly MAX_CONCURRENT_TASKS = 10
   private saveDebounceTimer: NodeJS.Timeout | null = null
   private taskMonitorInterval: NodeJS.Timeout | null = null
-  private readonly HUNG_TASK_TIMEOUT = 600000 // 10 minutes
+  // Removed HUNG_TASK_TIMEOUT - tasks no longer auto-fail after inactivity
   private readonly HEARTBEAT_CHECK_INTERVAL = 60000 // 1 minute
   private readonly MAX_RETRY_COUNT = 1
   private saveQueue: Promise<void> = Promise.resolve()
@@ -41,6 +41,7 @@ class TaskStore {
     this.recoverProcessManagers()
     this.startTaskMonitoring()
     this.setupPersistentStateSync()
+    this.checkForRecoverableData()
   }
 
   private async initializeDataDir() {
@@ -67,6 +68,30 @@ class TaskStore {
     this.persistentState.on('snapshot-created', (snapshotId: string) => {
       console.log(`[TaskStore] Persistent state snapshot created: ${snapshotId}`)
     })
+  }
+
+  private async checkForRecoverableData() {
+    try {
+      console.log('[TaskStore] Checking for recoverable data...')
+      
+      // Check if we have outputs without corresponding tasks
+      const outputsData = await fs.readFile(this.outputsFile, 'utf-8').catch(() => '{}')
+      const outputs = JSON.parse(outputsData)
+      const outputTaskIds = Object.keys(outputs)
+      const currentTaskIds = Array.from(this.tasks.keys())
+      
+      const missingTaskIds = outputTaskIds.filter(id => !currentTaskIds.includes(id))
+      
+      if (missingTaskIds.length > 0) {
+        console.log(`[TaskStore] Found ${missingTaskIds.length} tasks in outputs but not in tasks file`)
+        // Recovery is already handled by persistent state and loadTasks
+        // The persistent state system automatically syncs data
+      } else {
+        console.log('[TaskStore] No orphaned outputs found')
+      }
+    } catch (error) {
+      console.error('[TaskStore] Error checking for recoverable data:', error)
+    }
   }
 
   private async loadConfig() {
@@ -666,12 +691,10 @@ class TaskStore {
     this.outputs.set(taskId, outputs)
     console.log(`[TaskStore] Output count for task ${taskId}: ${outputs.length}`)
     
-    // Save outputs to persistent state immediately for critical outputs
-    if (output.type === 'system' || output.type === 'error') {
-      this.persistentState.saveTaskOutputs(taskId, outputs).catch(error => {
-        console.error('Error saving outputs to persistent state:', error)
-      })
-    }
+    // Save outputs to persistent state immediately for all outputs to prevent data loss
+    this.persistentState.saveTaskOutputs(taskId, outputs).catch(error => {
+      console.error('Error saving outputs to persistent state:', error)
+    })
     
     // Log output event
     this.persistentLogger.logTaskEvent(taskId, 'output-added', {
@@ -1009,7 +1032,7 @@ ${gitDiff}
   }
 
   private startTaskMonitoring() {
-    // Monitor tasks for hung state and WebSocket reconnection
+    // Monitor tasks for WebSocket reconnection only (removed hung task timeout)
     this.taskMonitorInterval = setInterval(() => {
       const now = new Date()
       
@@ -1019,13 +1042,7 @@ ${gitDiff}
           continue
         }
         
-        // Check for hung tasks (no activity for 10 minutes)
-        if (task.lastActivityTime && (now.getTime() - task.lastActivityTime.getTime()) > this.HUNG_TASK_TIMEOUT) {
-          console.log(`[TaskStore] Task ${taskId} detected as hung - no activity for 10 minutes`)
-          this.handleHungTask(taskId)
-        }
-        
-        // Check for WebSocket reconnection need (no heartbeat for 1 minute)
+        // Only check for WebSocket reconnection need (no heartbeat for 1 minute)
         if (task.lastHeartbeatTime && (now.getTime() - task.lastHeartbeatTime.getTime()) > this.HEARTBEAT_CHECK_INTERVAL) {
           console.log(`[TaskStore] Task ${taskId} needs WebSocket reconnection - no heartbeat for 1 minute`)
           this.triggerWebSocketReconnection(taskId)
@@ -1034,34 +1051,7 @@ ${gitDiff}
     }, 10000) // Check every 10 seconds
   }
 
-  private async handleHungTask(taskId: string) {
-    const task = this.tasks.get(taskId)
-    if (!task) return
-    
-    console.log(`[TaskStore] Marking task ${taskId} as failed due to hung state`)
-    
-    // Update task status first
-    task.status = 'failed'
-    
-    // Save immediately before adding output to prevent race condition
-    await this.saveTasksImmediately()
-    
-    // Now add system output (this will trigger a debounced save but won't race)
-    this.addOutput(taskId, {
-      type: 'system',
-      content: '❌ Task marked as failed - no activity for 10 minutes',
-      timestamp: new Date()
-    })
-    
-    this.broadcastTaskUpdate(taskId, task)
-    
-    // Clean up process manager
-    const processManager = this.processManagers.get(taskId)
-    if (processManager) {
-      processManager.stopProcesses()
-      this.processManagers.delete(taskId)
-    }
-  }
+  // Removed handleHungTask - tasks no longer auto-fail after inactivity
 
   private triggerWebSocketReconnection(taskId: string) {
     // Broadcast reconnection request
