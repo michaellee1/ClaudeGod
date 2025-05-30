@@ -4,6 +4,10 @@ const next = require('next')
 const { WebSocketServer } = require('ws')
 const { mergeProtectionMiddleware } = require('./lib/utils/merge-protection')
 const { runStartupMigrations } = require('./lib/utils/initiative-migration')
+const { getPersistentLogger } = require('./lib/utils/persistent-logger')
+const { getSyncService } = require('./lib/utils/sync-service')
+const { recoveryManager } = require('./lib/utils/recovery-manager')
+const { gracefulShutdown } = require('./lib/utils/graceful-shutdown')
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -20,6 +24,9 @@ const taskConnections = new Map()
 // Store active connections by initiative ID
 const initiativeConnections = new Map()
 
+// Initialize persistent logger
+const logger = getPersistentLogger()
+
 // Broadcast task update to all connected clients
 function broadcastTaskUpdate(taskId, update) {
   if (!wss) return
@@ -30,6 +37,13 @@ function broadcastTaskUpdate(taskId, update) {
     data: update
   })
 
+  // Log the broadcast event
+  logger.logWebSocketEvent('task-update-broadcast', {
+    taskId,
+    updateType: update.status || 'unknown',
+    clientCount: wss.clients.size
+  }, { taskId })
+
   // Broadcast to all clients (for task list)
   wss.clients.forEach((client) => {
     if (client.readyState === 1) { // WebSocket.OPEN
@@ -37,6 +51,7 @@ function broadcastTaskUpdate(taskId, update) {
         client.send(message)
       } catch (error) {
         console.error('Error sending task update to client:', error)
+        logger.logError(error, { taskId, event: 'task-update-broadcast' })
       }
     }
   })
@@ -52,6 +67,13 @@ function broadcastTaskOutput(taskId, output) {
     data: output
   })
 
+  // Log the output event
+  logger.logTaskEvent(taskId, 'output-broadcast', {
+    outputType: output.type || 'unknown',
+    contentLength: output.content?.length || 0,
+    timestamp: output.timestamp
+  })
+
   // Send to task-specific connections only
   const connections = taskConnections.get(taskId)
   if (connections) {
@@ -61,6 +83,7 @@ function broadcastTaskOutput(taskId, output) {
           client.send(message)
         } catch (error) {
           console.error(`Error sending output to client for task ${taskId}:`, error)
+          logger.logError(error, { taskId, event: 'task-output-broadcast' })
         }
       }
     })
@@ -213,6 +236,48 @@ app.prepare().then(async () => {
     // Continue startup even if migrations fail
   }
 
+  // Initialize persistent logger
+  logger.logSystemEvent('server-starting', {
+    env: dev ? 'development' : 'production',
+    port,
+    timestamp: new Date()
+  })
+
+  // Perform recovery if needed
+  try {
+    console.log('Checking for recovery needs...')
+    const recoveryReport = await recoveryManager.performRecovery({
+      recoverTasks: true,
+      recoverInitiatives: true,
+      recoverOutputs: true
+    })
+    
+    if (recoveryReport.tasksRecovered > 0 || recoveryReport.errors.length > 0) {
+      console.log('Recovery report:', recoveryReport)
+    }
+  } catch (error) {
+    console.error('Recovery failed:', error)
+    logger.logError(error, { phase: 'startup-recovery' })
+  }
+
+  // Start sync service
+  const syncService = getSyncService({
+    syncInterval: 30000, // 30 seconds
+    conflictResolution: 'newest-wins'
+  })
+  syncService.start()
+  
+  syncService.on('sync-error', (error) => {
+    console.error('Sync service error:', error)
+    logger.logError(error, { service: 'sync-service' })
+  })
+  
+  syncService.on('sync-completed', (report) => {
+    if (report.conflicts.length > 0 || report.errors.length > 0) {
+      console.log('Sync report:', report)
+    }
+  })
+
   const server = createServer(async (req, res) => {
     const parsedUrl = parse(req.url, true)
     await handle(req, res, parsedUrl)
@@ -227,6 +292,10 @@ app.prepare().then(async () => {
   wss.on('connection', (ws, req) => {
     console.log('New WebSocket connection')
     
+    // Generate connection ID for tracking
+    const connectionId = `conn-${Date.now()}-${Math.random().toString(36).substring(7)}`
+    ws.connectionId = connectionId
+    
     // Set up ping/pong heartbeat
     ws.isAlive = true
     ws.on('pong', () => {
@@ -237,6 +306,15 @@ app.prepare().then(async () => {
     const url = new URL(req.url || '', `http://${req.headers.host}`)
     const taskId = url.searchParams.get('taskId')
     const initiativeId = url.searchParams.get('initiativeId')
+    
+    // Log connection event
+    logger.logWebSocketEvent('connection-established', {
+      connectionId,
+      taskId,
+      initiativeId,
+      clientAddress: req.socket.remoteAddress,
+      headers: req.headers
+    })
     
     // Validate taskId format (basic validation)
     if (taskId && /^[a-zA-Z0-9-_]+$/.test(taskId)) {
@@ -382,5 +460,24 @@ app.prepare().then(async () => {
     if (err) throw err
     console.log(`> Ready on http://${hostname}:${port}`)
     console.log('> WebSocket server running on ws://localhost:3000/ws')
+    
+    // Log successful startup
+    logger.logSystemEvent('server-started', {
+      port,
+      hostname,
+      env: dev ? 'development' : 'production'
+    })
+    
+    // Store server reference for graceful shutdown
+    global.server = server
+    global.wss = wss
+    
+    // Register shutdown handler for HTTP server
+    gracefulShutdown.registerHandler(async () => {
+      await new Promise((resolve) => {
+        server.close(resolve)
+      })
+      console.log('[Server] HTTP server closed')
+    })
   })
 })

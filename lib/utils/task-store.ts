@@ -8,6 +8,8 @@ import path from 'path'
 import os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { getPersistentState } from './persistent-state'
+import { getPersistentLogger } from './persistent-logger'
 
 class TaskStore {
   private tasks: Map<string, Task> = new Map()
@@ -29,6 +31,8 @@ class TaskStore {
   private isInCriticalOperation: boolean = false
   private taskCreationQueue: Promise<void> = Promise.resolve()
   private pendingTaskAdditions: Map<string, Task> = new Map()
+  private persistentState = getPersistentState()
+  private persistentLogger = getPersistentLogger()
 
   constructor() {
     this.initializeDataDir()
@@ -36,6 +40,7 @@ class TaskStore {
     this.loadTasks()
     this.recoverProcessManagers()
     this.startTaskMonitoring()
+    this.setupPersistentStateSync()
   }
 
   private async initializeDataDir() {
@@ -44,6 +49,24 @@ class TaskStore {
     } catch (error) {
       console.error('Error creating data directory:', error)
     }
+  }
+
+  private setupPersistentStateSync() {
+    // Listen for persistent state events
+    this.persistentState.on('task-saved', (task: Task) => {
+      // Update local cache if needed
+      if (!this.tasks.has(task.id)) {
+        this.tasks.set(task.id, task)
+      }
+    })
+
+    this.persistentState.on('outputs-saved', ({ taskId, count }) => {
+      this.persistentLogger.logSystemEvent('outputs-synced', { taskId, count })
+    })
+
+    this.persistentState.on('snapshot-created', (snapshotId: string) => {
+      console.log(`[TaskStore] Persistent state snapshot created: ${snapshotId}`)
+    })
   }
 
   private async loadConfig() {
@@ -161,8 +184,20 @@ class TaskStore {
         const tasksArray = Array.from(this.tasks.values())
         console.log(`[TaskStore] Saving ${tasksArray.length} tasks to disk (Map size: ${this.tasks.size})`)
         await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
+        
+        // Also save to persistent state
+        for (const task of tasksArray) {
+          await this.persistentState.saveTask(task)
+        }
+        
+        // Log save event
+        await this.persistentLogger.logSystemEvent('tasks-batch-saved', {
+          count: tasksArray.length,
+          taskIds: tasksArray.map(t => t.id)
+        })
       } catch (error) {
         console.error('Error saving tasks:', error)
+        await this.persistentLogger.logError(error as Error, { operation: 'saveTasks' })
         throw error // Re-throw to ensure callers know save failed
       }
     })
@@ -178,8 +213,14 @@ class TaskStore {
           outputsObject[taskId] = outputs
         }
         await fs.writeFile(this.outputsFile, JSON.stringify(outputsObject, null, 2))
+        
+        // Also save to persistent state
+        for (const [taskId, outputs] of this.outputs) {
+          await this.persistentState.saveTaskOutputs(taskId, outputs)
+        }
       } catch (error) {
         console.error('Error saving outputs:', error)
+        await this.persistentLogger.logError(error as Error, { operation: 'saveOutputs' })
       }
     })
   }
@@ -624,6 +665,20 @@ class TaskStore {
     
     this.outputs.set(taskId, outputs)
     console.log(`[TaskStore] Output count for task ${taskId}: ${outputs.length}`)
+    
+    // Save outputs to persistent state immediately for critical outputs
+    if (output.type === 'system' || output.type === 'error') {
+      this.persistentState.saveTaskOutputs(taskId, outputs).catch(error => {
+        console.error('Error saving outputs to persistent state:', error)
+      })
+    }
+    
+    // Log output event
+    this.persistentLogger.logTaskEvent(taskId, 'output-added', {
+      outputType: output.type,
+      contentLength: output.content?.length || 0
+    })
+    
     this.debouncedSave() // Save after adding output
     this.broadcastTaskOutput(taskId, newOutput)
   }
