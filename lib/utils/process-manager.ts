@@ -5,6 +5,8 @@ import path from 'path'
 import fs from 'fs'
 import { promises as fsPromises } from 'fs'
 import { Initiative } from '../types/initiative'
+import { processStateManager } from './process-state'
+import Tail from 'tail'
 
 export interface ProcessOutput {
   type: 'planner' | 'editor' | 'reviewer'
@@ -13,6 +15,8 @@ export interface ProcessOutput {
 }
 
 export class ProcessManager extends EventEmitter {
+  private static readonly OUTPUT_DIR = '.process-outputs'
+  
   private editorProcess: ChildProcess | null = null
   private reviewerProcess: ChildProcess | null = null
   private plannerProcess: ChildProcess | null = null
@@ -45,6 +49,8 @@ export class ProcessManager extends EventEmitter {
     startTime?: Date
     pid?: number
   } = {}
+  private fileTails: Map<string, Tail.Tail> = new Map()
+  private isAdopted: boolean = false
 
   constructor(taskId?: string, worktreePath?: string, repoPath?: string) {
     super()
@@ -53,13 +59,92 @@ export class ProcessManager extends EventEmitter {
     this.repoPath = repoPath || ''
   }
 
+  private async ensureOutputDir() {
+    await fsPromises.mkdir(ProcessManager.OUTPUT_DIR, { recursive: true })
+  }
+
+  private getOutputPaths(phase: 'editor' | 'reviewer' | 'planner') {
+    const timestamp = new Date().toISOString().replace(/:/g, '-')
+    const base = path.join(ProcessManager.OUTPUT_DIR, this.taskId, `${phase}-${timestamp}`)
+    return {
+      stdout: `${base}.stdout.log`,
+      stderr: `${base}.stderr.log`,
+      stdin: `${base}.stdin.log`
+    }
+  }
+
+  private async createOutputStreams(phase: 'editor' | 'reviewer' | 'planner') {
+    await this.ensureOutputDir()
+    await fsPromises.mkdir(path.join(ProcessManager.OUTPUT_DIR, this.taskId), { recursive: true })
+    
+    const paths = this.getOutputPaths(phase)
+    
+    // Create empty files
+    await fsPromises.writeFile(paths.stdout, '')
+    await fsPromises.writeFile(paths.stderr, '')
+    await fsPromises.writeFile(paths.stdin, '')
+    
+    return { paths }
+  }
+
+  private async readRecentOutput(filePath: string, lines: number): Promise<string[]> {
+    try {
+      const content = await fsPromises.readFile(filePath, 'utf-8')
+      const allLines = content.split('\n').filter(line => line.trim())
+      return allLines.slice(-lines)
+    } catch (error) {
+      console.error(`[ProcessManager] Failed to read ${filePath}:`, error)
+      return []
+    }
+  }
+
+  private async checkProcessExitCode(outputPath: string): Promise<number | null> {
+    try {
+      const exitCodePath = outputPath.replace('.stdout.log', '.exitcode')
+      const exitCodeStr = await fsPromises.readFile(exitCodePath, 'utf-8')
+      const exitCode = parseInt(exitCodeStr.trim(), 10)
+      return isNaN(exitCode) ? null : exitCode
+    } catch (error) {
+      console.log(`[ProcessManager] No exit code file found for ${outputPath}`)
+      return null
+    }
+  }
+
   // Method to reconnect to existing processes after restart
   async reconnectToProcesses(pids: { editorPid?: number, reviewerPid?: number, plannerPid?: number }, phase: string, thinkMode?: string) {
     this.currentPhase = phase as any
     this.thinkMode = thinkMode
+    this.isAdopted = true
     
-    // Since we can't reconnect to existing process streams, 
-    // we'll at least track that the processes are running
+    // Check if processes are registered in our state
+    const processInfo = processStateManager.getProcessForTask(this.taskId)
+    if (processInfo) {
+      console.log(`[ProcessManager] Found registered process for task ${this.taskId}:`, processInfo)
+      
+      // If we have output paths, tail the files
+      if (processInfo.outputPaths) {
+        // Reconnect to stdout
+        if (processInfo.outputPaths.stdout) {
+          this.tailFile(processInfo.outputPaths.stdout, processInfo.phase || 'editor')
+          
+          // Read recent output for context
+          const recentLines = await this.readRecentOutput(processInfo.outputPaths.stdout, 50)
+          if (recentLines.length > 0) {
+            this.emit('output', {
+              type: processInfo.phase || 'editor',
+              content: '--- Recent output ---\n' + recentLines.join('\n'),
+              timestamp: new Date()
+            })
+          }
+        }
+        
+        // Reconnect to stderr
+        if (processInfo.outputPaths.stderr) {
+          this.tailFile(processInfo.outputPaths.stderr, processInfo.phase || 'editor', true)
+        }
+      }
+    }
+    
     console.log(`ProcessManager reconnected for task ${this.taskId}:`, {
       editorPid: pids.editorPid,
       reviewerPid: pids.reviewerPid,
@@ -113,14 +198,187 @@ export class ProcessManager extends EventEmitter {
             this.emit('phase', 'done')
             this.emit('completed', true)
           } else {
-            // For other modes, the task failed if editor exited without starting reviewer
-            console.log(`Task ${this.taskId} editor exited without starting reviewer (thinkMode: ${this.thinkMode})`)
-            this.emit('status', 'failed')
-            this.emit('error', new Error('Editor process exited without starting reviewer'))
+            // For other modes, check exit code to determine actual failure reason
+            const processInfo = processStateManager.getProcessForTask(this.taskId)
+            if (processInfo && processInfo.outputPaths?.stdout) {
+              const exitCode = await this.checkProcessExitCode(processInfo.outputPaths.stdout)
+              if (exitCode !== null && exitCode !== 0) {
+                console.log(`Task ${this.taskId} editor failed with exit code ${exitCode}`)
+                this.emit('status', 'failed')
+                this.emit('error', new Error(`Editor process failed with exit code ${exitCode}`))
+              } else {
+                console.log(`Task ${this.taskId} editor exited without starting reviewer (thinkMode: ${this.thinkMode})`)
+                this.emit('status', 'failed')
+                this.emit('error', new Error('Editor process exited without starting reviewer'))
+              }
+            } else {
+              this.emit('status', 'failed')
+              this.emit('error', new Error('Editor process exited unexpectedly'))
+            }
           }
         }
       }
     }, 5000) // Check every 5 seconds
+  }
+
+  private tailFile(filePath: string, phase: 'editor' | 'reviewer' | 'planner', isError: boolean = false) {
+    // Check if we're already tailing this file
+    const tailKey = `${phase}-${filePath}`
+    if (this.fileTails.has(tailKey)) {
+      console.log(`[ProcessManager] Already tailing ${phase} output: ${filePath}`)
+      return
+    }
+
+    console.log(`[ProcessManager] Starting to tail ${phase} output: ${filePath}`)
+    
+    const tail = new Tail.Tail(filePath, {
+      follow: true,
+      fromBeginning: false,
+      useWatchFile: true,
+      logger: console
+    })
+    
+    tail.on('line', (data: string) => {
+      this.lastOutputTime = Date.now()
+      
+      if (isError) {
+        this.emit('output', {
+          type: phase,
+          content: `[ERROR] ${data}`,
+          timestamp: new Date()
+        })
+      } else {
+        // Process the output similar to the original stdout handler
+        this.processOutput(data, phase)
+      }
+    })
+    
+    let retryCount = 0
+    const MAX_RETRIES = 10
+    
+    tail.on('error', (error: Error) => {
+      console.error(`[ProcessManager] Tail error for ${filePath}:`, error)
+      // File might not exist yet, retry with limit
+      if (error.message.includes('ENOENT') && retryCount < MAX_RETRIES) {
+        retryCount++
+        setTimeout(() => {
+          if (!this.isShuttingDown && this.fileTails.has(tailKey)) {
+            this.tailFile(filePath, phase, isError)
+          }
+        }, 1000)
+      } else if (retryCount >= MAX_RETRIES) {
+        console.error(`[ProcessManager] Max retries reached for tailing ${filePath}`)
+        this.fileTails.delete(tailKey)
+      }
+    })
+    
+    this.fileTails.set(tailKey, tail)
+    
+    // Clean up on process manager cleanup
+    this.cleanupCallbacks.push(() => {
+      tail.unwatch()
+      this.fileTails.delete(tailKey)
+    })
+  }
+
+  private processOutput(data: string, phase: 'editor' | 'reviewer' | 'planner') {
+    const content = data.toString()
+    
+    // Parse stream-json format
+    const lines = content.split('\n')
+    for (const line of lines.filter((l: string) => l.trim())) {
+      try {
+        const parsed = JSON.parse(line)
+        
+        // Handle different message types
+        if (parsed.type === 'assistant' && parsed.message?.content) {
+          for (const content of parsed.message.content) {
+            if (content.type === 'text') {
+              this.emit('output', {
+                type: phase,
+                content: content.text,
+                timestamp: new Date()
+              })
+            }
+          }
+        } else if (parsed.type === 'tool_use') {
+          // Tool usage output
+          let toolInfo = `⚡ Using tool: ${parsed.name}`
+          
+          if (parsed.input) {
+            toolInfo = this.formatToolInfo(parsed)
+          }
+          
+          this.emit('output', {
+            type: phase,
+            content: toolInfo,
+            timestamp: new Date()
+          })
+        } else if (parsed.type === 'system' && parsed.subtype === 'init') {
+          // Log initialization
+          this.emit('output', {
+            type: phase,
+            content: `🚀 Started`,
+            timestamp: new Date()
+          })
+        }
+      } catch (e) {
+        // Not JSON - emit as plain text
+        if (!line.includes('{"type":')) {
+          this.emit('output', {
+            type: phase,
+            content: line,
+            timestamp: new Date()
+          })
+        }
+      }
+    }
+  }
+
+  private formatToolInfo(parsed: any): string {
+    let toolInfo = `⚡ Using tool: ${parsed.name}`
+    
+    switch (parsed.name) {
+      case 'Read':
+        if (parsed.input.file_path) {
+          toolInfo = `📖 Reading: ${parsed.input.file_path}`
+        }
+        break
+      case 'Write':
+        if (parsed.input.file_path) {
+          toolInfo = `💾 Writing: ${parsed.input.file_path}`
+        }
+        break
+      case 'Edit':
+        if (parsed.input.file_path) {
+          toolInfo = `✏️ Editing: ${parsed.input.file_path}`
+        }
+        break
+      case 'Grep':
+        if (parsed.input.pattern) {
+          toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
+        }
+        break
+      case 'Glob':
+        if (parsed.input.pattern) {
+          toolInfo = `📁 Finding: ${parsed.input.pattern}`
+        }
+        break
+      case 'Bash':
+        if (parsed.input.command) {
+          const cmd = parsed.input.command.substring(0, 80)
+          toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
+        }
+        break
+      case 'LS':
+        if (parsed.input.path) {
+          toolInfo = `📂 Listing: ${parsed.input.path}`
+        }
+        break
+      // Add other tools as needed
+    }
+    
+    return toolInfo
   }
 
   async startProcesses(
@@ -206,11 +464,14 @@ Begin with 'git diff'.`
         this.emit('status', 'in_progress')
         
         // Return early - planner will trigger editor when done
-        // At this point, plannerProcess must exist with a valid PID (startPlannerProcess throws if not)
+        // Verify plannerProcess was created successfully
+        if (!this.plannerProcess || !this.plannerProcess.pid) {
+          throw new Error('Planner process failed to start')
+        }
         return {
           editorPid: 0,
           reviewerPid: 0,
-          plannerPid: this.plannerProcess!.pid
+          plannerPid: this.plannerProcess.pid
         }
       } catch (error) {
         console.error('Error in planning mode:', error)
@@ -233,17 +494,21 @@ Begin with 'git diff'.`
 
     try {
       // Start editor process first
-      // Create a wrapper command that ensures ReadableStream is available
+      // Create output files for file-based I/O
+      const { paths } = await this.createOutputStreams('editor')
+      
+      // Write prompt to stdin file
+      await fsPromises.writeFile(paths.stdin, editorPrompt)
+      
       const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
       const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
       
       console.log('Starting editor process with Node executable:', nodeExecutable)
       console.log('Claude CLI path:', claudePath)
-      console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
+      console.log('Output paths:', paths)
       
-      // Use node directly with the CLI script and required flags
-      this.editorProcess = spawn(nodeExecutable, [
+      const args = [
         '--no-warnings',
         '--enable-source-maps',
         claudePath,
@@ -252,16 +517,29 @@ Begin with 'git diff'.`
         'stream-json',
         '--verbose',
         '--dangerously-skip-permissions'
-      ], {
+      ]
+      
+      // Escape paths for shell safety - properly handle all shell metacharacters
+      const escapePath = (p: string) => {
+        // Escape shell metacharacters by wrapping in single quotes and escaping embedded single quotes
+        // This handles all special characters including $, `, newlines, etc.
+        return "'" + p.replace(/'/g, "'\"'\"'") + "'"
+      }
+      
+      // Use shell to handle redirection (using single quotes for safety)
+      // Wrap command to capture exit code for recovery after server restart
+      const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < '${escapePath(paths.stdin)}' > '${escapePath(paths.stdout)}' 2> '${escapePath(paths.stderr)}'`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > '${escapePath(exitCodePath)}''`
+      
+      console.log('Shell command:', shellCommand)
+      
+      // Use shell with nohup for true detachment
+      // Use setsid to create a new session for proper process group management
+      this.editorProcess = spawn('sh', ['-c', `setsid nohup ${shellCommand}`], {
         cwd: worktreePath,
-        env: { 
-          ...process.env, 
-          PATH: this.getEnhancedPath(),
-          FORCE_COLOR: '0',
-          NO_COLOR: '1'
-        },
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: 'ignore',
+        detached: true
       })
 
       if (!this.editorProcess.pid) {
@@ -269,18 +547,27 @@ Begin with 'git diff'.`
       }
       
       console.log('Editor process started with PID:', this.editorProcess.pid)
+      
+      // Unref the process so it doesn't keep the parent alive
+      this.editorProcess.unref()
+      
+      // Register process in state manager
+      await processStateManager.registerProcess({
+        pid: this.editorProcess.pid,
+        taskId: this.taskId,
+        phase: 'editor',
+        startTime: Date.now(),
+        worktreePath: worktreePath,
+        prompt: editorPrompt,
+        outputPaths: paths,
+        shellCommand: shellCommand
+      })
+      
+      // Start tailing output files
+      this.tailFile(paths.stdout, 'editor')
+      this.tailFile(paths.stderr, 'editor', true)
 
       this.setupEditorHandlers()
-      
-      // Send prompt via stdin
-      if (this.editorProcess.stdin) {
-        console.log('Writing prompt to editor stdin, length:', editorPrompt.length)
-        this.editorProcess.stdin.write(editorPrompt + '\n')
-        this.editorProcess.stdin.end()
-        console.log('Editor stdin closed')
-      } else {
-        console.error('Editor process stdin is not available')
-      }
       
       // Start sequential execution which will handle reviewer process
       this.startSequentialExecution(worktreePath, reviewerPrompt, thinkMode)
@@ -300,171 +587,9 @@ Begin with 'git diff'.`
     if (this.editorProcess) {
       console.log('Setting up editor handlers, PID:', this.editorProcess.pid)
       
-      if (this.editorProcess.stdout) {
-        console.log('Editor stdout is available')
-        this.editorProcess.stdout.setEncoding('utf8')
-        this.editorProcess.stdout.on('data', (data) => {
-          console.log('Editor stdout data received:', data.substring(0, 100))
-          this.lastOutputTime = Date.now()
-          const content = data.toString()
-          this.outputBuffer += content
-          
-          // Try to parse stream-json format
-          const lines = content.trim().split('\n')
-          const processedLines = new Set<string>()
-          
-          for (const line of lines) {
-            if (line.trim()) {
-              let isJsonLine = false
-              try {
-                const parsed = JSON.parse(line)
-                isJsonLine = true
-                processedLines.add(line)
-                
-                // Handle different message types
-                if (parsed.type === 'assistant' && parsed.message?.content) {
-                  // Extract text from assistant messages
-                  for (const content of parsed.message.content) {
-                    if (content.type === 'text') {
-                      this.emit('output', {
-                        type: 'editor',
-                        content: content.text,
-                        timestamp: new Date()
-                      })
-                      // Also emit raw output for initiative processing
-                      this.emit('output', content.text)
-                    }
-                  }
-                } else if (parsed.type === 'tool_use') {
-                  // Log detailed tool usage
-                  let toolInfo = `[Tool: ${parsed.name}]`
-                  
-                  // Add tool-specific details
-                  if (parsed.input) {
-                    switch (parsed.name) {
-                      case 'Read':
-                        if (parsed.input.file_path) {
-                          toolInfo = `📖 Reading: ${parsed.input.file_path}`
-                          if (parsed.input.offset || parsed.input.limit) {
-                            toolInfo += ` (lines ${parsed.input.offset || 0}-${(parsed.input.offset || 0) + (parsed.input.limit || 'end')})`
-                          }
-                        }
-                        break
-                      case 'Edit':
-                        if (parsed.input.file_path) {
-                          toolInfo = `✏️ Editing: ${parsed.input.file_path}`
-                        }
-                        break
-                      case 'MultiEdit':
-                        if (parsed.input.file_path && parsed.input.edits) {
-                          toolInfo = `✏️ Multi-edit: ${parsed.input.file_path} (${parsed.input.edits.length} changes)`
-                        }
-                        break
-                      case 'Write':
-                        if (parsed.input.file_path) {
-                          toolInfo = `💾 Writing: ${parsed.input.file_path}`
-                        }
-                        break
-                      case 'Grep':
-                        if (parsed.input.pattern) {
-                          toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
-                          if (parsed.input.path) {
-                            toolInfo += ` in ${parsed.input.path}`
-                          }
-                          if (parsed.input.include) {
-                            toolInfo += ` (${parsed.input.include})`
-                          }
-                        }
-                        break
-                      case 'Glob':
-                        if (parsed.input.pattern) {
-                          toolInfo = `📁 Finding: ${parsed.input.pattern}`
-                          if (parsed.input.path) {
-                            toolInfo += ` in ${parsed.input.path}`
-                          }
-                        }
-                        break
-                      case 'Bash':
-                        if (parsed.input.command) {
-                          const cmd = parsed.input.command.substring(0, 80)
-                          toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
-                        }
-                        break
-                      case 'LS':
-                        if (parsed.input.path) {
-                          toolInfo = `📂 Listing: ${parsed.input.path}`
-                        }
-                        break
-                    }
-                  }
-                  
-                  this.emit('output', {
-                    type: 'editor',
-                    content: toolInfo,
-                    timestamp: new Date()
-                  })
-                } else if (parsed.type === 'system' && parsed.subtype === 'init') {
-                  // Log initialization
-                  this.emit('output', {
-                    type: 'editor',
-                    content: `🚀 Started`,
-                    timestamp: new Date()
-                  })
-                } else if (parsed.type === 'tool_result') {
-                  // Handle tool results - these often contain file contents
-                  if (parsed.content && typeof parsed.content === 'string') {
-                    // Check if it's file content (has line numbers)
-                    if (parsed.content.includes('\n') && /^\s*\d+\s+/.test(parsed.content)) {
-                      this.emit('output', {
-                        type: 'editor',
-                        content: parsed.content,
-                        timestamp: new Date()
-                      })
-                    }
-                  }
-                } else if (parsed.type === 'user' && parsed.message) {
-                  // Skip user messages - these are usually just echoing the prompt
-                  // Don't emit these
-                }
-              } catch (e) {
-                // Not JSON - continue to check if it should be emitted
-              }
-              
-              // Emit non-JSON lines that aren't raw JSON strings
-              if (!isJsonLine && !processedLines.has(line) && !line.includes('{"type":')) {
-                this.emit('output', {
-                  type: 'editor',
-                  content: line,
-                  timestamp: new Date()
-                })
-                processedLines.add(line)
-              }
-            }
-          }
-          
-          // Check for completion patterns
-          this.checkForCompletion()
-        })
-      } else {
-        console.log('Editor stdout is NOT available')
-      }
-
-      if (this.editorProcess.stderr) {
-        console.log('Editor stderr is available')
-        this.editorProcess.stderr.setEncoding('utf8')
-        this.editorProcess.stderr.on('data', (data) => {
-          console.log('Editor stderr data received:', data.substring(0, 100))
-          this.lastOutputTime = Date.now()
-          this.emit('output', {
-            type: 'editor',
-            content: data,
-            timestamp: new Date()
-          })
-        })
-      } else {
-        console.log('Editor stderr is NOT available')
-      }
-
+      // Since we're using file-based I/O, we don't have stdout/stderr pipes
+      // The file tailing handles output monitoring
+      
       this.editorProcess.on('error', (error) => {
         console.log('Editor process error:', error)
         this.emit('output', {
@@ -475,9 +600,25 @@ Begin with 'git diff'.`
         this.emit('status', 'failed')
       })
       
-      this.editorProcess.on('exit', (code, signal) => {
+      this.editorProcess.on('exit', async (code, signal) => {
         console.log('Editor process exited with code:', code, 'signal:', signal)
         this.processExitCode = code
+        
+        // Clean up file tails for this phase
+        const tailKey = `editor-${this.editorProcess?.pid}`
+        for (const [key, tail] of this.fileTails) {
+          if (key.startsWith('editor-')) {
+            try {
+              tail.unwatch()
+              this.fileTails.delete(key)
+            } catch (error) {
+              console.error('Error cleaning up tail:', error)
+            }
+          }
+        }
+        
+        // Unregister process on exit
+        await processStateManager.unregisterProcess(this.taskId, 'editor')
         
         let exitMessage: string
         if (code === 0) {
@@ -511,168 +652,9 @@ Begin with 'git diff'.`
     if (this.reviewerProcess) {
       console.log('Setting up reviewer handlers, PID:', this.reviewerProcess.pid)
       
-      if (this.reviewerProcess.stdout) {
-        console.log('Reviewer stdout is available')
-        this.reviewerProcess.stdout.setEncoding('utf8')
-        this.reviewerProcess.stdout.on('data', (data) => {
-          console.log('Reviewer stdout data received:', data.substring(0, 100))
-          this.lastOutputTime = Date.now()
-          const content = data.toString()
-          this.outputBuffer += content
-          
-          // Try to parse stream-json format
-          const lines = content.trim().split('\n')
-          const processedLines = new Set<string>()
-          
-          for (const line of lines) {
-            if (line.trim()) {
-              let isJsonLine = false
-              try {
-                const parsed = JSON.parse(line)
-                isJsonLine = true
-                processedLines.add(line)
-                
-                // Handle different message types
-                if (parsed.type === 'assistant' && parsed.message?.content) {
-                  // Extract text from assistant messages
-                  for (const content of parsed.message.content) {
-                    if (content.type === 'text') {
-                      this.emit('output', {
-                        type: 'reviewer',
-                        content: content.text,
-                        timestamp: new Date()
-                      })
-                    }
-                  }
-                } else if (parsed.type === 'tool_use' && parsed.name) {
-                  // Log tool usage with details
-                  const toolName = parsed.name
-                  let toolInfo = `[Tool: ${toolName}]`
-                  
-                  // Add specific details based on tool type
-                  switch (toolName) {
-                    case 'Read':
-                      if (parsed.input.file_path) {
-                        toolInfo = `📖 Reading: ${parsed.input.file_path}`
-                        if (parsed.input.offset || parsed.input.limit) {
-                          toolInfo += ` (lines ${parsed.input.offset || 0}-${(parsed.input.offset || 0) + (parsed.input.limit || 'end')})`
-                        }
-                      }
-                      break
-                    case 'Edit':
-                      if (parsed.input.file_path) {
-                        toolInfo = `✏️ Editing: ${parsed.input.file_path}`
-                      }
-                      break
-                    case 'MultiEdit':
-                      if (parsed.input.file_path && parsed.input.edits) {
-                        toolInfo = `✏️ Multi-edit: ${parsed.input.file_path} (${parsed.input.edits.length} changes)`
-                      }
-                      break
-                    case 'Write':
-                      if (parsed.input.file_path) {
-                        toolInfo = `💾 Writing: ${parsed.input.file_path}`
-                      }
-                      break
-                    case 'Grep':
-                      if (parsed.input.pattern) {
-                        toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
-                        if (parsed.input.path) {
-                          toolInfo += ` in ${parsed.input.path}`
-                        }
-                        if (parsed.input.include) {
-                          toolInfo += ` (${parsed.input.include})`
-                        }
-                      }
-                      break
-                    case 'Glob':
-                      if (parsed.input.pattern) {
-                        toolInfo = `📁 Finding: ${parsed.input.pattern}`
-                        if (parsed.input.path) {
-                          toolInfo += ` in ${parsed.input.path}`
-                        }
-                      }
-                      break
-                    case 'Bash':
-                      if (parsed.input.command) {
-                        const cmdPreview = parsed.input.command.substring(0, 100)
-                        toolInfo = `🖥️ Running: ${cmdPreview}${parsed.input.command.length > 100 ? '...' : ''}`
-                      }
-                      break
-                    case 'LS':
-                      if (parsed.input.path) {
-                        toolInfo = `📂 Listing: ${parsed.input.path}`
-                      }
-                      break
-                  }
-                  
-                  this.emit('output', {
-                    type: 'reviewer',
-                    content: toolInfo,
-                    timestamp: new Date()
-                  })
-                } else if (parsed.type === 'system' && parsed.subtype === 'init') {
-                  // Log initialization
-                  this.emit('output', {
-                    type: 'reviewer',
-                    content: `🚀 Started`,
-                    timestamp: new Date()
-                  })
-                } else if (parsed.type === 'tool_result') {
-                  // Handle tool results - these often contain file contents
-                  if (parsed.content && typeof parsed.content === 'string') {
-                    // Check if it's file content (has line numbers)
-                    if (parsed.content.includes('\n') && /^\s*\d+\s+/.test(parsed.content)) {
-                      this.emit('output', {
-                        type: 'reviewer',
-                        content: parsed.content,
-                        timestamp: new Date()
-                      })
-                    }
-                  }
-                } else if (parsed.type === 'user' && parsed.message) {
-                  // Skip user messages - these are usually just echoing the prompt
-                  // Don't emit these
-                }
-              } catch (e) {
-                // Not JSON - continue to check if it should be emitted
-              }
-              
-              // Emit non-JSON lines that aren't raw JSON strings
-              if (!isJsonLine && !processedLines.has(line) && !line.includes('{"type":')) {
-                this.emit('output', {
-                  type: 'reviewer',
-                  content: line,
-                  timestamp: new Date()
-                })
-                processedLines.add(line)
-              }
-            }
-          }
-          
-          // Check for completion patterns
-          this.checkForCompletion()
-        })
-      } else {
-        console.log('Reviewer stdout is NOT available')
-      }
-
-      if (this.reviewerProcess.stderr) {
-        console.log('Reviewer stderr is available')
-        this.reviewerProcess.stderr.setEncoding('utf8')
-        this.reviewerProcess.stderr.on('data', (data) => {
-          console.log('Reviewer stderr data received:', data.substring(0, 100))
-          this.lastOutputTime = Date.now()
-          this.emit('output', {
-            type: 'reviewer',
-            content: data,
-            timestamp: new Date()
-          })
-        })
-      } else {
-        console.log('Reviewer stderr is NOT available')
-      }
-
+      // Since we're using file-based I/O, we don't have stdout/stderr pipes
+      // The file tailing handles output monitoring
+      
       this.reviewerProcess.on('error', (error) => {
         console.log('Reviewer process error:', error)
         this.emit('output', {
@@ -683,9 +665,24 @@ Begin with 'git diff'.`
         this.emit('status', 'failed')
       })
       
-      this.reviewerProcess.on('exit', (code, signal) => {
+      this.reviewerProcess.on('exit', async (code, signal) => {
         console.log('Reviewer process exited with code:', code, 'signal:', signal)
         this.processExitCode = code
+        
+        // Clean up file tails for this phase
+        for (const [key, tail] of this.fileTails) {
+          if (key.startsWith('reviewer-')) {
+            try {
+              tail.unwatch()
+              this.fileTails.delete(key)
+            } catch (error) {
+              console.error('Error cleaning up tail:', error)
+            }
+          }
+        }
+        
+        // Unregister process on exit
+        await processStateManager.unregisterProcess(this.taskId, 'reviewer')
         
         let exitMessage: string
         if (code === 0) {
@@ -747,17 +744,22 @@ Begin with 'git diff'.`
     this.emit('phase', 'reviewer')
     
     try {
+      // Create output files for file-based I/O
+      const { paths } = await this.createOutputStreams('reviewer')
+      
+      // Write prompt to stdin file
+      await fsPromises.writeFile(paths.stdin, reviewerPrompt)
+      
       // Now start the reviewer process
       const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
       const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
       
       console.log('Starting reviewer process with Node executable:', nodeExecutable)
       console.log('Claude CLI path:', claudePath)
-      console.log('Arguments:', ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'])
       console.log('Working directory:', worktreePath)
-        
-      // Use node directly with the CLI script and required flags
-      this.reviewerProcess = spawn(nodeExecutable, [
+      console.log('Output paths:', paths)
+      
+      const args = [
         '--no-warnings',
         '--enable-source-maps',
         claudePath,
@@ -766,16 +768,29 @@ Begin with 'git diff'.`
         'stream-json',
         '--verbose',
         '--dangerously-skip-permissions'
-      ], {
+      ]
+      
+      // Escape paths for shell safety - properly handle all shell metacharacters
+      const escapePath = (p: string) => {
+        // Escape shell metacharacters by wrapping in single quotes and escaping embedded single quotes
+        // This handles all special characters including $, `, newlines, etc.
+        return "'" + p.replace(/'/g, "'\"'\"'") + "'"
+      }
+      
+      // Use shell to handle redirection (using single quotes for safety)
+      // Wrap command to capture exit code for recovery after server restart
+      const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < '${escapePath(paths.stdin)}' > '${escapePath(paths.stdout)}' 2> '${escapePath(paths.stderr)}'`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > '${escapePath(exitCodePath)}''`
+      
+      console.log('Shell command:', shellCommand)
+      
+      // Use shell with nohup for true detachment
+      // Use setsid to create a new session for proper process group management
+      this.reviewerProcess = spawn('sh', ['-c', `setsid nohup ${shellCommand}`], {
         cwd: worktreePath,
-        env: { 
-          ...process.env, 
-          PATH: this.getEnhancedPath(),
-          FORCE_COLOR: '0',
-          NO_COLOR: '1'
-        },
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: 'ignore',
+        detached: true
       })
 
       if (!this.reviewerProcess.pid) {
@@ -783,17 +798,28 @@ Begin with 'git diff'.`
       }
       
       console.log('Reviewer process started with PID:', this.reviewerProcess.pid)
+      
+      // Unref the process so it doesn't keep the parent alive
+      this.reviewerProcess.unref()
+      
+      // Register process in state manager
+      await processStateManager.registerProcess({
+        pid: this.reviewerProcess.pid,
+        taskId: this.taskId,
+        phase: 'reviewer',
+        startTime: Date.now(),
+        worktreePath: worktreePath,
+        prompt: reviewerPrompt,
+        outputPaths: paths,
+        shellCommand: shellCommand
+      })
+      
+      // Start tailing output files
+      this.tailFile(paths.stdout, 'reviewer')
+      this.tailFile(paths.stderr, 'reviewer', true)
 
       this.emit('reviewerPid', this.reviewerProcess.pid)
       this.setupReviewerHandlers()
-      
-      // Send prompt via stdin
-      if (this.reviewerProcess.stdin) {
-        this.reviewerProcess.stdin.write(reviewerPrompt + '\n')
-        this.reviewerProcess.stdin.end()
-      } else {
-        console.error('Reviewer process stdin is not available')
-      }
       
       this.lastOutputTime = Date.now()
       
@@ -814,6 +840,11 @@ Begin with 'git diff'.`
   private checkForCompletion() {
     // Check recent output for completion patterns
     const recentOutput = this.outputBuffer.slice(-500) // Check last 500 chars
+    
+    // Prevent unbounded growth - keep only last 10KB
+    if (this.outputBuffer.length > 10240) {
+      this.outputBuffer = this.outputBuffer.slice(-5120)
+    }
     
     for (const pattern of this.COMPLETION_PATTERNS) {
       if (pattern.test(recentOutput)) {
@@ -923,6 +954,16 @@ Begin with 'git diff'.`
     if (this.outputMonitorInterval) {
       clearInterval(this.outputMonitorInterval)
     }
+    
+    // Clean up file tails first
+    for (const [key, tail] of this.fileTails) {
+      try {
+        tail.unwatch()
+      } catch (error) {
+        console.error('Error unwatching tail:', error)
+      }
+    }
+    this.fileTails.clear()
     
     // Clean up any temporary files
     this.cleanupCallbacks.forEach(cleanup => {
@@ -1476,6 +1517,16 @@ Begin with 'git diff'.`
     initiativeProcess.once('exit', () => {
       clearTimeout(timeoutHandler)
     })
+    
+    // Clean up any existing process before storing new one
+    if (this.plannerProcess) {
+      console.warn(`[ProcessManager] Cleaning up existing ${this.initiativeMetadata.phase} process before starting ${phase}`)
+      try {
+        this.plannerProcess.kill('SIGTERM')
+      } catch (e) {
+        // Process might already be dead
+      }
+    }
     
     // Store process reference for cleanup
     this.plannerProcess = initiativeProcess

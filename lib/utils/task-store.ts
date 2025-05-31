@@ -197,18 +197,23 @@ class TaskStore {
         
         // CRITICAL: Apply any pending task additions before saving
         // This ensures tasks created during save operations aren't lost
-        if (this.pendingTaskAdditions.size > 0) {
-          console.log(`[TaskStore] Applying ${this.pendingTaskAdditions.size} pending task additions before save`)
-          for (const [taskId, task] of this.pendingTaskAdditions) {
+        const pendingToApply = new Map(this.pendingTaskAdditions)
+        if (pendingToApply.size > 0) {
+          console.log(`[TaskStore] Applying ${pendingToApply.size} pending task additions before save`)
+          for (const [taskId, task] of pendingToApply) {
             this.tasks.set(taskId, task)
           }
-          this.pendingTaskAdditions.clear()
         }
         
         // Convert Map to array for JSON serialization
         const tasksArray = Array.from(this.tasks.values())
         console.log(`[TaskStore] Saving ${tasksArray.length} tasks to disk (Map size: ${this.tasks.size})`)
         await fs.writeFile(this.tasksFile, JSON.stringify(tasksArray, null, 2))
+        
+        // Only clear pending additions after successful write
+        if (pendingToApply.size > 0) {
+          this.pendingTaskAdditions.clear()
+        }
         
         // Also save to persistent state
         for (const task of tasksArray) {
@@ -310,15 +315,78 @@ class TaskStore {
             // Mark task as no longer needing recovery
             task.needsRecovery = false
           } else {
-            // Processes are dead, update task status
-            task.status = 'failed'
-            task.needsRecovery = false
+            // Processes are dead - check exit codes to determine if they completed successfully
+            console.log(`[TaskStore] Processes dead for task ${taskId}, checking exit codes...`)
             
-            this.addOutput(taskId, {
-              type: 'system',  
-              content: '❌ Could not reconnect - processes have terminated. You can restart the task with a new prompt.',
-              timestamp: new Date()
-            })
+            // Get process info from state manager to check output paths
+            const processInfo = await import('./process-state').then(m => 
+              m.processStateManager.getProcessForTask(taskId)
+            )
+            
+            let taskCompleted = false
+            let exitCodeInfo = ''
+            
+            if (processInfo && processInfo.outputPaths?.stdout) {
+              // Import ProcessManager to use exit code checking
+              const { ProcessManager } = await import('./process-manager')
+              const pm = new ProcessManager(taskId, task.worktree, task.repoPath)
+              
+              // Wait a moment for exit code file to be written
+              await new Promise(resolve => setTimeout(resolve, 1000))
+              
+              // Check exit code from the output file
+              const exitCode = await (pm as any).checkProcessExitCode(processInfo.outputPaths.stdout)
+              
+              if (exitCode !== null) {
+                exitCodeInfo = ` (exit code: ${exitCode})`
+                if (exitCode === 0) {
+                  // Process completed successfully
+                  if (processInfo.phase === 'reviewer' || (processInfo.phase === 'editor' && task.thinkMode === 'no_review')) {
+                    taskCompleted = true
+                  }
+                }
+              }
+            }
+            
+            if (taskCompleted) {
+              // Task completed while server was down
+              task.status = 'finished'
+              task.phase = 'done'
+              task.needsRecovery = false
+              
+              this.addOutput(taskId, {
+                type: 'system',
+                content: `✅ Task completed successfully while server was down${exitCodeInfo}`,
+                timestamp: new Date()
+              })
+              
+              // Try to auto-commit if not already committed
+              if (!task.commitHash) {
+                try {
+                  const commitHash = await gitLock.withLock(task.repoPath, async () => {
+                    return await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+                  })
+                  task.commitHash = commitHash
+                  this.addOutput(taskId, {
+                    type: 'system',
+                    content: `📝 Auto-committed changes with hash: ${commitHash.substring(0, 8)}`,
+                    timestamp: new Date()
+                  })
+                } catch (error) {
+                  console.error(`Failed to auto-commit completed task ${taskId}:`, error)
+                }
+              }
+            } else {
+              // Process failed or we can't determine status
+              task.status = 'failed'
+              task.needsRecovery = false
+              
+              this.addOutput(taskId, {
+                type: 'system',  
+                content: `❌ Process terminated${exitCodeInfo}. You can restart the task with a new prompt.`,
+                timestamp: new Date()
+              })
+            }
           }
         }
       }
@@ -548,18 +616,22 @@ class TaskStore {
     // Queue task creation to prevent race conditions
     await this.taskCreationQueue
     this.taskCreationQueue = this.taskCreationQueue.then(async () => {
-      // If a critical operation is in progress, store task in pending queue
+      // Double-check critical operation flag inside the queue to prevent race conditions
+      // This ensures we check the flag at the actual moment of task addition
       if (this.isInCriticalOperation) {
         console.log(`[TaskStore] Critical operation in progress, queueing task ${taskId} creation`)
         this.pendingTaskAdditions.set(taskId, task)
         this.outputs.set(taskId, [])
       } else {
+        // Even if flag changed after initial check, we're safe because we're in the queue
         this.tasks.set(taskId, task)
         this.outputs.set(taskId, [])
       }
       console.log(`[TaskStore] Created task ${taskId}, total tasks: ${this.tasks.size}, pending: ${this.pendingTaskAdditions.size}`)
     }).catch(error => {
       console.error(`[TaskStore] Error in task creation queue for ${taskId}:`, error)
+      // Re-throw to ensure caller knows creation failed
+      throw error
     })
     
     // Wait for queue to complete

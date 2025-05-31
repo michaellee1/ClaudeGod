@@ -300,6 +300,29 @@ export default function Home() {
     }
   }
 
+  const handleKillAllProcesses = async () => {
+    if (!confirm('Are you sure you want to kill all tracked Claude Code processes? This will stop all running tasks.')) {
+      return
+    }
+    
+    try {
+      const response = await fetch('/api/processes/cleanup', { method: 'POST' })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setError(null)
+        alert(data.message)
+        fetchTasks() // Refresh tasks to update their status
+      } else {
+        const errorData = await response.json()
+        setError(`Failed to kill processes: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Error killing processes:', error)
+      setError(`Failed to kill processes: ${error.message || 'Network error'}`)
+    }
+  }
+
   const handlePreview = async (taskId: string, isCurrentlyPreviewing: boolean) => {
     try {
       const response = await fetch(`/api/tasks/${taskId}/preview`, {
@@ -543,6 +566,13 @@ export default function Home() {
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleKillAllProcesses}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Kill All Tracked Processes
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
