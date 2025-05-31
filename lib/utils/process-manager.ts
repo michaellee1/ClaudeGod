@@ -7,6 +7,7 @@ import { promises as fsPromises } from 'fs'
 import { Initiative } from '../types/initiative'
 import { processStateManager } from './process-state'
 import Tail from 'tail'
+import { PROMPTS } from './initiative-prompts'
 
 export interface ProcessOutput {
   type: 'planner' | 'editor' | 'reviewer'
@@ -54,9 +55,21 @@ export class ProcessManager extends EventEmitter {
 
   constructor(taskId?: string, worktreePath?: string, repoPath?: string) {
     super()
-    this.taskId = taskId || ''
+    this.taskId = this.validateAndSanitizeTaskId(taskId || '')
     this.worktreePath = worktreePath || ''
     this.repoPath = repoPath || ''
+  }
+
+  private validateAndSanitizeTaskId(taskId: string): string {
+    // Remove any path traversal attempts
+    const sanitized = taskId.replace(/\.\./g, '').replace(/[\/\\]/g, '-')
+    
+    // Validate format (alphanumeric, hyphens, and underscores only)
+    if (!/^[a-zA-Z0-9-_]*$/.test(sanitized)) {
+      throw new Error(`Invalid task ID format: ${taskId}`)
+    }
+    
+    return sanitized
   }
 
   private async ensureOutputDir() {
@@ -65,7 +78,9 @@ export class ProcessManager extends EventEmitter {
 
   private getOutputPaths(phase: 'editor' | 'reviewer' | 'planner') {
     const timestamp = new Date().toISOString().replace(/:/g, '-')
-    const base = path.join(ProcessManager.OUTPUT_DIR, this.taskId, `${phase}-${timestamp}`)
+    // Use path.basename to ensure no path traversal
+    const safeTaskId = path.basename(this.taskId)
+    const base = path.join(ProcessManager.OUTPUT_DIR, safeTaskId, `${phase}-${timestamp}`)
     return {
       stdout: `${base}.stdout.log`,
       stderr: `${base}.stderr.log`,
@@ -1406,22 +1421,35 @@ Begin with 'git diff'.`
   }
 
   private async loadPromptTemplate(templateName: string): Promise<string> {
-    const templatePath = path.join(__dirname, '..', 'prompts', 'initiative', `${templateName}.md`)
-    try {
-      const template = await fsPromises.readFile(templatePath, 'utf-8')
-      return template
-    } catch (error) {
-      console.error(`Failed to load prompt template ${templateName}:`, error)
+    // Use embedded prompts instead of file system
+    const template = PROMPTS[templateName as keyof typeof PROMPTS]
+    if (!template) {
+      console.error(`Failed to load prompt template ${templateName}: not found in PROMPTS`)
       throw new Error(`Prompt template not found: ${templateName}`)
     }
+    return template
   }
 
   private substituteVariables(template: string, variables: Record<string, string>): string {
     let result = template
+    
+    // Handle conditional blocks first (e.g., {{#variable}}...{{/variable}})
     for (const [key, value] of Object.entries(variables)) {
-      const regex = new RegExp(`{{${key}}}`, 'g')
-      result = result.replace(regex, value)
+      // Handle conditional blocks - show content if variable has a value
+      const conditionalRegex = new RegExp(`{{#${key}}}([\\s\\S]*?){{/${key}}}`, 'g')
+      result = result.replace(conditionalRegex, (match, content) => {
+        return value && value.trim() ? content : ''
+      })
     }
+    
+    // Then handle simple variable substitution
+    for (const [key, value] of Object.entries(variables)) {
+      // Escape special regex characters in the key
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = new RegExp(`{{${escapedKey}}}`, 'g')
+      result = result.replace(regex, value || '')
+    }
+    
     return result
   }
 
