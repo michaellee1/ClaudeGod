@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Task } from '@/lib/types/task'
+import { useState, useEffect, useRef } from 'react'
+import { Task, TaskOutput } from '@/lib/types/task'
 import Link from 'next/link'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { Button } from '@/components/ui/button'
@@ -13,14 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -29,64 +21,139 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChevronDown, Trash2 } from 'lucide-react'
 
-interface TaskTableProps {
+interface TaskCardsProps {
   tasks: Task[]
   onPreview: (taskId: string, isCurrentlyPreviewing: boolean) => void
   onMerge: (taskId: string) => void
   onDelete: (taskId: string) => void
   previewingTaskId: string | null
+  taskOutputs: Record<string, TaskOutput[]>
 }
 
-function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: TaskTableProps) {
+function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, taskOutputs }: TaskCardsProps) {
+  const outputRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  // Auto-scroll when new outputs arrive
+  useEffect(() => {
+    Object.keys(taskOutputs).forEach(taskId => {
+      const outputDiv = outputRefs.current[taskId]
+      if (outputDiv) {
+        outputDiv.scrollTop = outputDiv.scrollHeight
+      }
+    })
+  }, [taskOutputs])
+
   if (tasks.length === 0) {
     return <p className="text-muted-foreground text-center py-4">No tasks in this category</p>
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>ID</TableHead>
-          <TableHead>Prompt</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Phase</TableHead>
-          <TableHead>Created</TableHead>
-          <TableHead>Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tasks.map((task) => (
-          <TableRow key={task.id}>
-            <TableCell className="font-mono text-sm">
-              {task.id.substring(0, 8)}
-            </TableCell>
-            <TableCell className="max-w-xs truncate">
-              {task.prompt}
-            </TableCell>
-            <TableCell>
-              <Badge
-                variant={
-                  task.status === 'starting' ? 'outline' :
-                  task.status === 'in_progress' ? 'default' :
-                  task.status === 'finished' ? 'success' :
-                  task.status === 'merged' ? 'purple' :
-                  'destructive'
-                }
-              >
-                {task.status}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              <span className="text-sm text-muted-foreground">
-                {task.phase}
-              </span>
-            </TableCell>
-            <TableCell>
-              {new Date(task.createdAt).toLocaleString()}
-            </TableCell>
-            <TableCell>
+    <div className="grid gap-4">
+      {tasks.map((task) => {
+        const outputs = taskOutputs[task.id] || []
+        const latestOutputs = outputs.slice(-10) // Show last 10 outputs
+        
+        return (
+          <Card key={task.id}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <span className="font-mono text-sm text-muted-foreground">
+                      {task.id.substring(0, 8)}
+                    </span>
+                    <span className="text-sm">{task.prompt}</span>
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-1">
+                    Phase: {task.phase} • Created: {new Date(task.createdAt).toLocaleString()}
+                  </CardDescription>
+                </div>
+                <Badge
+                  variant={
+                    task.status === 'starting' ? 'outline' :
+                    task.status === 'in_progress' ? 'default' :
+                    task.status === 'finished' ? 'success' :
+                    task.status === 'merged' ? 'purple' :
+                    'destructive'
+                  }
+                >
+                  {task.status}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {/* Streamed output section */}
+              <div 
+                ref={(el) => { outputRefs.current[task.id] = el }}
+                className="mb-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-3 h-32 overflow-y-auto">
+                {latestOutputs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">No output yet...</p>
+                ) : (
+                  <div className="space-y-1 font-mono text-xs">
+                    {latestOutputs.map((output) => {
+                      if (!output.content) return null
+                      
+                      const isToolUse = output.content.startsWith('[') && (
+                        output.content.includes('[Tool:') || 
+                        output.content.includes('[Reading file:') || 
+                        output.content.includes('[Editing file:') || 
+                        output.content.includes('[Writing file:') || 
+                        output.content.includes('[Searching') || 
+                        output.content.includes('[Finding') || 
+                        output.content.includes('[Running:') || 
+                        output.content.includes('[Listing:') || 
+                        output.content.includes('[Multi-editing') || 
+                        output.content.includes('[System:')
+                      )
+                      
+                      // Process content to handle escaped characters
+                      let displayContent = output.content
+                      if (displayContent.includes('\\n') || displayContent.includes('\\t')) {
+                        displayContent = displayContent
+                          .replace(/\\n/g, '\n')
+                          .replace(/\\t/g, '\t')
+                      }
+                      
+                      // Truncate long content
+                      const maxLength = 150
+                      if (displayContent.length > maxLength) {
+                        displayContent = displayContent.substring(0, maxLength) + '...'
+                      }
+                      
+                      return (
+                        <div key={output.id} className="leading-relaxed flex items-start gap-1">
+                          <span className={`font-semibold text-xs shrink-0 ${
+                            output.type === 'editor' ? 'text-green-600 dark:text-green-400' : 
+                            output.type === 'reviewer' ? 'text-blue-600 dark:text-blue-400' :
+                            output.type === 'planner' ? 'text-purple-600 dark:text-purple-400' : 
+                            'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            [{output.type.toUpperCase()}]
+                          </span>
+                          <span className={`${
+                            isToolUse 
+                              ? 'text-gray-500 dark:text-gray-500 italic' 
+                              : 'text-gray-700 dark:text-gray-300'
+                          } break-words flex-1`}>
+                            {displayContent}
+                          </span>
+                          <span className="text-[10px] text-gray-400 dark:text-gray-600 shrink-0">
+                            {new Date(output.timestamp).toLocaleTimeString([], { 
+                              hour: '2-digit', 
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                      )
+                    }).filter(Boolean)}
+                  </div>
+                )}
+              </div>
+              
+              {/* Actions */}
               <div className="flex items-center gap-2">
-                <Button variant="link" asChild>
+                <Button variant="link" asChild size="sm">
                   <Link href={`/task/${task.id}`}>
                     View Details
                   </Link>
@@ -176,16 +243,17 @@ function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: Ta
                   </svg>
                 </Button>
               </div>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
   )
 }
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [taskOutputs, setTaskOutputs] = useState<Record<string, TaskOutput[]>>({})
   const [prompt, setPrompt] = useState('')
   const [repoPath, setRepoPath] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -208,11 +276,28 @@ export default function Home() {
   useEffect(() => {
     if (!lastMessage) return
 
-    if (lastMessage.type === 'task-update' || 
-        lastMessage.type === 'task-output' ||
-        lastMessage.type === 'task-removed') {
-      // Refresh tasks when any update is received
+    if (lastMessage.type === 'task-update') {
+      // Refresh tasks when task is updated
       fetchTasks()
+    } else if (lastMessage.type === 'task-output' && lastMessage.taskId && lastMessage.data) {
+      // Add output to the specific task
+      const taskId = lastMessage.taskId
+      const output = lastMessage.data as TaskOutput
+      setTaskOutputs(prev => ({
+        ...prev,
+        [taskId]: [...(prev[taskId] || []), output]
+      }))
+    } else if (lastMessage.type === 'task-removed') {
+      // Refresh tasks and remove outputs for deleted task
+      fetchTasks()
+      if (lastMessage.taskId) {
+        const taskId = lastMessage.taskId
+        setTaskOutputs(prev => {
+          const newOutputs = { ...prev }
+          delete newOutputs[taskId]
+          return newOutputs
+        })
+      }
     }
   }, [lastMessage])
 
@@ -236,9 +321,28 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json()
         setTasks(data)
+        // Fetch outputs for all tasks
+        data.forEach((task: Task) => {
+          fetchTaskOutputs(task.id)
+        })
       }
     } catch (error) {
       console.error('Error fetching tasks:', error)
+    }
+  }
+
+  const fetchTaskOutputs = async (taskId: string) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/outputs`)
+      if (response.ok) {
+        const outputs = await response.json()
+        setTaskOutputs(prev => ({
+          ...prev,
+          [taskId]: outputs
+        }))
+      }
+    } catch (error) {
+      console.error(`Error fetching outputs for task ${taskId}:`, error)
     }
   }
 
@@ -593,21 +697,23 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="active">
-                  <TaskTable 
+                  <TaskCards 
                     tasks={tasks.filter(t => t.status === 'in_progress' || t.status === 'finished')}
                     onPreview={handlePreview}
                     onMerge={handleMerge}
                     onDelete={handleDeleteTask}
                     previewingTaskId={previewingTaskId}
+                    taskOutputs={taskOutputs}
                   />
                 </TabsContent>
                 <TabsContent value="other">
-                  <TaskTable 
+                  <TaskCards 
                     tasks={tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished')}
                     onPreview={handlePreview}
                     onMerge={handleMerge}
                     onDelete={handleDeleteTask}
                     previewingTaskId={previewingTaskId}
+                    taskOutputs={taskOutputs}
                   />
                 </TabsContent>
               </Tabs>
