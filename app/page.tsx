@@ -18,10 +18,25 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChevronDown, Trash2 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { ChevronDown, Trash2, Plus } from 'lucide-react'
 
-interface TaskCardsProps {
+interface ActiveTaskCardsProps {
   tasks: Task[]
   onPreview: (taskId: string, isCurrentlyPreviewing: boolean) => void
   onMerge: (taskId: string) => void
@@ -30,7 +45,7 @@ interface TaskCardsProps {
   taskOutputs: Record<string, TaskOutput[]>
 }
 
-function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, taskOutputs }: TaskCardsProps) {
+function ActiveTaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, taskOutputs }: ActiveTaskCardsProps) {
   const outputRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Auto-scroll when new outputs arrive
@@ -44,53 +59,48 @@ function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, task
   }, [taskOutputs])
 
   if (tasks.length === 0) {
-    return <p className="text-muted-foreground text-center py-4">No tasks in this category</p>
+    return <p className="text-muted-foreground text-center py-8">No active tasks</p>
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {tasks.map((task) => {
         const outputs = taskOutputs[task.id] || []
-        const latestOutputs = outputs.slice(-10) // Show last 10 outputs
         
         return (
-          <Card key={task.id}>
+          <Card key={task.id} className="flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <span className="font-mono text-sm text-muted-foreground">
-                      {task.id.substring(0, 8)}
-                    </span>
-                    <span className="text-sm">{task.prompt}</span>
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-base truncate">
+                    {task.prompt}
                   </CardTitle>
                   <CardDescription className="text-xs mt-1">
-                    Phase: {task.phase} • Created: {new Date(task.createdAt).toLocaleString()}
+                    {task.id.substring(0, 8)} • {task.phase}
                   </CardDescription>
                 </div>
                 <Badge
                   variant={
-                    task.status === 'starting' ? 'outline' :
                     task.status === 'in_progress' ? 'default' :
                     task.status === 'finished' ? 'success' :
-                    task.status === 'merged' ? 'purple' :
-                    'destructive'
+                    'secondary'
                   }
+                  className="ml-2"
                 >
                   {task.status}
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="pt-0">
-              {/* Streamed output section */}
+            <CardContent className="flex-1 flex flex-col pt-0">
+              {/* Full streamed output section */}
               <div 
                 ref={(el) => { outputRefs.current[task.id] = el }}
-                className="mb-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-3 h-32 overflow-y-auto">
-                {latestOutputs.length === 0 ? (
+                className="flex-1 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-3 min-h-[200px] max-h-[400px] overflow-y-auto mb-3">
+                {outputs.length === 0 ? (
                   <p className="text-xs text-muted-foreground italic">No output yet...</p>
                 ) : (
                   <div className="space-y-1 font-mono text-xs">
-                    {latestOutputs.map((output) => {
+                    {outputs.map((output) => {
                       if (!output.content) return null
                       
                       const isToolUse = output.content.startsWith('[') && (
@@ -114,15 +124,9 @@ function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, task
                           .replace(/\\t/g, '\t')
                       }
                       
-                      // Truncate long content
-                      const maxLength = 150
-                      if (displayContent.length > maxLength) {
-                        displayContent = displayContent.substring(0, maxLength) + '...'
-                      }
-                      
                       return (
-                        <div key={output.id} className="leading-relaxed flex items-start gap-1">
-                          <span className={`font-semibold text-xs shrink-0 ${
+                        <div key={output.id} className="leading-relaxed">
+                          <span className={`font-semibold text-xs ${
                             output.type === 'editor' ? 'text-green-600 dark:text-green-400' : 
                             output.type === 'reviewer' ? 'text-blue-600 dark:text-blue-400' :
                             output.type === 'planner' ? 'text-purple-600 dark:text-purple-400' : 
@@ -130,20 +134,20 @@ function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, task
                           }`}>
                             [{output.type.toUpperCase()}]
                           </span>
-                          <span className={`${
-                            isToolUse 
-                              ? 'text-gray-500 dark:text-gray-500 italic' 
-                              : 'text-gray-700 dark:text-gray-300'
-                          } break-words flex-1`}>
-                            {displayContent}
-                          </span>
-                          <span className="text-[10px] text-gray-400 dark:text-gray-600 shrink-0">
+                          <span className="text-[10px] text-gray-400 dark:text-gray-600 ml-2">
                             {new Date(output.timestamp).toLocaleTimeString([], { 
                               hour: '2-digit', 
                               minute: '2-digit',
                               second: '2-digit'
                             })}
                           </span>
+                          <pre className={`${
+                            isToolUse 
+                              ? 'text-gray-500 dark:text-gray-500 italic' 
+                              : 'text-gray-700 dark:text-gray-300'
+                          } whitespace-pre-wrap break-words mt-1`}>
+                            {displayContent}
+                          </pre>
                         </div>
                       )
                     }).filter(Boolean)}
@@ -153,7 +157,7 @@ function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, task
               
               {/* Actions */}
               <div className="flex items-center gap-2">
-                <Button variant="link" asChild size="sm">
+                <Button variant="link" asChild size="sm" className="h-8 px-2">
                   <Link href={`/task/${task.id}`}>
                     View Details
                   </Link>
@@ -227,20 +231,7 @@ function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, task
                   className="h-8 w-8 text-destructive hover:text-destructive"
                   title="Delete Task"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </CardContent>
@@ -248,6 +239,142 @@ function TaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, task
         )
       })}
     </div>
+  )
+}
+
+interface TaskTableProps {
+  tasks: Task[]
+  onPreview: (taskId: string, isCurrentlyPreviewing: boolean) => void
+  onMerge: (taskId: string) => void
+  onDelete: (taskId: string) => void
+  previewingTaskId: string | null
+}
+
+function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: TaskTableProps) {
+  if (tasks.length === 0) {
+    return <p className="text-muted-foreground text-center py-8">No other tasks</p>
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Task ID</TableHead>
+          <TableHead>Prompt</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Phase</TableHead>
+          <TableHead>Created</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tasks.map((task) => (
+          <TableRow key={task.id}>
+            <TableCell className="font-mono text-sm">
+              {task.id.substring(0, 8)}
+            </TableCell>
+            <TableCell className="max-w-md truncate">
+              {task.prompt}
+            </TableCell>
+            <TableCell>
+              <Badge
+                variant={
+                  task.status === 'starting' ? 'outline' :
+                  task.status === 'merged' ? 'purple' :
+                  'destructive'
+                }
+              >
+                {task.status}
+              </Badge>
+            </TableCell>
+            <TableCell>{task.phase}</TableCell>
+            <TableCell className="text-sm">
+              {new Date(task.createdAt).toLocaleString()}
+            </TableCell>
+            <TableCell className="text-right">
+              <div className="flex items-center justify-end gap-1">
+                <Button variant="link" asChild size="sm" className="h-8 px-2">
+                  <Link href={`/task/${task.id}`}>
+                    View
+                  </Link>
+                </Button>
+                <Button
+                  onClick={() => onPreview(task.id, previewingTaskId === task.id)}
+                  variant="ghost"
+                  size="icon"
+                  className={`h-8 w-8 ${previewingTaskId === task.id ? 'text-orange-500 hover:text-orange-600' : 'hover:text-primary'}`}
+                  title={previewingTaskId === task.id ? 'Stop Preview' : 'Preview Changes'}
+                >
+                  {previewingTaskId === task.id ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => onMerge(task.id)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-green-600 hover:text-green-700"
+                  title="Merge Task"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="18" cy="18" r="3" />
+                    <circle cx="6" cy="6" r="3" />
+                    <path d="M6 21V9a9 9 0 0 0 9 9" />
+                  </svg>
+                </Button>
+                <Button
+                  onClick={() => onDelete(task.id)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  title="Delete Task"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }
 
@@ -263,6 +390,7 @@ export default function Home() {
   const [thinkMode, setThinkMode] = useState('none')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   
   // Use WebSocket for real-time updates
   const { lastMessage } = useWebSocket('/ws')
@@ -270,6 +398,19 @@ export default function Home() {
   useEffect(() => {
     fetchTasks()
     fetchRepoPath()
+  }, [])
+
+  // Add keyboard shortcut for Command+K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setIsModalOpen(true)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   // Handle WebSocket messages
@@ -529,6 +670,7 @@ export default function Home() {
         setSelectedImage(null)
         setImagePreview(null)
         setError(null)
+        setIsModalOpen(false)
         fetchTasks()
       } else {
         const errorData = await response.json()
@@ -542,185 +684,195 @@ export default function Home() {
     }
   }
 
+  const activeTasks = tasks.filter(t => t.status === 'in_progress' || t.status === 'finished')
+  const otherTasks = tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished')
+
   return (
-    <div className="w-full px-4 py-8">
+    <div className="w-full px-4 py-6">
+      {/* Header with Submit button */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Task Management</h1>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setIsModalOpen(true)}
+            size="sm"
+            className="gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Submit New Task
+            <kbd className="ml-2 pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
+              <span className="text-xs">⌘</span>K
+            </kbd>
+          </Button>
+          
+          {tasks.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Actions
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={handleDeleteNonInProgressTasks}
+                  disabled={isDeletingAll}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleKillAllProcesses}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Kill All Tracked Processes
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
       
       {error && (
         <Alert variant="destructive" className="mb-6">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      
-      <div className="grid grid-cols-1 lg:grid-cols-10 gap-4">
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Submit New Task</CardTitle>
-            <CardDescription>Create a coding task with clear requirements</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="repoPath">Repository Path</Label>
+
+      {/* Active Tasks Section with Cards */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold mb-4">
+          Active Tasks ({activeTasks.length})
+        </h2>
+        <ActiveTaskCards
+          tasks={activeTasks}
+          onPreview={handlePreview}
+          onMerge={handleMerge}
+          onDelete={handleDeleteTask}
+          previewingTaskId={previewingTaskId}
+          taskOutputs={taskOutputs}
+        />
+      </div>
+
+      {/* Other Tasks Section with Table */}
+      <div>
+        <h2 className="text-lg font-semibold mb-4">
+          Other Tasks ({otherTasks.length})
+        </h2>
+        <TaskTable
+          tasks={otherTasks}
+          onPreview={handlePreview}
+          onMerge={handleMerge}
+          onDelete={handleDeleteTask}
+          previewingTaskId={previewingTaskId}
+        />
+      </div>
+
+      {/* Task Submission Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Submit New Task</DialogTitle>
+            <DialogDescription>
+              Create a coding task with clear requirements
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="repoPath">Repository Path</Label>
+              <Input
+                id="repoPath"
+                type="text"
+                value={repoPath}
+                onChange={(e) => setRepoPath(e.target.value)}
+                placeholder="/path/to/your/repo"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="prompt">Task Description</Label>
+              <Textarea
+                id="prompt"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="min-h-[120px]"
+                placeholder="Describe what needs to be built or fixed..."
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="image">Attach Image (Optional)</Label>
+              <div className="flex flex-col gap-2">
                 <Input
-                  id="repoPath"
-                  type="text"
-                  value={repoPath}
-                  onChange={(e) => setRepoPath(e.target.value)}
-                  placeholder="/path/to/your/repo"
-                  required
+                  id="image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="cursor-pointer"
                 />
+                {imagePreview && (
+                  <div className="mt-2 relative inline-block">
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="max-w-xs max-h-40 rounded border border-gray-200"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleClearImage}
+                      className="absolute top-1 right-1 p-1 h-6 w-6"
+                      variant="destructive"
+                      size="sm"
+                    >
+                      ×
+                    </Button>
+                  </div>
+                )}
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="prompt">Task Description</Label>
-                <Textarea
-                  id="prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  className="min-h-[120px]"
-                  placeholder="Describe what needs to be built or fixed..."
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="image">Attach Image (Optional)</Label>
-                <div className="flex flex-col gap-2">
-                  <Input
-                    id="image"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="cursor-pointer"
-                  />
-                  {imagePreview && (
-                    <div className="mt-2 relative inline-block">
-                      <img 
-                        src={imagePreview} 
-                        alt="Preview" 
-                        className="max-w-xs max-h-40 rounded border border-gray-200"
-                      />
-                      <Button
-                        type="button"
-                        onClick={handleClearImage}
-                        className="absolute top-1 right-1 p-1 h-6 w-6"
-                        variant="destructive"
-                        size="sm"
-                      >
-                        ×
-                      </Button>
-                    </div>
-                  )}
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Think Mode</Label>
+              <RadioGroup value={thinkMode} onValueChange={setThinkMode}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="no_review" id="no_review" />
+                  <Label htmlFor="no_review" className="font-normal">No Review</Label>
                 </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Think Mode</Label>
-                <RadioGroup value={thinkMode} onValueChange={setThinkMode}>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="no_review" id="no_review" />
-                    <Label htmlFor="no_review" className="font-normal">No Review</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="none" id="none" />
-                    <Label htmlFor="none" className="font-normal">None</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="level1" id="level1" />
-                    <Label htmlFor="level1" className="font-normal">Think hard (level 1)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="level2" id="level2" />
-                    <Label htmlFor="level2" className="font-normal">Ultrathink (level 2)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="planning" id="planning" />
-                    <Label htmlFor="planning" className="font-normal">Planning (level 3)</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-              
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="none" id="none" />
+                  <Label htmlFor="none" className="font-normal">None</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="level1" id="level1" />
+                  <Label htmlFor="level1" className="font-normal">Think hard (level 1)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="level2" id="level2" />
+                  <Label htmlFor="level2" className="font-normal">Ultrathink (level 2)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="planning" id="planning" />
+                  <Label htmlFor="planning" className="font-normal">Planning (level 3)</Label>
+                </div>
+              </RadioGroup>
+            </div>
+            
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? 'Submitting...' : 'Submit Task'}
               </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-7">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Active Tasks</CardTitle>
-                <CardDescription>View and manage your ongoing coding tasks</CardDescription>
-              </div>
-              {tasks.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      Actions
-                      <ChevronDown className="ml-2 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={handleDeleteNonInProgressTasks}
-                      disabled={isDeletingAll}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={handleKillAllProcesses}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Kill All Tracked Processes
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {tasks.length === 0 ? (
-              <p className="text-muted-foreground">No active tasks</p>
-            ) : (
-              <Tabs defaultValue="active" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="active">
-                    Active ({tasks.filter(t => t.status === 'in_progress' || t.status === 'finished').length})
-                  </TabsTrigger>
-                  <TabsTrigger value="other">
-                    Other ({tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished').length})
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="active">
-                  <TaskCards 
-                    tasks={tasks.filter(t => t.status === 'in_progress' || t.status === 'finished')}
-                    onPreview={handlePreview}
-                    onMerge={handleMerge}
-                    onDelete={handleDeleteTask}
-                    previewingTaskId={previewingTaskId}
-                    taskOutputs={taskOutputs}
-                  />
-                </TabsContent>
-                <TabsContent value="other">
-                  <TaskCards 
-                    tasks={tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished')}
-                    onPreview={handlePreview}
-                    onMerge={handleMerge}
-                    onDelete={handleDeleteTask}
-                    previewingTaskId={previewingTaskId}
-                    taskOutputs={taskOutputs}
-                  />
-                </TabsContent>
-              </Tabs>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
