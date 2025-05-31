@@ -17,6 +17,11 @@ export function useWebSocket(url: string, taskId?: string) {
 
   const connect = useCallback(() => {
     try {
+      // Don't create multiple connections
+      if (ws.current && (ws.current.readyState === WebSocket.CONNECTING || ws.current.readyState === WebSocket.OPEN)) {
+        return
+      }
+      
       // Build WebSocket URL
       const wsUrl = new URL(url, window.location.href)
       wsUrl.protocol = wsUrl.protocol.replace('http', 'ws')
@@ -27,7 +32,10 @@ export function useWebSocket(url: string, taskId?: string) {
       ws.current = new WebSocket(wsUrl.toString())
 
       ws.current.onopen = () => {
-        console.log('WebSocket connected')
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log('WebSocket connected')
+        }
         setIsConnected(true)
         reconnectAttempts.current = 0
 
@@ -57,21 +65,29 @@ export function useWebSocket(url: string, taskId?: string) {
           
           // Handle reconnect-required message
           if (message.type === 'reconnect-required' && message.taskId === taskId) {
-            console.log('Received reconnect request from server')
+            if (process.env.NODE_ENV === 'development') {
+              console.log('Received reconnect request from server')
+            }
             disconnect()
             setTimeout(() => connect(), 100)
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
+          // Only log parsing errors in development
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Error parsing WebSocket message:', error)
+          }
         }
       }
 
       ws.current.onclose = (event) => {
-        console.log('WebSocket disconnected', event.code, event.reason)
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log('WebSocket disconnected', event.code, event.reason)
+        }
         setIsConnected(false)
         
-        // Don't reconnect if it was a normal closure
-        if (event.code === 1000) {
+        // Don't reconnect if it was a normal closure or component is unmounting
+        if (event.code === 1000 || event.wasClean) {
           return
         }
         
@@ -89,16 +105,24 @@ export function useWebSocket(url: string, taskId?: string) {
         }
         
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log(`Attempting to reconnect (attempt ${reconnectAttempts.current})...`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Attempting to reconnect (attempt ${reconnectAttempts.current})...`)
+          }
           connect()
         }, delay)
       }
 
       ws.current.onerror = (error) => {
-        console.error('WebSocket error:', error)
+        // Suppress console errors in production
+        if (process.env.NODE_ENV === 'development') {
+          console.error('WebSocket error:', error)
+        }
       }
     } catch (error) {
-      console.error('Error creating WebSocket connection:', error)
+      // Only log connection errors in development
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error creating WebSocket connection:', error)
+      }
       
       // Retry connection after a delay
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -113,8 +137,8 @@ export function useWebSocket(url: string, taskId?: string) {
       reconnectTimeoutRef.current = null
     }
 
-    if (ws.current) {
-      ws.current.close()
+    if (ws.current && ws.current.readyState !== WebSocket.CLOSED) {
+      ws.current.close(1000, 'Component unmounting')
       ws.current = null
     }
   }, [])
@@ -138,7 +162,9 @@ export function useWebSocket(url: string, taskId?: string) {
       
       // If no activity for 1 minute, try to reconnect
       if (timeSinceLastActivity > 60000 && ws.current && ws.current.readyState === WebSocket.OPEN) {
-        console.log('No WebSocket activity for 1 minute, reconnecting...')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('No WebSocket activity for 1 minute, reconnecting...')
+        }
         disconnect()
         setTimeout(() => connect(), 100)
       }

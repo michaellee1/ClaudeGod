@@ -45,6 +45,11 @@ export function useInitiativeWebSocket(
 
   const connect = useCallback(() => {
     try {
+      // Don't create multiple connections
+      if (ws.current && (ws.current.readyState === WebSocket.CONNECTING || ws.current.readyState === WebSocket.OPEN)) {
+        return
+      }
+      
       // Build WebSocket URL
       const wsUrl = new URL(url, window.location.href)
       wsUrl.protocol = wsUrl.protocol.replace('http', 'ws')
@@ -52,7 +57,10 @@ export function useInitiativeWebSocket(
       ws.current = new WebSocket(wsUrl.toString())
 
       ws.current.onopen = () => {
-        console.log('[useInitiativeWebSocket] WebSocket connected to:', wsUrl.toString())
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[useInitiativeWebSocket] WebSocket connected to:', wsUrl.toString())
+        }
         setIsConnected(true)
         setConnectionError(null)
         reconnectAttempts.current = 0
@@ -62,7 +70,9 @@ export function useInitiativeWebSocket(
         handlersRef.current?.onConnectionStatusChange?.(true)
 
         // Re-subscribe to all previously subscribed initiatives
-        console.log('[useInitiativeWebSocket] Re-subscribing to initiatives:', Array.from(subscribedInitiatives))
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[useInitiativeWebSocket] Re-subscribing to initiatives:', Array.from(subscribedInitiatives))
+        }
         subscribedInitiatives.forEach(initiativeId => {
           ws.current?.send(JSON.stringify({
             type: 'subscribe',
@@ -100,7 +110,9 @@ export function useInitiativeWebSocket(
               break
 
             case 'initiative-output':
-              console.log('[useInitiativeWebSocket] Received initiative-output message:', message)
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[useInitiativeWebSocket] Received initiative-output message:', message)
+              }
               if (message.data && handlersRef.current?.onInitiativeOutput) {
                 handlersRef.current.onInitiativeOutput(message.data as InitiativeOutput)
               }
@@ -137,12 +149,18 @@ export function useInitiativeWebSocket(
               break
           }
         } catch (error) {
-          console.error('Error parsing Initiative WebSocket message:', error)
+          // Only log parsing errors in development
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Error parsing Initiative WebSocket message:', error)
+          }
         }
       }
 
       ws.current.onclose = (event) => {
-        console.log('Initiative WebSocket disconnected', event.code, event.reason)
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Initiative WebSocket disconnected', event.code, event.reason)
+        }
         setIsConnected(false)
         stopHeartbeat()
         stopMessageCleanup()
@@ -162,6 +180,11 @@ export function useInitiativeWebSocket(
         
         setConnectionError(errorMessage)
         
+        // Don't reconnect if it was a normal closure
+        if (event.code === 1000 || event.wasClean) {
+          return
+        }
+        
         // Attempt to reconnect with exponential backoff
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
         reconnectAttempts.current++
@@ -173,19 +196,27 @@ export function useInitiativeWebSocket(
         }
         
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log(`Attempting to reconnect Initiative WebSocket (attempt ${reconnectAttempts.current})...`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Attempting to reconnect Initiative WebSocket (attempt ${reconnectAttempts.current})...`)
+          }
           connect()
         }, delay)
       }
 
       ws.current.onerror = (error) => {
-        console.error('Initiative WebSocket error:', error)
+        // Only log errors in development
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Initiative WebSocket error:', error)
+        }
         const errorMessage = 'Unable to connect to server'
         setConnectionError(errorMessage)
         handlersRef.current?.onConnectionError?.(errorMessage)
       }
     } catch (error) {
-      console.error('Error creating Initiative WebSocket connection:', error)
+      // Only log connection errors in development
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error creating Initiative WebSocket connection:', error)
+      }
     }
   }, [url, subscribedInitiatives])
 
@@ -196,7 +227,9 @@ export function useInitiativeWebSocket(
         missedHeartbeats.current++
         
         if (missedHeartbeats.current >= 3) {
-          console.warn('Missed 3 heartbeats, closing connection')
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Missed 3 heartbeats, closing connection')
+          }
           ws.current.close()
         }
       }
@@ -219,8 +252,8 @@ export function useInitiativeWebSocket(
     stopHeartbeat()
     stopMessageCleanup()
 
-    if (ws.current) {
-      ws.current.close()
+    if (ws.current && ws.current.readyState !== WebSocket.CLOSED) {
+      ws.current.close(1000, 'Component unmounting')
       ws.current = null
     }
   }, [stopHeartbeat])
@@ -247,7 +280,9 @@ export function useInitiativeWebSocket(
   }, [])
 
   const subscribeToInitiative = useCallback((initiativeId: string) => {
-    console.log('[useInitiativeWebSocket] Subscribing to initiative:', initiativeId)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[useInitiativeWebSocket] Subscribing to initiative:', initiativeId)
+    }
     setSubscribedInitiatives(prev => {
       const next = new Set(prev)
       next.add(initiativeId)

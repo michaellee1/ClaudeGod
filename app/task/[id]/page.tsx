@@ -103,8 +103,9 @@ export default function TaskDetail() {
       // Task was removed, redirect to home
       router.push('/')
     } else if ((lastMessage.type === 'connection-lost' || lastMessage.type === 'connection-restored') && lastMessage.taskId === taskId) {
-      // Add connection status as system output
-      if (lastMessage.data) {
+      // Add connection status as system output only in development or if explicitly enabled
+      const showConnectionStatus = process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_SHOW_CONNECTION_STATUS === 'true'
+      if (showConnectionStatus && lastMessage.data) {
         const systemOutput: TaskOutput = {
           id: Math.random().toString(36).substring(7),
           taskId: taskId,
