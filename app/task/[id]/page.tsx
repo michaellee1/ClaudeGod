@@ -48,6 +48,8 @@ export default function TaskDetail() {
   // Use WebSocket for real-time updates
   const { lastMessage } = useWebSocket('/ws', taskId)
 
+  // Fetching task data on mount/id change is an appropriate use of useEffect
+  // We're synchronizing with external data from the server
   useEffect(() => {
     if (taskId) {
       fetchTask()
@@ -55,7 +57,8 @@ export default function TaskDetail() {
     }
   }, [taskId])
 
-  // Handle WebSocket messages
+  // Handling WebSocket messages is an appropriate use of useEffect
+  // We're synchronizing with external WebSocket updates
   useEffect(() => {
     if (!lastMessage || !taskId) return
 
@@ -118,7 +121,8 @@ export default function TaskDetail() {
     }
   }, [lastMessage, taskId, router])
 
-  // Only scroll to bottom on initial load when outputs first appear
+  // Scrolling on initial load is an appropriate use of useEffect
+  // We're synchronizing scroll position with DOM updates
   useEffect(() => {
     if (outputs.length > 0 && !hasScrolledToBottom.current && outputContainerRef.current) {
       outputContainerRef.current.scrollTop = outputContainerRef.current.scrollHeight

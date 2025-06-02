@@ -38,7 +38,8 @@ export function useInitiativeWebSocket(
   const processedMessages = useRef<Set<string>>(new Set())
   const messageCleanupInterval = useRef<NodeJS.Timeout | null>(null)
 
-  // Update handlers ref when they change
+  // Keeping handlers ref in sync is an appropriate use of useEffect
+  // We need to ensure callbacks use the latest versions
   useEffect(() => {
     handlersRef.current = handlers
   }, [handlers])
@@ -308,6 +309,8 @@ export function useInitiativeWebSocket(
     })
   }, [sendMessage])
 
+  // WebSocket connection management is an appropriate use of useEffect
+  // We're synchronizing with an external WebSocket connection
   useEffect(() => {
     connect()
     return () => {

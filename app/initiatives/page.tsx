@@ -171,7 +171,8 @@ export default function InitiativesPage() {
     }
   })
 
-  // Fetch initiatives on mount
+  // Fetching initiatives on mount is an appropriate use of useEffect
+  // We're synchronizing with external data from the server
   useEffect(() => {
     fetchInitiatives()
   }, [])

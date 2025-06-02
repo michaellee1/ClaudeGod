@@ -31,6 +31,8 @@ function InitiativeStatusComponent({ initiative, onRetry, className }: Initiativ
   const previousPhaseRef = useRef<InitiativePhase>(initiative.currentPhase)
 
   // Detect phase transitions and trigger success animations
+  // This is an appropriate use of useEffect - we're synchronizing with prop changes
+  // to trigger animations based on phase transitions
   useEffect(() => {
     const phaseOrder = [
       InitiativePhase.EXPLORATION,

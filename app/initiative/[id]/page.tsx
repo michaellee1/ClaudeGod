@@ -125,6 +125,8 @@ export default function InitiativeDetail() {
     onInitiativeRemoved: handleInitiativeRemoved
   })
 
+  // Fetching data and subscribing to WebSocket are appropriate uses of useEffect
+  // We're synchronizing with external systems (API and WebSocket)
   useEffect(() => {
     if (initiativeId) {
       fetchInitiative()
@@ -138,7 +140,8 @@ export default function InitiativeDetail() {
     }
   }, [initiativeId, subscribeToInitiative, unsubscribeFromInitiative, fetchInitiative])
 
-  // Auto-scroll to bottom when new outputs arrive
+  // Auto-scroll when new outputs arrive is an appropriate use of useEffect
+  // We're synchronizing scrolling with external updates
   useEffect(() => {
     outputEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [outputs])
