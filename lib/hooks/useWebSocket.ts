@@ -171,6 +171,8 @@ export function useWebSocket(url: string, taskId?: string) {
     }, 10000) // Check every 10 seconds
   }, [connect, disconnect])
 
+  // WebSocket connection management is an appropriate use of useEffect
+  // We're synchronizing with an external WebSocket connection
   useEffect(() => {
     connect()
     startActivityMonitoring()

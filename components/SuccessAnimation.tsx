@@ -14,6 +14,8 @@ interface SuccessAnimationProps {
 export function SuccessAnimation({ show, message = 'Success!', onComplete, className }: SuccessAnimationProps) {
   const [isVisible, setIsVisible] = useState(false)
 
+  // Animation timing is an appropriate use of useEffect
+  // We're managing a timeout that needs cleanup
   useEffect(() => {
     if (show) {
       setIsVisible(true)
@@ -47,6 +49,8 @@ export function SuccessAnimation({ show, message = 'Success!', onComplete, class
 export function InlineSuccessAnimation({ show, message = 'Complete!', className }: Omit<SuccessAnimationProps, 'onComplete'>) {
   const [isVisible, setIsVisible] = useState(false)
 
+  // Animation timing is an appropriate use of useEffect
+  // We're managing a timeout that needs cleanup
   useEffect(() => {
     if (show) {
       setIsVisible(true)

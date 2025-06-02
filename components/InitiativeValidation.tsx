@@ -42,11 +42,58 @@ export function InitiativeValidation({
 }: InitiativeValidationProps) {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [report, setReport] = useState<ValidationReport | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(false)
 
-  const fetchValidation = async () => {
+  // Fetch on mount and when dependencies change
+  useEffect(() => {
+    if (!initiativeId) {
+      setIsLoading(false)
+      return
+    }
+    
+    let cancelled = false
+    
+    const fetchValidation = async () => {
+      setIsLoading(true)
+      setError(null)
+      
+      try {
+        const response = await fetch(`/api/initiatives/${initiativeId}/validation`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch validation')
+        }
+        
+        const data = await response.json()
+        
+        if (!cancelled) {
+          setValidation(data.validation)
+          setReport(data.report)
+          
+          if (onValidationComplete) {
+            onValidationComplete(data.validation.valid)
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to validate initiative')
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+    
+    fetchValidation()
+    
+    return () => {
+      cancelled = true
+    }
+  }, [initiativeId, phase, onValidationComplete])
+
+  const handleRefresh = async () => {
     if (!initiativeId) return
     
     setIsLoading(true)
@@ -71,10 +118,6 @@ export function InitiativeValidation({
       setIsLoading(false)
     }
   }
-
-  useEffect(() => {
-    fetchValidation()
-  }, [initiativeId, phase])
 
   if (isLoading) {
     return <InitiativeValidationSkeleton />
@@ -137,7 +180,7 @@ export function InitiativeValidation({
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchValidation}
+          onClick={handleRefresh}
           className="text-xs"
         >
           Refresh
@@ -222,16 +265,10 @@ export function InlineValidation({
   validator: (value: any) => { valid: boolean; error?: string }
   className?: string 
 }) {
-  const [validation, setValidation] = useState<{ valid: boolean; error?: string } | null>(null)
-
-  useEffect(() => {
-    if (value !== undefined && value !== null && value !== '') {
-      const result = validator(value)
-      setValidation(result)
-    } else {
-      setValidation(null)
-    }
-  }, [value, validator])
+  // Calculate validation during render
+  const validation = value !== undefined && value !== null && value !== '' 
+    ? validator(value) 
+    : null
 
   if (!validation || validation.valid) return null
 

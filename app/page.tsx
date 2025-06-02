@@ -47,14 +47,22 @@ interface ActiveTaskCardsProps {
 
 function ActiveTaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, taskOutputs }: ActiveTaskCardsProps) {
   const outputRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const previousOutputCountsRef = useRef<Record<string, number>>({})
 
-  // Auto-scroll when new outputs arrive
+  // Auto-scroll when new outputs arrive - this is an appropriate use of useEffect
+  // We need to synchronize scrolling with external updates (new outputs)
   useEffect(() => {
     Object.keys(taskOutputs).forEach(taskId => {
       const outputDiv = outputRefs.current[taskId]
-      if (outputDiv) {
+      const currentCount = taskOutputs[taskId]?.length || 0
+      const previousCount = previousOutputCountsRef.current[taskId] || 0
+      
+      // Only scroll if there are new outputs
+      if (outputDiv && currentCount > previousCount) {
         outputDiv.scrollTop = outputDiv.scrollHeight
       }
+      
+      previousOutputCountsRef.current[taskId] = currentCount
     })
   }, [taskOutputs])
 
@@ -391,13 +399,22 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(true)
   
   // Use WebSocket for real-time updates
   const { lastMessage } = useWebSocket('/ws')
 
+  // Initial data fetching - this is an appropriate use of useEffect
+  // We need to synchronize with external data on mount
   useEffect(() => {
-    fetchTasks()
-    fetchRepoPath()
+    const initializeData = async () => {
+      try {
+        await Promise.all([fetchTasks(), fetchRepoPath()])
+      } finally {
+        setIsInitializing(false)
+      }
+    }
+    initializeData()
   }, [])
 
   // Add keyboard shortcut for Command+K

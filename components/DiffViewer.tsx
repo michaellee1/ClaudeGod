@@ -8,18 +8,17 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ diff }: DiffViewerProps) {
-  const [isDarkMode, setIsDarkMode] = useState(false)
+  const [isDarkMode, setIsDarkMode] = useState(() => 
+    typeof window !== 'undefined' && document.documentElement.classList.contains('dark')
+  )
   
+  // Watching for theme changes is an appropriate use of useEffect
+  // We're synchronizing with the external DOM state
   useEffect(() => {
-    // Check if dark mode is active
-    const checkDarkMode = () => {
+    const observer = new MutationObserver(() => {
       setIsDarkMode(document.documentElement.classList.contains('dark'))
-    }
+    })
     
-    checkDarkMode()
-    
-    // Watch for theme changes
-    const observer = new MutationObserver(checkDarkMode)
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['class']
