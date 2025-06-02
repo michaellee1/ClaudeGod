@@ -77,7 +77,7 @@ export class InitiativeManager extends EventEmitter {
       }
     } catch (error) {
       console.error(`Error loading prompt template for phase ${phase}:`, error)
-      throw new Error(`Failed to load prompt template: ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(`Failed to load prompt template for ${phase}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -295,6 +295,18 @@ export class InitiativeManager extends EventEmitter {
     // Listen for initiative-specific errors
     processManager.on('initiative-error', async (data: any) => {
       console.error(`Initiative process error for ${processInfo.initiativeId}:`, data)
+      
+      // Update initiative status to failed
+      try {
+        await this.initiativeStore.update(processInfo.initiativeId, {
+          status: InitiativeStatus.FAILED,
+          isActive: false,
+          lastError: data.error || 'Initiative process failed'
+        })
+      } catch (updateError) {
+        console.error(`Failed to update initiative status to failed:`, updateError)
+      }
+      
       await this.cleanupProcess(processInfo.initiativeId)
       this.emit(INITIATIVE_EVENTS.ERROR, { 
         initiativeId: processInfo.initiativeId, 
@@ -327,6 +339,18 @@ export class InitiativeManager extends EventEmitter {
 
     processManager.on('error', async (error: Error) => {
       console.error(`Process error for initiative ${processInfo.initiativeId}:`, error)
+      
+      // Update initiative status to failed
+      try {
+        await this.initiativeStore.update(processInfo.initiativeId, {
+          status: InitiativeStatus.FAILED,
+          isActive: false,
+          lastError: error.message || 'Process error occurred'
+        })
+      } catch (updateError) {
+        console.error(`Failed to update initiative status to failed:`, updateError)
+      }
+      
       await this.cleanupProcess(processInfo.initiativeId)
       this.emit(INITIATIVE_EVENTS.ERROR, { initiativeId: processInfo.initiativeId, phase: processInfo.phase, error })
     })
@@ -526,7 +550,7 @@ export class InitiativeManager extends EventEmitter {
 
     // Create process manager
     const workDir = this.getInitiativeDir(initiativeId)
-    const processManager = new ProcessManager(initiativeId, workDir, process.cwd())
+    const processManager = new ProcessManager(initiativeId, workDir, initiative.repositoryPath || process.cwd())
 
     // Store process info
     const processInfo: ProcessInfo = {
@@ -600,7 +624,7 @@ export class InitiativeManager extends EventEmitter {
 
     // Create process manager
     const workDir = this.getInitiativeDir(initiativeId)
-    const processManager = new ProcessManager(initiativeId, workDir, process.cwd())
+    const processManager = new ProcessManager(initiativeId, workDir, initiative.repositoryPath || process.cwd())
 
     // Store process info
     const processInfo: ProcessInfo = {
@@ -691,7 +715,7 @@ export class InitiativeManager extends EventEmitter {
 
     // Create process manager
     const workDir = this.getInitiativeDir(initiativeId)
-    const processManager = new ProcessManager(initiativeId, workDir, process.cwd())
+    const processManager = new ProcessManager(initiativeId, workDir, initiative.repositoryPath || process.cwd())
 
     // Store process info
     const processInfo: ProcessInfo = {

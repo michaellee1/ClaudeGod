@@ -154,7 +154,7 @@ class InitiativeStore {
     }
   }
 
-  async createInitiative(objective: string): Promise<Initiative> {
+  async createInitiative(objective: string, repositoryPath?: string): Promise<Initiative> {
     // Use file lock to prevent concurrent creation with 5 second timeout
     return await FileLock.withLock(this.initiativesFile, async () => {
       // Re-check concurrent initiative limit inside lock
@@ -163,6 +163,33 @@ class InitiativeStore {
       )
       if (activeInitiatives.length >= this.MAX_CONCURRENT_INITIATIVES) {
         throw new Error(`Resource limit reached: ${activeInitiatives.length}/${this.MAX_CONCURRENT_INITIATIVES} concurrent initiatives`)
+      }
+
+      // Validate repository path if provided
+      if (repositoryPath) {
+        const resolvedPath = path.resolve(repositoryPath)
+        
+        try {
+          const stats = await fs.stat(resolvedPath)
+          if (!stats.isDirectory()) {
+            throw new Error(`Repository path is not a directory: ${repositoryPath}`)
+          }
+        } catch (error: any) {
+          if (error.code === 'ENOENT') {
+            throw new Error(`Repository path does not exist: ${repositoryPath}`)
+          }
+          throw error
+        }
+        
+        // Check if it's a git repository
+        try {
+          await fs.access(path.join(resolvedPath, '.git'))
+        } catch {
+          throw new Error(`Repository path is not a git repository: ${repositoryPath}`)
+        }
+        
+        // Use the resolved absolute path
+        repositoryPath = resolvedPath
       }
 
       const id = this.generateId()
@@ -179,6 +206,7 @@ class InitiativeStore {
       const initiative: Initiative = {
         id,
         objective,
+        repositoryPath,
         status: InitiativeStatus.EXPLORING,
         currentPhase: InitiativePhase.EXPLORATION,
         createdAt: new Date(),

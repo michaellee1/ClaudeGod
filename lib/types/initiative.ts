@@ -8,7 +8,8 @@ export enum InitiativeStatus {
   PLANNING = 'planning',
   READY_FOR_TASKS = 'ready_for_tasks',
   TASKS_SUBMITTED = 'tasks_submitted',
-  COMPLETED = 'completed'
+  COMPLETED = 'completed',
+  FAILED = 'failed'
 }
 
 export enum InitiativePhase {
@@ -80,6 +81,7 @@ export interface InitiativeTaskStep {
 export interface Initiative {
   id: string
   objective: string
+  repositoryPath?: string
   status: InitiativeStatus
   currentPhase: InitiativePhase
   createdAt: Date

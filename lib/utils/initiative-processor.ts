@@ -767,7 +767,8 @@ export class InitiativeProcessor extends EventEmitter {
       [InitiativeStatus.PLANNING]: InitiativePhase.TASK_GENERATION,
       [InitiativeStatus.READY_FOR_TASKS]: InitiativePhase.READY,
       [InitiativeStatus.TASKS_SUBMITTED]: InitiativePhase.READY,
-      [InitiativeStatus.COMPLETED]: InitiativePhase.READY
+      [InitiativeStatus.COMPLETED]: InitiativePhase.READY,
+      [InitiativeStatus.FAILED]: InitiativePhase.READY
     }
     return statusPhaseMap[status] || null
   }
