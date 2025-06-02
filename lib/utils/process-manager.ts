@@ -113,6 +113,17 @@ export class ProcessManager extends EventEmitter {
     }
   }
 
+  private async readAllOutput(filePath: string): Promise<string[]> {
+    try {
+      const content = await fsPromises.readFile(filePath, 'utf-8')
+      const allLines = content.split('\n').filter(line => line.trim())
+      return allLines
+    } catch (error) {
+      console.error(`[ProcessManager] Failed to read ${filePath}:`, error)
+      return []
+    }
+  }
+
   private async checkProcessExitCode(outputPath: string): Promise<number | null> {
     try {
       const exitCodePath = outputPath.replace('.stdout.log', '.exitcode')
@@ -140,17 +151,60 @@ export class ProcessManager extends EventEmitter {
       if (processInfo.outputPaths) {
         // Reconnect to stdout
         if (processInfo.outputPaths.stdout) {
-          this.tailFile(processInfo.outputPaths.stdout, processInfo.phase || 'editor')
+          // First, read ALL historical output from the file
+          const allLines = await this.readAllOutput(processInfo.outputPaths.stdout)
+          console.log(`[ProcessManager] Reading ${allLines.length} historical log lines for task ${this.taskId}`)
           
-          // Read recent output for context
-          const recentLines = await this.readRecentOutput(processInfo.outputPaths.stdout, 50)
-          if (recentLines.length > 0) {
-            this.emit('output', {
-              type: processInfo.phase || 'editor',
-              content: '--- Recent output ---\n' + recentLines.join('\n'),
-              timestamp: new Date()
-            })
+          // Process all historical lines
+          for (const line of allLines) {
+            // Skip empty lines
+            if (!line.trim()) continue
+            
+            try {
+              // Try to parse as JSON (stream-json format)
+              const parsed = JSON.parse(line)
+              
+              // Handle different message types
+              if (parsed.type === 'assistant' && parsed.message?.content) {
+                for (const content of parsed.message.content) {
+                  if (content.type === 'text') {
+                    this.emit('output', {
+                      type: processInfo.phase || 'editor',
+                      content: content.text,
+                      timestamp: new Date()
+                    })
+                  }
+                }
+              } else if (parsed.type === 'tool_use') {
+                // Tool usage output
+                let toolInfo = this.formatToolInfo(parsed)
+                this.emit('output', {
+                  type: processInfo.phase || 'editor',
+                  content: toolInfo,
+                  timestamp: new Date()
+                })
+              }
+            } catch (e) {
+              // Not JSON - emit as plain text
+              if (!line.includes('{"type":')) {
+                this.emit('output', {
+                  type: processInfo.phase || 'editor',
+                  content: line,
+                  timestamp: new Date()
+                })
+              }
+            }
           }
+          
+          // Add a separator to indicate new live output
+          this.emit('output', {
+            type: processInfo.phase || 'editor',
+            content: '--- Reconnected to live output ---',
+            timestamp: new Date()
+          })
+          
+          // Then tail for new output
+          this.tailFile(processInfo.outputPaths.stdout, processInfo.phase || 'editor')
         }
         
         // Reconnect to stderr
@@ -276,13 +330,19 @@ export class ProcessManager extends EventEmitter {
       // File might not exist yet, retry with limit
       if (error.message.includes('ENOENT') && retryCount < MAX_RETRIES) {
         retryCount++
+        // Clean up the failed tail watcher before retrying
+        tail.unwatch()
+        this.fileTails.delete(tailKey)
+        
         setTimeout(() => {
-          if (!this.isShuttingDown && this.fileTails.has(tailKey)) {
+          if (!this.isShuttingDown) {
+            console.log(`[ProcessManager] Retrying tail for ${filePath} (attempt ${retryCount}/${MAX_RETRIES})`)
             this.tailFile(filePath, phase, isError)
           }
         }, 1000)
       } else if (retryCount >= MAX_RETRIES) {
         console.error(`[ProcessManager] Max retries reached for tailing ${filePath}`)
+        tail.unwatch()
         this.fileTails.delete(tailKey)
       }
     })
@@ -352,6 +412,11 @@ export class ProcessManager extends EventEmitter {
 
   private formatToolInfo(parsed: any): string {
     let toolInfo = `⚡ Using tool: ${parsed.name}`
+    
+    // Check if input exists before accessing properties
+    if (!parsed.input) {
+      return toolInfo
+    }
     
     switch (parsed.name) {
       case 'Read':
@@ -581,6 +646,13 @@ Begin with 'git diff'.`
       // Start tailing output files
       this.tailFile(paths.stdout, 'editor')
       this.tailFile(paths.stderr, 'editor', true)
+      
+      // Add cleanup callback for stdin file (contains potentially large prompt)
+      this.cleanupCallbacks.push(() => {
+        fsPromises.unlink(paths.stdin).catch(err => 
+          console.error(`[ProcessManager] Failed to cleanup stdin file: ${err}`)
+        )
+      })
 
       this.setupEditorHandlers()
       
@@ -1003,17 +1075,30 @@ Begin with 'git diff'.`
           return
         }
         
-        // Send SIGTERM for graceful shutdown
-        process.kill('SIGTERM')
+        // Try to kill the entire process group (negative PID)
+        try {
+          process.kill(-process.pid, 'SIGTERM')
+          console.log(`${name}: Sent SIGTERM to process group ${process.pid}`)
+        } catch (e) {
+          // If process group kill fails, try regular kill
+          process.kill('SIGTERM')
+          console.log(`${name}: Sent SIGTERM to process ${process.pid}`)
+        }
         
         // Wait up to 5 seconds for graceful exit
         await new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
             console.warn(`${name} did not exit gracefully, sending SIGKILL`)
             try {
-              process.kill('SIGKILL')
+              // Try process group kill first
+              process.kill(-process.pid, 'SIGKILL')
             } catch (e) {
-              // Process may already be dead
+              // Fallback to regular kill
+              try {
+                process.kill('SIGKILL')
+              } catch (e2) {
+                // Process may already be dead
+              }
             }
             resolve()
           }, this.GRACEFUL_SHUTDOWN_TIMEOUT)
@@ -1055,12 +1140,19 @@ Begin with 'git diff'.`
     }
     
     try {
+      // Create output files for file-based I/O
+      const { paths } = await this.createOutputStreams('planner')
+      
+      // Write prompt to stdin file
+      await fsPromises.writeFile(paths.stdin, plannerPrompt)
+      
       const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
       const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
       
-      console.log('Starting planner process')
+      console.log('Starting planner process with file-based I/O')
+      console.log('Output paths:', paths)
       
-      this.plannerProcess = spawn(nodeExecutable, [
+      const args = [
         '--no-warnings',
         '--enable-source-maps',
         claudePath,
@@ -1069,16 +1161,25 @@ Begin with 'git diff'.`
         'stream-json',
         '--verbose',
         '--dangerously-skip-permissions'
-      ], {
+      ]
+      
+      // Escape paths for shell safety
+      const escapePath = (p: string) => {
+        return "'" + p.replace(/'/g, "'\"'\"'") + "'"
+      }
+      
+      // Use shell to handle redirection
+      const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      
+      console.log('Shell command:', shellCommand)
+      
+      // Use shell with nohup for true detachment
+      this.plannerProcess = spawn('sh', ['-c', `setsid nohup ${shellCommand}`], {
         cwd: worktreePath,
-        env: { 
-          ...process.env, 
-          PATH: this.getEnhancedPath(),
-          FORCE_COLOR: '0',
-          NO_COLOR: '1'
-        },
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: 'ignore',
+        detached: true
       })
 
       if (!this.plannerProcess.pid) {
@@ -1086,6 +1187,26 @@ Begin with 'git diff'.`
       }
       
       console.log('Planner process started with PID:', this.plannerProcess.pid)
+      
+      // Unref the process so it doesn't keep the parent alive
+      this.plannerProcess.unref()
+      
+      // Register process in state manager
+      await processStateManager.registerProcess({
+        pid: this.plannerProcess.pid,
+        taskId: this.taskId,
+        phase: 'planner',
+        startTime: Date.now(),
+        worktreePath: worktreePath,
+        prompt: plannerPrompt,
+        outputPaths: paths,
+        shellCommand: shellCommand
+      })
+      
+      // Start tailing output files
+      this.tailFile(paths.stdout, 'planner')
+      this.tailFile(paths.stderr, 'planner', true)
+      
       this.emit('plannerPid', this.plannerProcess.pid)
       this.setupPlannerHandlers()
       
@@ -1102,12 +1223,6 @@ Begin with 'git diff'.`
           }
         })
       }
-      
-      // Send prompt via stdin
-      if (this.plannerProcess.stdin) {
-        this.plannerProcess.stdin.write(plannerPrompt + '\n')
-        this.plannerProcess.stdin.end()
-      }
     } catch (error) {
       console.error('Error starting planner:', error)
       this.emit('status', 'failed')
@@ -1121,89 +1236,8 @@ Begin with 'git diff'.`
     // Emit in_progress status when planner starts processing
     this.emit('status', 'in_progress')
     
-    if (this.plannerProcess.stdout) {
-      this.plannerProcess.stdout.setEncoding('utf8')
-      this.plannerProcess.stdout.on('data', (data) => {
-        this.lastOutputTime = Date.now()
-        const content = data.toString()
-        this.outputBuffer += content
-        
-        // Process stream-json format similar to editor
-        const lines = content.split('\n')
-        const processedLines = new Set<string>()
-        
-        for (const line of lines) {
-          const trimmedLine = line.trim()
-          if (!trimmedLine || processedLines.has(line)) continue
-          
-          let isJsonLine = false
-          if (trimmedLine.startsWith('{') && trimmedLine.includes('"type":')) {
-            try {
-              const parsed = JSON.parse(trimmedLine)
-              isJsonLine = true
-              
-              if (parsed.type === 'tool_use' && parsed.name) {
-                let toolInfo = `⚡ Using tool: ${parsed.name}`
-                if (parsed.input) {
-                  switch (parsed.name) {
-                    case 'Read':
-                      if (parsed.input.file_path) {
-                        toolInfo = `📖 Reading: ${parsed.input.file_path}`
-                      }
-                      break
-                    case 'Write':
-                      if (parsed.input.file_path) {
-                        toolInfo = `💾 Writing: ${parsed.input.file_path}`
-                      }
-                      break
-                    case 'Bash':
-                      if (parsed.input.command) {
-                        const cmd = parsed.input.command.substring(0, 80)
-                        toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
-                      }
-                      break
-                  }
-                }
-                
-                this.emit('output', {
-                  type: 'planner',
-                  content: toolInfo,
-                  timestamp: new Date()
-                })
-              } else if (parsed.type === 'content' && parsed.content) {
-                this.emit('output', {
-                  type: 'planner',
-                  content: parsed.content,
-                  timestamp: new Date()
-                })
-              }
-            } catch (e) {
-              // Not JSON
-            }
-          }
-          
-          if (!isJsonLine && !processedLines.has(line) && !line.includes('{"type":')) {
-            this.emit('output', {
-              type: 'planner',
-              content: line,
-              timestamp: new Date()
-            })
-            processedLines.add(line)
-          }
-        }
-      })
-    }
-
-    if (this.plannerProcess.stderr) {
-      this.plannerProcess.stderr.setEncoding('utf8')
-      this.plannerProcess.stderr.on('data', (data) => {
-        this.emit('output', {
-          type: 'planner',
-          content: data,
-          timestamp: new Date()
-        })
-      })
-    }
+    // File tailing is already set up in startPlannerProcess
+    // We only need to handle process exit
 
     this.plannerProcess.on('exit', async (code, signal) => {
       console.log('Planner process exited with code:', code)
@@ -1256,53 +1290,82 @@ Begin with 'git diff'.`
       this.plannerProcess = null
     }
     
-    // Start editor process with the stored prompt
-    const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
-    const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
-    
-    this.editorProcess = spawn(nodeExecutable, [
-      '--no-warnings',
-      '--enable-source-maps',
-      claudePath,
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--dangerously-skip-permissions'
-    ], {
-      cwd: this.worktreePath,
-      env: { 
-        ...process.env, 
-        PATH: this.getEnhancedPath(),
-        FORCE_COLOR: '0',
-        NO_COLOR: '1'
-      },
-      shell: false,
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-
-    if (!this.editorProcess.pid) {
-      throw new Error('Failed to start editor process')
-    }
-    
-    console.log('Editor process started with PID:', this.editorProcess.pid)
-    this.emit('editorPid', this.editorProcess.pid)
-    this.setupEditorHandlers()
-    
-    // Send prompt via stdin
-    if (this.editorProcess.stdin) {
-      this.editorProcess.stdin.write(this.editorPrompt + '\n')
-      this.editorProcess.stdin.end()
-    }
-    
-    // Continue with sequential execution
     try {
+      // Create output files for file-based I/O
+      const { paths } = await this.createOutputStreams('editor')
+      
+      // Write prompt to stdin file
+      await fsPromises.writeFile(paths.stdin, this.editorPrompt)
+      
+      const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
+      
+      console.log('Starting editor process with file-based I/O after planning')
+      console.log('Output paths:', paths)
+      
+      const args = [
+        '--no-warnings',
+        '--enable-source-maps',
+        claudePath,
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions'
+      ]
+      
+      // Escape paths for shell safety
+      const escapePath = (p: string) => {
+        return "'" + p.replace(/'/g, "'\"'\"'") + "'"
+      }
+      
+      // Use shell to handle redirection
+      const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      
+      // Use shell with nohup for true detachment
+      this.editorProcess = spawn('sh', ['-c', `setsid nohup ${shellCommand}`], {
+        cwd: this.worktreePath,
+        stdio: 'ignore',
+        detached: true
+      })
+
+      if (!this.editorProcess.pid) {
+        throw new Error('Failed to start editor process')
+      }
+      
+      console.log('Editor process started with PID:', this.editorProcess.pid)
+      
+      // Unref the process so it doesn't keep the parent alive
+      this.editorProcess.unref()
+      
+      // Register process in state manager
+      await processStateManager.registerProcess({
+        pid: this.editorProcess.pid,
+        taskId: this.taskId,
+        phase: 'editor',
+        startTime: Date.now(),
+        worktreePath: this.worktreePath,
+        prompt: this.editorPrompt,
+        outputPaths: paths,
+        shellCommand: shellCommand
+      })
+      
+      // Start tailing output files
+      this.tailFile(paths.stdout, 'editor')
+      this.tailFile(paths.stderr, 'editor', true)
+      
+      this.emit('editorPid', this.editorProcess.pid)
+      this.setupEditorHandlers()
+      
+      // Continue with sequential execution
       this.startSequentialExecution(this.worktreePath, this.reviewerPrompt, this.thinkMode)
     } catch (error) {
-      console.error('Error starting sequential execution:', error)
+      console.error('Error starting editor after planner:', error)
       this.emit('output', {
         type: 'editor',
-        content: `❌ Failed to start reviewer: ${error}`,
+        content: `❌ Failed to start editor: ${error}`,
         timestamp: new Date()
       })
       this.emit('status', 'failed')
@@ -1469,223 +1532,136 @@ Begin with 'git diff'.`
   }
 
   private async startInitiativeProcess(prompt: string, phase: string, timeout: number): Promise<void> {
-    const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
-    const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
-    
-    console.log(`[ProcessManager] Starting initiative ${phase} process`)
-    console.log(`[ProcessManager] Timeout: ${timeout}ms`)
-    
-    // Update metadata
-    this.initiativeMetadata = {
-      initiativeId: this.taskId.replace('initiative-', ''),
-      phase,
-      startTime: new Date(),
-      pid: undefined
-    }
-    
-    // Create process with stream-json output
-    const initiativeProcess = spawn(nodeExecutable, [
-      '--no-warnings',
-      '--enable-source-maps',
-      claudePath,
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--dangerously-skip-permissions',
-      '--think-mode',
-      'planning' // Use planning mode for all initiative phases
-    ], {
-      cwd: this.worktreePath,
-      env: { 
-        ...process.env, 
-        PATH: this.getEnhancedPath(),
-        FORCE_COLOR: '0',
-        NO_COLOR: '1'
-      },
-      shell: false,
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-
-    if (!initiativeProcess.pid) {
-      throw new Error(`Failed to start ${phase} process`)
-    }
-    
-    // Update metadata with PID
-    this.initiativeMetadata.pid = initiativeProcess.pid
-    
-    console.log(`[ProcessManager] Initiative ${phase} process started with PID:`, initiativeProcess.pid)
-    
-    // Emit process started event with metadata
-    this.emit('initiative-process-started', {
-      ...this.initiativeMetadata,
-      timeout
-    })
-    
-    // Set up output handlers specific to initiative phases
-    this.setupInitiativeHandlers(initiativeProcess, phase)
-    
-    // Send prompt via stdin
-    if (initiativeProcess.stdin) {
-      initiativeProcess.stdin.write(prompt + '\n')
-      initiativeProcess.stdin.end()
-    }
-    
-    // Set up timeout handler
-    const timeoutHandler = setTimeout(() => {
-      console.warn(`[ProcessManager] Initiative ${phase} process timed out`)
-      initiativeProcess.kill('SIGTERM')
-      this.emit('initiative-error', {
+    try {
+      // Create output files for file-based I/O
+      const { paths } = await this.createOutputStreams('planner') // Use planner phase for initiatives
+      
+      // Write prompt to stdin file
+      await fsPromises.writeFile(paths.stdin, prompt)
+      
+      const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
+      const claudePath = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js')
+      
+      console.log(`[ProcessManager] Starting initiative ${phase} process with file-based I/O`)
+      console.log(`[ProcessManager] Timeout: ${timeout}ms`)
+      console.log('Output paths:', paths)
+      
+      // Update metadata
+      this.initiativeMetadata = {
+        initiativeId: this.taskId.replace('initiative-', ''),
         phase,
-        error: `Process timed out after ${timeout / 1000 / 60} minutes`
-      })
-    }, timeout)
-    
-    // Clean up timeout on process exit
-    initiativeProcess.once('exit', () => {
-      clearTimeout(timeoutHandler)
-    })
-    
-    // Clean up any existing process before storing new one
-    if (this.plannerProcess) {
-      console.warn(`[ProcessManager] Cleaning up existing ${this.initiativeMetadata.phase} process before starting ${phase}`)
-      try {
-        this.plannerProcess.kill('SIGTERM')
-      } catch (e) {
-        // Process might already be dead
+        startTime: new Date(),
+        pid: undefined
       }
+      
+      const args = [
+        '--no-warnings',
+        '--enable-source-maps',
+        claudePath,
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions',
+        '--think-mode',
+        'planning' // Use planning mode for all initiative phases
+      ]
+      
+      // Escape paths for shell safety
+      const escapePath = (p: string) => {
+        return "'" + p.replace(/'/g, "'\"'\"'") + "'"
+      }
+      
+      // Use shell to handle redirection
+      const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      
+      console.log('Shell command:', shellCommand)
+      
+      // Use shell with nohup for true detachment
+      const initiativeProcess = spawn('sh', ['-c', `setsid nohup ${shellCommand}`], {
+        cwd: this.worktreePath,
+        stdio: 'ignore',
+        detached: true
+      })
+
+      if (!initiativeProcess.pid) {
+        throw new Error(`Failed to start ${phase} process`)
+      }
+      
+      // Update metadata with PID
+      this.initiativeMetadata.pid = initiativeProcess.pid
+      
+      console.log(`[ProcessManager] Initiative ${phase} process started with PID:`, initiativeProcess.pid)
+      
+      // Unref the process so it doesn't keep the parent alive
+      initiativeProcess.unref()
+      
+      // Register process in state manager
+      await processStateManager.registerProcess({
+        pid: initiativeProcess.pid,
+        taskId: this.taskId,
+        phase: 'planner',
+        startTime: Date.now(),
+        worktreePath: this.worktreePath,
+        prompt: prompt,
+        outputPaths: paths,
+        shellCommand: shellCommand
+      })
+      
+      // Start tailing output files
+      this.tailFile(paths.stdout, 'planner')
+      this.tailFile(paths.stderr, 'planner', true)
+      
+      // Emit process started event with metadata
+      this.emit('initiative-process-started', {
+        ...this.initiativeMetadata,
+        timeout
+      })
+      
+      // Set up output handlers specific to initiative phases
+      this.setupInitiativeHandlers(initiativeProcess, phase)
+      
+      // Set up timeout handler
+      const timeoutHandler = setTimeout(() => {
+        console.warn(`[ProcessManager] Initiative ${phase} process timed out`)
+        initiativeProcess.kill('SIGTERM')
+        this.emit('initiative-error', {
+          phase,
+          error: `Process timed out after ${timeout / 1000 / 60} minutes`
+        })
+      }, timeout)
+      
+      // Clean up timeout on process exit
+      initiativeProcess.once('exit', () => {
+        clearTimeout(timeoutHandler)
+      })
+      
+      // Clean up any existing process before storing new one
+      if (this.plannerProcess) {
+        console.warn(`[ProcessManager] Cleaning up existing ${this.initiativeMetadata.phase} process before starting ${phase}`)
+        try {
+          this.plannerProcess.kill('SIGTERM')
+        } catch (e) {
+          // Process might already be dead
+        }
+      }
+      
+      // Store process reference for cleanup
+      this.plannerProcess = initiativeProcess
+    } catch (error) {
+      console.error(`[ProcessManager] Failed to start initiative ${phase} process:`, error)
+      throw error
     }
-    
-    // Store process reference for cleanup
-    this.plannerProcess = initiativeProcess
   }
 
   private setupInitiativeHandlers(process: ChildProcess, phase: string) {
     if (!process) return
     
-    // Track output for phase completion detection
-    let outputBuffer = ''
+    // File tailing is already set up in startInitiativeProcess
+    // Track if we have errors for exit handling
     let hasError = false
-    
-    if (process.stdout) {
-      process.stdout.setEncoding('utf8')
-      process.stdout.on('data', (data) => {
-        this.lastOutputTime = Date.now()
-        const content = data.toString()
-        outputBuffer += content
-        
-        // Parse stream-json format
-        const lines = content.split('\n')
-        for (const line of lines.filter((l: string) => l.trim())) {
-          try {
-            const parsed = JSON.parse(line)
-            
-            // Handle different message types
-            if (parsed.type === 'assistant' && parsed.message?.content) {
-              for (const content of parsed.message.content) {
-                if (content.type === 'text') {
-                  this.emit('initiative-output', {
-                    phase,
-                    content: content.text,
-                    timestamp: new Date(),
-                    type: 'output'
-                  })
-                }
-              }
-            } else if (parsed.type === 'tool_use') {
-              // Enhanced tool output for initiatives
-              let toolInfo = `⚡ Using tool: ${parsed.name}`
-              
-              if (parsed.input) {
-                switch (parsed.name) {
-                  case 'Read':
-                    if (parsed.input.file_path) {
-                      toolInfo = `📖 Reading: ${parsed.input.file_path}`
-                    }
-                    break
-                  case 'Write':
-                    if (parsed.input.file_path) {
-                      toolInfo = `💾 Writing: ${parsed.input.file_path}`
-                      // Check if this is writing one of our expected output files
-                      if (phase === 'exploration' && (
-                        parsed.input.file_path.endsWith('intermediate-plan.md') ||
-                        parsed.input.file_path.endsWith('questions.md')
-                      )) {
-                        this.emit('initiative-output', {
-                          phase,
-                          content: `✅ Created ${path.basename(parsed.input.file_path)}`,
-                          timestamp: new Date()
-                        })
-                      } else if (phase === 'refinement' && parsed.input.file_path.endsWith('research-needs.md')) {
-                        this.emit('initiative-output', {
-                          phase,
-                          content: `✅ Created research needs document`,
-                          timestamp: new Date()
-                        })
-                      } else if (phase === 'planning' && parsed.input.file_path.endsWith('tasks.json')) {
-                        this.emit('initiative-output', {
-                          phase,
-                          content: `✅ Created task breakdown`,
-                          timestamp: new Date()
-                        })
-                      }
-                    }
-                    break
-                  case 'Grep':
-                    if (parsed.input.pattern) {
-                      toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
-                    }
-                    break
-                  case 'Glob':
-                    if (parsed.input.pattern) {
-                      toolInfo = `📁 Finding: ${parsed.input.pattern}`
-                    }
-                    break
-                  case 'Bash':
-                    if (parsed.input.command) {
-                      const cmd = parsed.input.command.substring(0, 80)
-                      toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
-                    }
-                    break
-                  case 'LS':
-                    if (parsed.input.path) {
-                      toolInfo = `📂 Listing: ${parsed.input.path}`
-                    }
-                    break
-                }
-              }
-              
-              this.emit('initiative-output', {
-                phase,
-                content: toolInfo,
-                timestamp: new Date()
-              })
-            }
-          } catch (e) {
-            // Not JSON, emit as regular output
-            if (line && !line.includes('{"type":')) {
-              this.emit('initiative-output', {
-                phase,
-                content: line,
-                timestamp: new Date()
-              })
-            }
-          }
-        }
-      })
-    }
-    
-    if (process.stderr) {
-      process.stderr.setEncoding('utf8')
-      process.stderr.on('data', (data) => {
-        hasError = true
-        this.emit('initiative-output', {
-          phase,
-          content: `[Error] ${data}`,
-          timestamp: new Date()
-        })
-      })
-    }
     
     process.on('exit', (code, signal) => {
       console.log(`[ProcessManager] Initiative ${phase} process exited with code:`, code)
@@ -1740,6 +1716,7 @@ Begin with 'git diff'.`
     
     process.on('error', (error) => {
       console.error(`[ProcessManager] Initiative ${phase} process error:`, error)
+      hasError = true
       
       // Provide user-friendly error messages
       let userError = error.message

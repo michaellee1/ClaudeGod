@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const outputs = taskStore.getOutputs(id)
+  const outputs = await taskStore.getOutputs(id)
   return NextResponse.json(outputs)
 }
 

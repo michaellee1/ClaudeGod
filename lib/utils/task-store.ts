@@ -715,8 +715,131 @@ class TaskStore {
     return this.tasks.get(id) || this.pendingTaskAdditions.get(id)
   }
 
-  getOutputs(taskId: string): TaskOutput[] {
-    return this.outputs.get(taskId) || []
+  async getOutputs(taskId: string): Promise<TaskOutput[]> {
+    // Read outputs ONLY from process log files
+    const processOutputDir = path.join(process.cwd(), '.process-outputs', taskId)
+    const fileOutputs: TaskOutput[] = []
+    
+    try {
+      // Check if task-specific output directory exists
+      await fs.access(processOutputDir)
+      
+      // Read all stdout log files for this task
+      const files = await fs.readdir(processOutputDir)
+      const stdoutFiles = files.filter(f => f.endsWith('.stdout.log')).sort()
+      
+      // Parse each log file
+      for (const file of stdoutFiles) {
+        const filePath = path.join(processOutputDir, file)
+        const content = await fs.readFile(filePath, 'utf-8')
+        
+        // Extract phase from filename (e.g., editor-2024-01-01.stdout.log)
+        const phase = file.split('-')[0] as 'editor' | 'reviewer' | 'planner'
+        
+        // Parse stream-json format
+        const lines = content.split('\n').filter(line => line.trim())
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line)
+            
+            // Convert stream-json to TaskOutput format
+            if (parsed.type === 'assistant' && parsed.message?.content) {
+              for (const content of parsed.message.content) {
+                if (content.type === 'text') {
+                  fileOutputs.push({
+                    id: Math.random().toString(36).substring(7),
+                    taskId,
+                    type: phase,
+                    content: content.text,
+                    // Try to extract timestamp from parsed data, fallback to file creation time
+                    timestamp: parsed.timestamp ? new Date(parsed.timestamp) : new Date()
+                  })
+                }
+              }
+            } else if (parsed.type === 'tool_use') {
+              // Format tool usage
+              let toolInfo = this.formatToolInfo(parsed)
+              fileOutputs.push({
+                id: Math.random().toString(36).substring(7),
+                taskId,
+                type: phase,
+                content: toolInfo,
+                // Try to extract timestamp from parsed data, fallback to file creation time
+                timestamp: parsed.timestamp ? new Date(parsed.timestamp) : new Date()
+              })
+            }
+          } catch (e) {
+            // Not JSON - treat as plain text output
+            if (line && !line.includes('{"type":')) {
+              fileOutputs.push({
+                id: Math.random().toString(36).substring(7),
+                taskId,
+                type: phase,
+                content: line,
+                // For plain text, we can't determine original timestamp
+                timestamp: new Date()
+              })
+            }
+          }
+        }
+      }
+      
+      // Sort by timestamp (if we had real timestamps from files)
+      // For now, they're in file order which should be chronological
+      
+      console.log(`[TaskStore] Retrieved ${fileOutputs.length} outputs from files for task ${taskId}`)
+      return fileOutputs
+      
+    } catch (error) {
+      // Directory doesn't exist or other error - return empty array
+      console.log(`No file outputs found for task ${taskId}:`, error)
+      return []
+    }
+  }
+
+  private formatToolInfo(parsed: any): string {
+    let toolInfo = `⚡ Using tool: ${parsed.name}`
+    
+    switch (parsed.name) {
+      case 'Read':
+        if (parsed.input?.file_path) {
+          toolInfo = `📖 Reading: ${parsed.input.file_path}`
+        }
+        break
+      case 'Write':
+        if (parsed.input?.file_path) {
+          toolInfo = `💾 Writing: ${parsed.input.file_path}`
+        }
+        break
+      case 'Edit':
+        if (parsed.input?.file_path) {
+          toolInfo = `✏️ Editing: ${parsed.input.file_path}`
+        }
+        break
+      case 'Grep':
+        if (parsed.input?.pattern) {
+          toolInfo = `🔍 Searching: "${parsed.input.pattern}"`
+        }
+        break
+      case 'Glob':
+        if (parsed.input?.pattern) {
+          toolInfo = `📁 Finding: ${parsed.input.pattern}`
+        }
+        break
+      case 'Bash':
+        if (parsed.input?.command) {
+          const cmd = parsed.input.command.substring(0, 80)
+          toolInfo = `🖥️ Running: ${cmd}${parsed.input.command.length > 80 ? '...' : ''}`
+        }
+        break
+      case 'LS':
+        if (parsed.input?.path) {
+          toolInfo = `📂 Listing: ${parsed.input.path}`
+        }
+        break
+    }
+    
+    return toolInfo
   }
 
   getTasksByInitiative(initiativeId: string): Task[] {

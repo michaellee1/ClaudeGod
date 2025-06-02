@@ -507,4 +507,28 @@ app.prepare().then(async () => {
       console.log('[Server] HTTP server closed')
     })
   })
+  
+  // Handle server startup errors
+  server.on('error', (error: any) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`[Server] Port ${port} is already in use`)
+      console.error('[Server] Please stop the existing server or use a different port')
+      
+      // Log the error
+      logger.logError(error, {
+        type: 'server-startup-error',
+        code: 'EADDRINUSE',
+        port
+      })
+      
+      // Exit cleanly without triggering uncaught exception handler
+      process.exit(1)
+    } else {
+      console.error('[Server] Server error:', error)
+      logger.logError(error, { type: 'server-error' })
+      
+      // For other errors, let the graceful shutdown handle it
+      throw error
+    }
+  })
 })
