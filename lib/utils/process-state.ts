@@ -5,7 +5,7 @@ import path from 'path'
 export interface ProcessInfo {
   pid: number
   taskId: string
-  phase: 'editor' | 'reviewer'
+  phase: 'editor' | 'reviewer' | 'planner'
   startTime: number
   worktreePath: string
   prompt?: string
@@ -22,7 +22,7 @@ export interface ProcessStateData {
 }
 
 class ProcessStateManager {
-  private static readonly STATE_FILE = '.claude-processes.json'
+  private static readonly STATE_FILE = path.join(require('os').homedir(), '.claude-god-data', 'claude-processes.json')
   private state: ProcessStateData = { processes: {} }
 
   constructor() {
@@ -67,7 +67,7 @@ class ProcessStateManager {
     console.log(`[ProcessState] Registered process ${info.pid} for task ${info.taskId} (${info.phase})`)
   }
 
-  async unregisterProcess(taskId: string, phase: 'editor' | 'reviewer'): Promise<void> {
+  async unregisterProcess(taskId: string, phase: 'editor' | 'reviewer' | 'planner'): Promise<void> {
     const key = `${taskId}-${phase}`
     delete this.state.processes[key]
     await this.saveState()
@@ -78,8 +78,9 @@ class ProcessStateManager {
     // Check for any phase of this task
     const editorKey = `${taskId}-editor`
     const reviewerKey = `${taskId}-reviewer`
+    const plannerKey = `${taskId}-planner`
     
-    return this.state.processes[editorKey] || this.state.processes[reviewerKey]
+    return this.state.processes[editorKey] || this.state.processes[reviewerKey] || this.state.processes[plannerKey]
   }
 
   getAllProcesses(): ProcessInfo[] {
@@ -185,7 +186,7 @@ class ProcessStateManager {
   /**
    * Get process info for a specific task
    */
-  getProcessInfo(taskId: string, phase: 'editor' | 'reviewer'): ProcessInfo | undefined {
+  getProcessInfo(taskId: string, phase: 'editor' | 'reviewer' | 'planner'): ProcessInfo | undefined {
     const key = `${taskId}-${phase}`
     return this.state.processes[key]
   }

@@ -175,6 +175,34 @@ class TaskStore {
     })
   }
 
+  private loadTasksSync() {
+    // Synchronous version for getTasks() to ensure fresh data
+    try {
+      // Clear existing tasks to ensure fresh load
+      this.tasks.clear()
+      
+      const tasksData = require('fs').readFileSync(this.tasksFile, 'utf-8')
+      const tasks = JSON.parse(tasksData)
+      
+      // Convert array back to Map and restore Date objects
+      for (const task of tasks) {
+        task.createdAt = new Date(task.createdAt)
+        if (task.mergedAt) {
+          task.mergedAt = new Date(task.mergedAt)
+        }
+        if (task.lastActivityTime) {
+          task.lastActivityTime = new Date(task.lastActivityTime)
+        }
+        if (task.lastHeartbeatTime) {
+          task.lastHeartbeatTime = new Date(task.lastHeartbeatTime)
+        }
+        this.tasks.set(task.id, task)
+      }
+    } catch (error) {
+      // Silent fail - no tasks file yet
+    }
+  }
+
   private async saveConfig() {
     try {
       await fs.writeFile(this.configPath, JSON.stringify({ repoPath: this.repoPath }, null, 2))
@@ -697,6 +725,9 @@ class TaskStore {
   }
 
   getTasks(): Task[] {
+    // ALWAYS read from disk to avoid stale data
+    this.loadTasksSync()
+    
     // Include both regular tasks and pending tasks
     const allTasks = [...this.tasks.values()]
     
@@ -711,13 +742,34 @@ class TaskStore {
   }
 
   getTask(id: string): Task | undefined {
+    // ALWAYS read from disk to avoid stale data
+    this.loadTasksSync()
+    
     // Check main map first, then pending additions
     return this.tasks.get(id) || this.pendingTaskAdditions.get(id)
   }
 
   async getOutputs(taskId: string): Promise<TaskOutput[]> {
-    // Read outputs ONLY from process log files
-    const processOutputDir = path.join(process.cwd(), '.process-outputs', taskId)
+    // ALWAYS read outputs from disk to avoid stale data
+    try {
+      const outputsData = await fs.readFile(this.outputsFile, 'utf-8')
+      const outputs = JSON.parse(outputsData)
+      
+      if (outputs[taskId]) {
+        // Restore Date objects in outputs
+        const restoredOutputs = outputs[taskId].map((output: any) => ({
+          ...output,
+          timestamp: new Date(output.timestamp)
+        }))
+        console.log(`[TaskStore] Retrieved ${restoredOutputs.length} outputs from disk for task ${taskId}`)
+        return restoredOutputs
+      }
+    } catch (error) {
+      console.log('Error reading outputs from disk:', error)
+    }
+    
+    // If not in memory, try to read from process log files
+    const processOutputDir = path.join(os.homedir(), '.claude-god-data', 'process-outputs', taskId)
     const fileOutputs: TaskOutput[] = []
     
     try {
@@ -792,7 +844,7 @@ class TaskStore {
       
     } catch (error) {
       // Directory doesn't exist or other error - return empty array
-      console.log(`No file outputs found for task ${taskId}:`, error)
+      console.log(`No file outputs found for task ${taskId}, falling back to empty array`)
       return []
     }
   }

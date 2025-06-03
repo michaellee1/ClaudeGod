@@ -16,7 +16,7 @@ export interface ProcessOutput {
 }
 
 export class ProcessManager extends EventEmitter {
-  private static readonly OUTPUT_DIR = '.process-outputs'
+  private static readonly OUTPUT_DIR = path.join(os.homedir(), '.claude-god-data', 'process-outputs')
   
   private editorProcess: ChildProcess | null = null
   private reviewerProcess: ChildProcess | null = null
@@ -73,14 +73,17 @@ export class ProcessManager extends EventEmitter {
   }
 
   private async ensureOutputDir() {
-    await fsPromises.mkdir(ProcessManager.OUTPUT_DIR, { recursive: true })
+    const absoluteOutputDir = path.resolve(ProcessManager.OUTPUT_DIR)
+    await fsPromises.mkdir(absoluteOutputDir, { recursive: true })
+    console.log(`[ProcessManager] Ensured output directory at: ${absoluteOutputDir}`)
   }
 
   private getOutputPaths(phase: 'editor' | 'reviewer' | 'planner') {
     const timestamp = new Date().toISOString().replace(/:/g, '-')
     // Use path.basename to ensure no path traversal
     const safeTaskId = path.basename(this.taskId)
-    const base = path.join(ProcessManager.OUTPUT_DIR, safeTaskId, `${phase}-${timestamp}`)
+    const absoluteOutputDir = path.resolve(ProcessManager.OUTPUT_DIR)
+    const base = path.join(absoluteOutputDir, safeTaskId, `${phase}-${timestamp}`)
     return {
       stdout: `${base}.stdout.log`,
       stderr: `${base}.stderr.log`,
@@ -90,7 +93,8 @@ export class ProcessManager extends EventEmitter {
 
   private async createOutputStreams(phase: 'editor' | 'reviewer' | 'planner') {
     await this.ensureOutputDir()
-    await fsPromises.mkdir(path.join(ProcessManager.OUTPUT_DIR, this.taskId), { recursive: true })
+    const absoluteOutputDir = path.resolve(ProcessManager.OUTPUT_DIR)
+    await fsPromises.mkdir(path.join(absoluteOutputDir, this.taskId), { recursive: true })
     
     const paths = this.getOutputPaths(phase)
     
