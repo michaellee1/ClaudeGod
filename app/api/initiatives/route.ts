@@ -14,10 +14,15 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       throw new ValidationError('Invalid JSON in request body')
     }
     
-    const { objective } = body
+    const { objective, repositoryPath } = body
 
     if (!objective || typeof objective !== 'string' || objective.trim().length === 0) {
       throw new ValidationError('Objective is required and must be a non-empty string', 'objective')
+    }
+
+    // Repository path is optional but recommended
+    if (repositoryPath && typeof repositoryPath !== 'string') {
+      throw new ValidationError('Repository path must be a string', 'repositoryPath')
     }
 
     // Validate objective using validation utility
@@ -33,7 +38,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     // Create new initiative
     let initiative;
     try {
-      initiative = await initiativeStore.createInitiative(objective.trim())
+      initiative = await initiativeStore.createInitiative(objective.trim(), repositoryPath?.trim())
     } catch (error: any) {
       if (error.message?.includes('Resource limit reached')) {
         const match = error.message.match(/(\d+)\/(\d+)/)
@@ -91,6 +96,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       status: updatedInitiative.status,
       phase: phaseString,
       objective: updatedInitiative.objective,
+      repositoryPath: updatedInitiative.repositoryPath,
       createdAt: updatedInitiative.createdAt,
       updatedAt: updatedInitiative.updatedAt,
       isActive: true,
@@ -115,11 +121,12 @@ export const GET = withErrorHandler(async () => {
       }
       
       const phaseString = phaseToString[initiative.currentPhase] || 'exploration'
-      const isActive = initiative.status !== InitiativeStatus.COMPLETED && initiative.status !== InitiativeStatus.TASKS_SUBMITTED
+      const isActive = initiative.status !== InitiativeStatus.COMPLETED && initiative.status !== InitiativeStatus.TASKS_SUBMITTED && initiative.status !== InitiativeStatus.FAILED
       
       return {
         id: initiative.id,
         objective: initiative.objective,
+        repositoryPath: initiative.repositoryPath,
         phase: phaseString,
         status: initiative.status,
         createdAt: initiative.createdAt,

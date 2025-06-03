@@ -56,7 +56,12 @@ import { InitiativesEmptyState } from '@/components/EmptyStates'
 import { useDebounce } from '@/lib/hooks/useDebounce'
 
 // Map InitiativeStore's phase to our status for display
-const getStatusFromPhase = (phase: string): string => {
+const getStatusFromPhase = (phase: string, status?: string): string => {
+  // Check if the initiative has a failed status
+  if (status === 'failed') {
+    return 'failed'
+  }
+  
   const phaseStatusMap: Record<string, string> = {
     'exploration': 'exploring',
     'questions': 'awaiting_answers',
@@ -78,7 +83,8 @@ const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destr
     'planning': 'default',
     'ready_for_tasks': 'success',
     'tasks_submitted': 'purple',
-    'completed': 'success'
+    'completed': 'success',
+    'failed': 'destructive'
   }
   return statusVariantMap[status] || 'outline'
 }
@@ -102,6 +108,7 @@ export default function InitiativesPage() {
   const [error, setError] = useState<string | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newObjective, setNewObjective] = useState('')
+  const [newRepositoryPath, setNewRepositoryPath] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [deleteInitiativeId, setDeleteInitiativeId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -207,7 +214,10 @@ export default function InitiativesPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ objective: newObjective }),
+        body: JSON.stringify({ 
+          objective: newObjective,
+          repositoryPath: newRepositoryPath.trim() || undefined
+        }),
       })
 
       if (!response.ok) {
@@ -219,6 +229,7 @@ export default function InitiativesPage() {
       await response.json()
       // Don't add to state here - let WebSocket handle it
       setNewObjective('')
+      setNewRepositoryPath('')
       setIsCreateDialogOpen(false)
     } catch (err: any) {
       console.error('Error creating initiative:', err)
@@ -307,8 +318,8 @@ export default function InitiativesPage() {
         initiative.id.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
       
       // Status filter
-      const status = getStatusFromPhase(initiative.phase)
-      const isCompleted = initiative.phase === 'ready' || !initiative.isActive
+      const status = getStatusFromPhase(initiative.phase, initiative.status)
+      const isCompleted = initiative.phase === 'ready' || !initiative.isActive || initiative.status === 'failed'
       const matchesStatus = statusFilter === 'all' || 
         (statusFilter === 'active' && !isCompleted) ||
         (statusFilter === 'completed' && isCompleted) ||
@@ -432,8 +443,8 @@ export default function InitiativesPage() {
               {/* Mobile view - Cards */}
               <div className="block sm:hidden space-y-4">
                 {filteredInitiatives.map((initiative) => {
-                  const status = getStatusFromPhase(initiative.phase)
-                  const isCompleted = initiative.phase === 'ready' || !initiative.isActive
+                  const status = getStatusFromPhase(initiative.phase, initiative.status)
+                  const isCompleted = initiative.phase === 'ready' || !initiative.isActive || initiative.status === 'failed'
                   
                   return (
                     <Card key={initiative.id} className="p-4">
@@ -442,8 +453,8 @@ export default function InitiativesPage() {
                           <h3 className="font-medium text-sm line-clamp-2 flex-1">
                             {initiative.objective}
                           </h3>
-                          <Badge variant={getStatusBadgeVariant(isCompleted ? 'completed' : status)} className="text-xs">
-                            {isCompleted ? 'Done' : status.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                          <Badge variant={getStatusBadgeVariant(isCompleted && initiative.status !== 'failed' ? 'completed' : status)} className="text-xs">
+                            {initiative.status === 'failed' ? 'Failed' : isCompleted ? 'Done' : status.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                           </Badge>
                         </div>
                         
@@ -526,8 +537,8 @@ export default function InitiativesPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredInitiatives.map((initiative) => {
-                    const status = getStatusFromPhase(initiative.phase)
-                    const isCompleted = initiative.phase === 'ready' || !initiative.isActive
+                    const status = getStatusFromPhase(initiative.phase, initiative.status)
+                    const isCompleted = initiative.phase === 'ready' || !initiative.isActive || initiative.status === 'failed'
 
                     return (
                       <TableRow key={initiative.id}>
@@ -542,8 +553,8 @@ export default function InitiativesPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={getStatusBadgeVariant(isCompleted ? 'completed' : status)}>
-                            {isCompleted ? 'Completed' : status.replace(/_/g, ' ')}
+                          <Badge variant={getStatusBadgeVariant(isCompleted && initiative.status !== 'failed' ? 'completed' : status)}>
+                            {initiative.status === 'failed' ? 'Failed' : isCompleted ? 'Completed' : status.replace(/_/g, ' ')}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -637,6 +648,19 @@ export default function InitiativesPage() {
                 className="min-h-[100px]"
                 disabled={isCreating}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="repositoryPath">Repository Path (Recommended)</Label>
+              <Input
+                id="repositoryPath"
+                value={newRepositoryPath}
+                onChange={(e) => setNewRepositoryPath(e.target.value)}
+                placeholder={`e.g., ${process.cwd()}`}
+                disabled={isCreating}
+              />
+              <p className="text-sm text-muted-foreground">
+                Specify the Git repository to analyze. Leave empty to use current directory.
+              </p>
             </div>
           </div>
           <DialogFooter>

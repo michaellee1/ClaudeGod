@@ -48,7 +48,10 @@ Formulate questions that will help refine the plan and ensure success:
 
 ## Output Format
 
-Save your findings to {{outputDir}}/exploration.md using this standardized structure:
+IMPORTANT: Save your findings to the absolute path {{outputDir}}/exploration.md
+This is a data directory path, not relative to the repository. Use the full absolute path provided.
+
+Use this standardized structure:
 
 \`\`\`markdown
 # Exploration Results
@@ -160,7 +163,8 @@ Prepare the groundwork for creating concrete tasks:
 
 ## Output Format
 
-Create a research needs document: {{outputDir}}/research-needs.md
+IMPORTANT: Create a research needs document at the absolute path: {{outputDir}}/research-needs.md
+This is a data directory path, not relative to the repository. Use the full absolute path provided.
 
 Use this standardized structure:
 \`\`\`markdown
@@ -295,7 +299,8 @@ This global context ensures continuity across all tasks and prevents divergent i
 
 ## Output Format
 
-Create a JSON file: {{outputDir}}/tasks.json
+IMPORTANT: Create a JSON file at the absolute path: {{outputDir}}/tasks.json
+This is a data directory path, not relative to the repository. Use the full absolute path provided.
 
 Structure:
 \`\`\`json

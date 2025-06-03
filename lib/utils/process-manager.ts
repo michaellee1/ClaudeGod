@@ -1412,7 +1412,7 @@ Begin with 'git diff'.`
     // Set up process configuration
     this.currentPhase = 'planner' as any // Using planner phase for initiatives
     this.taskId = `initiative-${initiative.id}`
-    this.worktreePath = this.repoPath || process.cwd()
+    this.worktreePath = initiative.repositoryPath || this.repoPath || process.cwd()
     
     // Configure timeout for exploration phase (60 minutes)
     const EXPLORATION_TIMEOUT = 3600000
@@ -1444,7 +1444,7 @@ Begin with 'git diff'.`
     // Set up process configuration
     this.currentPhase = 'planner' as any
     this.taskId = `initiative-${initiative.id}`
-    this.worktreePath = this.repoPath || process.cwd()
+    this.worktreePath = initiative.repositoryPath || this.repoPath || process.cwd()
     
     // Configure timeout for refinement phase (45 minutes)
     const REFINEMENT_TIMEOUT = 2700000
@@ -1473,7 +1473,7 @@ Begin with 'git diff'.`
     // Set up process configuration
     this.currentPhase = 'planner' as any
     this.taskId = `initiative-${initiative.id}`
-    this.worktreePath = this.repoPath || process.cwd()
+    this.worktreePath = initiative.repositoryPath || this.repoPath || process.cwd()
     
     // Configure timeout for planning phase (90 minutes)
     const PLANNING_TIMEOUT = 5400000
