@@ -617,11 +617,15 @@ Begin with 'git diff'.`
         return "'" + p.replace(/'/g, "'\"'\"'") + "'"
       }
       
-      // Use shell to handle redirection (using single quotes for safety)
+      // Use shell to handle redirection
       // Wrap command to capture exit code for recovery after server restart
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      
+      // Escape the inner command properly for the shell -c context
       const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      // Since we're passing to sh -c, we need to escape the inner command
+      const escapedInnerCommand = innerCommand.replace(/'/g, "'\"'\"'")
+      const shellCommand = `sh -c '${escapedInnerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       console.log('Shell command:', shellCommand)
       
@@ -892,11 +896,15 @@ Begin with 'git diff'.`
         return "'" + p.replace(/'/g, "'\"'\"'") + "'"
       }
       
-      // Use shell to handle redirection (using single quotes for safety)
+      // Use shell to handle redirection
       // Wrap command to capture exit code for recovery after server restart
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
+      
+      // Escape the inner command properly for the shell -c context
       const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      // Since we're passing to sh -c, we need to escape the inner command
+      const escapedInnerCommand = innerCommand.replace(/'/g, "'\"'\"'")
+      const shellCommand = `sh -c '${escapedInnerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       console.log('Shell command:', shellCommand)
       
@@ -1203,7 +1211,9 @@ Begin with 'git diff'.`
       // Use shell to handle redirection
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
       const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      // Since we're passing to sh -c, we need to escape the inner command
+      const escapedInnerCommand = innerCommand.replace(/'/g, "'\"'\"'")
+      const shellCommand = `sh -c '${escapedInnerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       console.log('Shell command:', shellCommand)
       
@@ -1354,7 +1364,9 @@ Begin with 'git diff'.`
       // Use shell to handle redirection
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
       const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      // Since we're passing to sh -c, we need to escape the inner command
+      const escapedInnerCommand = innerCommand.replace(/'/g, "'\"'\"'")
+      const shellCommand = `sh -c '${escapedInnerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       // Use shell with nohup for true detachment
       this.editorProcess = spawn('sh', ['-c', `setsid nohup ${shellCommand}`], {
@@ -1611,7 +1623,9 @@ Begin with 'git diff'.`
       // Use shell to handle redirection
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
       const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
+      // Since we're passing to sh -c, we need to escape the inner command
+      const escapedInnerCommand = innerCommand.replace(/'/g, "'\"'\"'")
+      const shellCommand = `sh -c '${escapedInnerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       console.log('Shell command:', shellCommand)
       
