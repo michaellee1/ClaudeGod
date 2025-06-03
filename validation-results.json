@@ -2,139 +2,133 @@
   {
     "test": "Node Version",
     "status": "INFO",
-    "message": "Running Node.js v16.13.0",
+    "message": "Running Node.js v20.16.0",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.592Z"
+    "timestamp": "2025-06-03T05:18:15.873Z"
   },
   {
     "test": "OS Info",
     "status": "INFO",
     "message": "Platform: darwin, Release: 24.3.0",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.592Z"
+    "timestamp": "2025-06-03T05:18:15.873Z"
   },
   {
     "test": "Temp Directory",
     "status": "PASS",
     "message": "Temp dir accessible: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.593Z"
+    "timestamp": "2025-06-03T05:18:15.874Z"
   },
   {
     "test": "Worktree Base",
     "status": "PASS",
-    "message": "Found 22 worktrees",
+    "message": "Found 20 worktrees",
     "details": [
       ".claude",
       "task-0za0xm",
       "task-1cvboa",
-      "task-2prymk",
-      "task-2spp0l",
+      "task-3ag5bo",
+      "task-3m8k9n",
+      "task-3yieyd",
       "task-61w56l",
       "task-ci884r",
       "task-g14a8r",
-      "task-i34w1co",
-      "task-ikor1",
-      "task-iktkcl",
-      "task-jopw5to",
-      "task-ks5mgd",
+      "task-gtux8",
       "task-kuk9r6",
-      "task-lhaoua",
-      "task-os43f",
       "task-pzyewv",
+      "task-r3nj98",
       "task-sjjh3k",
-      "task-u0e4rc",
+      "task-skjlni",
+      "task-xw13j",
       "task-yj9ww",
       "task-yjg7f",
+      "task-zakq19",
       "task-zo9vb"
     ],
-    "timestamp": "2025-05-29T18:32:54.593Z"
+    "timestamp": "2025-06-03T05:18:15.875Z"
   },
   {
     "test": "Git Available",
     "status": "PASS",
     "message": "Git found: git version 2.39.5 (Apple Git-154)",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.610Z"
+    "timestamp": "2025-06-03T05:18:15.909Z"
   },
   {
     "test": "Current Repo",
     "status": "PASS",
-    "message": "Valid git repository: /private/var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/task-u0e4rc",
+    "message": "Valid git repository: /Users/michaellee/Code/personal/claude-god/claude-god",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.628Z"
+    "timestamp": "2025-06-03T05:18:15.937Z"
   },
   {
     "test": "Git Branch",
     "status": "PASS",
-    "message": "Current branch: task-u0e4rc",
+    "message": "Current branch: main",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.645Z"
+    "timestamp": "2025-06-03T05:18:15.962Z"
   },
   {
     "test": "Git Status",
     "status": "INFO",
-    "message": "Working tree status: M app/api/initiatives/[id]/route.ts\n M app/initiatives/page.tsx\n M lib/hooks/useInitiativeWebSocket.ts\n M lib/utils/initiative-store.ts\n M lib/utils/initiative-validation.ts\n M server.js\n?? lib/utils/file-recovery.ts\n?? test-duplicate-initiatives.js",
+    "message": "Working tree status: M lib/utils/process-manager.ts",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.672Z"
+    "timestamp": "2025-06-03T05:18:15.998Z"
   },
   {
     "test": "Worktree Creation",
     "status": "PASS",
-    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748543574672",
+    "message": "Successfully created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-validation-1748927895998",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.805Z"
+    "timestamp": "2025-06-03T05:18:16.254Z"
   },
   {
     "test": "Worktree Cleanup",
     "status": "PASS",
     "message": "Successfully cleaned up test worktree",
     "details": null,
-    "timestamp": "2025-05-29T18:32:54.860Z"
+    "timestamp": "2025-06-03T05:18:16.344Z"
   },
   {
     "test": "Claude Command",
-    "status": "FAIL",
-    "message": "Claude CLI not found in PATH",
-    "details": "Command failed: claude --version\nReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:18633\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:32045\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:1364:6636\n",
-    "timestamp": "2025-05-29T18:32:55.284Z"
-  },
-  {
-    "test": "Claude Alt Path",
-    "status": "INFO",
-    "message": "Found claude at: /Users/michaellee/.nvm/versions/node/v20.16.0/bin/claude",
+    "status": "PASS",
+    "message": "Claude CLI found: 1.0.9 (Claude Code)",
     "details": null,
-    "timestamp": "2025-05-29T18:32:55.286Z"
+    "timestamp": "2025-06-03T05:18:17.071Z"
   },
   {
     "test": "PATH Environment",
     "status": "INFO",
-    "message": "PATH has 40 directories",
+    "message": "PATH has 30 directories",
     "details": [
-      "/usr/local/bin",
+      "/opt/homebrew/share/google-cloud-sdk/bin",
+      "/Users/michaellee/Library/pnpm",
+      "/Users/michaellee/.nvm/versions/node/v20.16.0/bin",
+      "/Users/michaellee/miniforge3/bin",
+      "/Users/michaellee/miniforge3/condabin",
+      "/opt/homebrew/opt/openjdk/bin",
+      "/opt/local/bin",
+      "/opt/local/sbin",
       "/opt/homebrew/bin",
-      "/Users/michaellee/Code/personal/claude-god/claude-god/node_modules/.bin",
-      "/Users/michaellee/Code/personal/claude-god/node_modules/.bin",
-      "/Users/michaellee/Code/personal/node_modules/.bin",
-      "/Users/michaellee/Code/node_modules/.bin",
-      "/Users/michaellee/node_modules/.bin",
-      "/Users/node_modules/.bin",
-      "/node_modules/.bin",
-      "/Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin"
+      "/opt/homebrew/sbin"
     ],
-    "timestamp": "2025-05-29T18:32:55.286Z"
+    "timestamp": "2025-06-03T05:18:17.073Z"
   },
   {
     "test": "Data Directory",
     "status": "PASS",
-    "message": "Data dir exists with 13 files",
+    "message": "Data dir exists with 16 files",
     "details": [
-      ".merge-in-progress",
       "checkpoints",
       "initiatives",
       "initiatives.json",
+      "initiatives.json.backup",
+      "logs",
       "outputs.json",
+      "process-outputs",
       "process-state.json",
+      "state",
       "tasks.backup.1748451930501.json",
       "tasks.backup.1748452392042.json",
       "tasks.backup.1748452674865.json",
@@ -143,117 +137,51 @@
       "tasks.json.backup",
       "tasks.json.backup.recovery.1748468050965.json"
     ],
-    "timestamp": "2025-05-29T18:32:55.286Z"
+    "timestamp": "2025-06-03T05:18:17.074Z"
   },
   {
     "test": "Config File",
     "status": "PASS",
     "message": "Config file exists and is valid JSON",
     "details": {
-      "repoPath": "/Users/michaellee/Code/personal/claude-god/claude-god"
+      "repoPath": "/Users/michaellee/Code/personal/cue"
     },
-    "timestamp": "2025-05-29T18:32:55.287Z"
+    "timestamp": "2025-06-03T05:18:17.079Z"
   },
   {
     "test": "Tasks File",
     "status": "PASS",
-    "message": "Found 10 tasks in storage",
+    "message": "Found 2 tasks in storage",
     "details": [
       {
-        "id": "lhaoua",
-        "status": "failed"
-      },
-      {
-        "id": "2spp0l",
-        "status": "failed"
-      },
-      {
-        "id": "2prymk",
+        "id": "gtux8",
         "status": "merged"
       },
       {
-        "id": "iktkcl",
-        "status": "merged"
-      },
-      {
-        "id": "ks5mgd",
-        "status": "merged"
-      },
-      {
-        "id": "ikor1",
-        "status": "failed"
-      },
-      {
-        "id": "i34w1co",
-        "status": "merged"
-      },
-      {
-        "id": "jopw5to",
-        "status": "merged"
-      },
-      {
-        "id": "os43f",
-        "status": "finished"
-      },
-      {
-        "id": "u0e4rc",
+        "id": "3ag5bo",
         "status": "in_progress"
       }
     ],
-    "timestamp": "2025-05-29T18:32:55.287Z"
+    "timestamp": "2025-06-03T05:18:17.086Z"
   },
   {
     "test": "Outputs File",
     "status": "PASS",
-    "message": "Found outputs for 37 tasks",
+    "message": "Found outputs for 3 tasks",
     "details": [
-      "lhaoua",
-      "2spp0l",
-      "vch36",
-      "0oufkf",
-      "454a4q",
-      "85trl",
-      "udl0ff",
-      "rfyfzm",
-      "xg1x6e",
-      "qcjkul",
-      "jb09o",
-      "f4wd2",
-      "spuqnp",
-      "jc6a1o",
-      "sd640i",
-      "abrfyc",
-      "sfyp7",
-      "2txc8l",
-      "ru1d8i",
-      "jovli9",
-      "6m726o",
-      "aeyhpc",
-      "xwxf4",
-      "5k3mft",
-      "fv1rkc",
-      "ldw5nx",
-      "h6nrok",
-      "tfnam6",
-      "2prymk",
-      "iktkcl",
-      "ks5mgd",
-      "ikor1",
-      "i34w1co",
-      "jopw5to",
-      "a346h4",
-      "os43f",
-      "u0e4rc"
+      "3ag5bo",
+      "gtux8",
+      "27bhrg"
     ],
-    "timestamp": "2025-05-29T18:32:55.300Z"
+    "timestamp": "2025-06-03T05:18:17.092Z"
   },
   {
     "test": "Output Structure",
     "status": "PASS",
     "message": "Output structure validation",
     "details": {
-      "taskId": "lhaoua",
-      "outputCount": 2,
+      "taskId": "3ag5bo",
+      "outputCount": 78,
       "sampleFields": [
         "id",
         "taskId",
@@ -262,221 +190,189 @@
         "timestamp"
       ],
       "hasContent": true,
-      "contentLength": 72,
-      "contentPreview": "⚠️ Task was interrupted. Attempting to reconnect to running processes..."
+      "contentLength": 10,
+      "contentPreview": "🚀 Started"
     },
-    "timestamp": "2025-05-29T18:32:55.300Z"
+    "timestamp": "2025-06-03T05:18:17.093Z"
   },
   {
     "test": "Process Spawn",
     "status": "PASS",
     "message": "Successfully spawned process, output: test",
     "details": null,
-    "timestamp": "2025-05-29T18:32:55.307Z"
+    "timestamp": "2025-06-03T05:18:17.108Z"
   },
   {
-    "test": "Basic Claude Test",
-    "status": "FAIL",
-    "message": "Basic Claude command failed",
-    "details": "Command failed: claude --help\nReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:18633\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:422:32045\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:13:402\n    at file:///Users/michaellee/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/cli.js:1364:6636\n",
-    "timestamp": "2025-05-29T18:32:55.722Z"
+    "test": "Claude Help",
+    "status": "PASS",
+    "message": "Claude --help works",
+    "details": {
+      "stdoutLength": 2592,
+      "stderrLength": 0
+    },
+    "timestamp": "2025-06-03T05:18:17.782Z"
+  },
+  {
+    "test": "Claude Echo Pipe",
+    "status": "PASS",
+    "message": "Claude with echo pipe works",
+    "details": {
+      "stdoutLength": 8,
+      "stderrLength": 0,
+      "stdoutPreview": "test123\n",
+      "stderrPreview": ""
+    },
+    "timestamp": "2025-06-03T05:18:26.013Z"
   },
   {
     "test": "Test Worktree",
     "status": "PASS",
-    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748543575722",
+    "message": "Created test worktree: /var/folders/8_/px6prl_d5vb82nscj4ddwhtw0000gn/T/claude-god-worktrees/test-claude-spawn-1748927906013",
     "details": null,
-    "timestamp": "2025-05-29T18:32:55.800Z"
+    "timestamp": "2025-06-03T05:18:26.160Z"
   },
   {
     "test": "Claude Test: Print Mode File Path",
     "status": "INFO",
     "message": "Testing: claude -p /tmp/test-prompt.txt",
     "details": null,
-    "timestamp": "2025-05-29T18:32:55.802Z"
+    "timestamp": "2025-06-03T05:18:26.166Z"
   },
   {
     "test": "Claude Print Mode File Path",
-    "status": "PASS",
-    "message": "Exited: 1",
+    "status": "FAIL",
+    "message": "TIMED OUT",
     "details": {
-      "pid": 10136,
-      "outputReceived": true,
+      "pid": 15175,
+      "outputReceived": false,
       "stdoutLength": 0,
-      "stderrLength": 640,
+      "stderrLength": 0,
       "stdoutPreview": "",
-      "stderrPreview": "ReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22"
+      "stderrPreview": ""
     },
-    "timestamp": "2025-05-29T18:32:56.196Z"
+    "timestamp": "2025-06-03T05:18:36.170Z"
   },
   {
     "test": "Claude Test: Print Mode Stdin",
     "status": "INFO",
     "message": "Testing: claude -p",
     "details": null,
-    "timestamp": "2025-05-29T18:32:56.196Z"
+    "timestamp": "2025-06-03T05:18:36.170Z"
   },
   {
     "test": "Claude Print Mode Stdin",
-    "status": "PASS",
-    "message": "Exited: 1",
+    "status": "FAIL",
+    "message": "TIMED OUT",
     "details": {
-      "pid": 10137,
-      "outputReceived": true,
+      "pid": 15844,
+      "outputReceived": false,
       "stdoutLength": 0,
-      "stderrLength": 640,
+      "stderrLength": 0,
       "stdoutPreview": "",
-      "stderrPreview": "ReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22"
+      "stderrPreview": ""
     },
-    "timestamp": "2025-05-29T18:32:56.589Z"
+    "timestamp": "2025-06-03T05:18:46.177Z"
   },
   {
     "test": "Claude Test: Print Mode Basic",
     "status": "INFO",
     "message": "Testing: claude -p echo \"Hello World\"",
     "details": null,
-    "timestamp": "2025-05-29T18:32:56.589Z"
+    "timestamp": "2025-06-03T05:18:46.177Z"
   },
   {
     "test": "Claude Print Mode Basic",
-    "status": "PASS",
-    "message": "Exited: 1",
+    "status": "FAIL",
+    "message": "TIMED OUT",
     "details": {
-      "pid": 10138,
-      "outputReceived": true,
+      "pid": 16557,
+      "outputReceived": false,
       "stdoutLength": 0,
-      "stderrLength": 640,
+      "stderrLength": 0,
       "stdoutPreview": "",
-      "stderrPreview": "ReferenceError: ReadableStream is not defined\n    at file:///Users/michaellee/.nvm/versions/node/v22"
+      "stderrPreview": ""
     },
-    "timestamp": "2025-05-29T18:32:56.980Z"
+    "timestamp": "2025-06-03T05:18:56.180Z"
   },
   {
     "test": "Test Cleanup",
     "status": "PASS",
     "message": "Cleaned up test worktree",
     "details": null,
-    "timestamp": "2025-05-29T18:32:57.037Z"
+    "timestamp": "2025-06-03T05:18:56.238Z"
   },
   {
     "test": "Env HOME",
     "status": "PASS",
     "message": "HOME=/Users/michaellee",
     "details": null,
-    "timestamp": "2025-05-29T18:32:57.037Z"
+    "timestamp": "2025-06-03T05:18:56.238Z"
   },
   {
     "test": "Env PATH",
     "status": "PASS",
-    "message": "PATH=/usr/local/bin:/opt/homebrew/bin:/Users/michaellee...",
+    "message": "PATH=/opt/homebrew/share/google-cloud-sdk/bin:/Users/mi...",
     "details": null,
-    "timestamp": "2025-05-29T18:32:57.037Z"
+    "timestamp": "2025-06-03T05:18:56.238Z"
   },
   {
     "test": "Env USER",
     "status": "PASS",
     "message": "USER=michaellee",
     "details": null,
-    "timestamp": "2025-05-29T18:32:57.037Z"
+    "timestamp": "2025-06-03T05:18:56.238Z"
   },
   {
     "test": "API Server",
     "status": "PASS",
     "message": "API server responding (status: 200)",
     "details": null,
-    "timestamp": "2025-05-29T18:32:57.053Z"
+    "timestamp": "2025-06-03T05:18:56.253Z"
   },
   {
     "test": "Tasks API",
     "status": "PASS",
-    "message": "Tasks endpoint returned 10 tasks",
+    "message": "Tasks endpoint returned 2 tasks",
     "details": [
       {
-        "id": "u0e4rc",
+        "id": "3ag5bo",
         "status": "in_progress"
       },
       {
-        "id": "os43f",
-        "status": "finished"
-      },
-      {
-        "id": "jopw5to",
+        "id": "gtux8",
         "status": "merged"
-      },
-      {
-        "id": "i34w1co",
-        "status": "merged"
-      },
-      {
-        "id": "ikor1",
-        "status": "failed"
-      },
-      {
-        "id": "ks5mgd",
-        "status": "merged"
-      },
-      {
-        "id": "iktkcl",
-        "status": "merged"
-      },
-      {
-        "id": "2prymk",
-        "status": "merged"
-      },
-      {
-        "id": "2spp0l",
-        "status": "failed"
-      },
-      {
-        "id": "lhaoua",
-        "status": "failed"
       }
     ],
-    "timestamp": "2025-05-29T18:32:57.061Z"
+    "timestamp": "2025-06-03T05:18:56.259Z"
   },
   {
-    "test": "Outputs API (u0e4rc)",
+    "test": "Outputs API (3ag5bo)",
     "status": "PASS",
-    "message": "Task u0e4rc has 108 outputs",
+    "message": "Task 3ag5bo has 78 outputs",
     "details": {
-      "taskId": "u0e4rc",
-      "outputCount": 108,
+      "taskId": "3ag5bo",
+      "outputCount": 78,
       "sampleOutput": {
         "type": "editor",
         "contentLength": 10,
-        "timestamp": "2025-05-29T18:06:52.121Z"
+        "timestamp": "2025-06-03T04:44:24.148Z"
       }
     },
-    "timestamp": "2025-05-29T18:32:58.194Z"
+    "timestamp": "2025-06-03T05:18:56.268Z"
   },
   {
-    "test": "Outputs API (os43f)",
+    "test": "Outputs API (gtux8)",
     "status": "PASS",
-    "message": "Task os43f has 41 outputs",
+    "message": "Task gtux8 has 109 outputs",
     "details": {
-      "taskId": "os43f",
-      "outputCount": 41,
+      "taskId": "gtux8",
+      "outputCount": 109,
       "sampleOutput": {
         "type": "editor",
         "contentLength": 10,
-        "timestamp": "2025-05-29T18:06:30.943Z"
+        "timestamp": "2025-06-02T20:42:42.964Z"
       }
     },
-    "timestamp": "2025-05-29T18:32:58.207Z"
-  },
-  {
-    "test": "Outputs API (jopw5to)",
-    "status": "PASS",
-    "message": "Task jopw5to has 54 outputs",
-    "details": {
-      "taskId": "jopw5to",
-      "outputCount": 54,
-      "sampleOutput": {
-        "type": "editor",
-        "contentLength": 10,
-        "timestamp": "2025-05-29T04:35:34.317Z"
-      }
-    },
-    "timestamp": "2025-05-29T18:32:58.247Z"
+    "timestamp": "2025-06-03T05:18:56.281Z"
   }
 ]

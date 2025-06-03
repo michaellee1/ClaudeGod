@@ -512,6 +512,9 @@ The plan should include:
 Be thorough but concise. Focus on actionable steps.`
         
         // Store prompts for later phases
+        // Escape the prompt to handle quotes and special characters safely
+        const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')
+        
         this.editorPrompt = `${prompt}. Ultrathink
 
 IMPORTANT: A detailed plan has been created at ${this.planFilePath}
@@ -522,9 +525,11 @@ IMPORTANT: A detailed plan has been created at ${this.planFilePath}
 4. Ensure all requirements from the original prompt are met
 5. The plan provides guidance but you should use your judgment
 
-Original task: "${prompt}"`
+Original task: ${prompt}`
         
-        this.reviewerPrompt = `Task: "${prompt}"
+        this.reviewerPrompt = `## Task Review
+
+Original task: ${prompt}
 
 A plan was created at ${this.planFilePath} and implementation was done based on it.
 
@@ -565,7 +570,9 @@ Begin with 'git diff'.`
     }
     
     const editorPrompt = prompt
-    const reviewerPrompt = `Task: "${prompt}"
+    const reviewerPrompt = `## Task Review
+
+Original task: ${prompt}
 
 Review the implementation:
 1. Run 'git diff' to see changes
@@ -613,8 +620,8 @@ Begin with 'git diff'.`
       // Use shell to handle redirection (using single quotes for safety)
       // Wrap command to capture exit code for recovery after server restart
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
-      const innerCommand = `${nodeExecutable} ${args.join(' ')} < '${escapePath(paths.stdin)}' > '${escapePath(paths.stdout)}' 2> '${escapePath(paths.stderr)}'`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > '${escapePath(exitCodePath)}''`
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       console.log('Shell command:', shellCommand)
       
@@ -661,7 +668,13 @@ Begin with 'git diff'.`
       this.setupEditorHandlers()
       
       // Start sequential execution which will handle reviewer process
-      this.startSequentialExecution(worktreePath, reviewerPrompt, thinkMode)
+      // Don't await this as we need to return PIDs immediately
+      // Instead, handle errors within the async execution
+      this.startSequentialExecution(worktreePath, reviewerPrompt, thinkMode).catch(error => {
+        console.error(`[ProcessManager ${this.taskId}] Error in sequential execution:`, error)
+        this.emit('error', error)
+        this.emit('status', 'failed')
+      })
 
       // Return PIDs (reviewer PID will be 0 initially)
       return {
@@ -809,14 +822,20 @@ Begin with 'git diff'.`
   }
 
   private async startSequentialExecution(worktreePath: string, reviewerPrompt: string, thinkMode?: string) {
+    console.log(`[ProcessManager ${this.taskId}] Starting sequential execution, thinkMode: ${thinkMode}`)
+    
     // Phase 1: Editor
     this.currentPhase = 'editor'
     this.emit('status', 'in_progress')
     this.emit('phase', 'editor')
     this.lastOutputTime = Date.now()
     
+    console.log(`[ProcessManager ${this.taskId}] Waiting for editor process to complete...`)
+    
     // Wait for editor to complete (it will exit on its own with -p mode)
     await this.waitForProcessExit(this.editorProcess, 'editor')
+    
+    console.log(`[ProcessManager ${this.taskId}] Editor process completed, checking if reviewer should start`)
     
     // Check if we should skip the reviewer
     if (thinkMode === 'no_review') {
@@ -834,12 +853,17 @@ Begin with 'git diff'.`
     this.currentPhase = 'reviewer'
     this.emit('phase', 'reviewer')
     
+    console.log(`[ProcessManager ${this.taskId}] Starting reviewer phase`)
+    
     try {
       // Create output files for file-based I/O
       const { paths } = await this.createOutputStreams('reviewer')
+      console.log(`[ProcessManager ${this.taskId}] Created reviewer output streams:`, paths)
       
       // Write prompt to stdin file
+      console.log(`[ProcessManager ${this.taskId}] Writing reviewer prompt to stdin file (length: ${reviewerPrompt.length})`)
       await fsPromises.writeFile(paths.stdin, reviewerPrompt)
+      console.log(`[ProcessManager ${this.taskId}] Reviewer prompt written successfully`)
       
       // Now start the reviewer process
       const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
@@ -871,8 +895,8 @@ Begin with 'git diff'.`
       // Use shell to handle redirection (using single quotes for safety)
       // Wrap command to capture exit code for recovery after server restart
       const exitCodePath = paths.stdout.replace('.stdout.log', '.exitcode')
-      const innerCommand = `${nodeExecutable} ${args.join(' ')} < '${escapePath(paths.stdin)}' > '${escapePath(paths.stdout)}' 2> '${escapePath(paths.stderr)}'`
-      const shellCommand = `sh -c '${innerCommand}; echo $? > '${escapePath(exitCodePath)}''`
+      const innerCommand = `${nodeExecutable} ${args.join(' ')} < ${escapePath(paths.stdin)} > ${escapePath(paths.stdout)} 2> ${escapePath(paths.stderr)}`
+      const shellCommand = `sh -c '${innerCommand}; echo $? > ${escapePath(exitCodePath)}'`
       
       console.log('Shell command:', shellCommand)
       
@@ -914,11 +938,15 @@ Begin with 'git diff'.`
       
       this.lastOutputTime = Date.now()
       
+      console.log(`[ProcessManager ${this.taskId}] Reviewer process started successfully, waiting for completion`)
+      
       // Wait for reviewer to complete (it will exit on its own with -p mode)
       await this.waitForProcessExit(this.reviewerProcess, 'reviewer')
       
+      console.log(`[ProcessManager ${this.taskId}] Reviewer process has exited`)
       // The exit handler will emit the completed event
     } catch (error) {
+      console.error(`[ProcessManager ${this.taskId}] Failed to start reviewer:`, error)
       this.emit('status', 'failed')
       this.emit('output', {
         type: 'reviewer',
@@ -1364,7 +1392,11 @@ Begin with 'git diff'.`
       this.setupEditorHandlers()
       
       // Continue with sequential execution
-      this.startSequentialExecution(this.worktreePath, this.reviewerPrompt, this.thinkMode)
+      this.startSequentialExecution(this.worktreePath, this.reviewerPrompt, this.thinkMode).catch(error => {
+        console.error(`[ProcessManager ${this.taskId}] Error in sequential execution after planner:`, error)
+        this.emit('error', error)
+        this.emit('status', 'failed')
+      })
     } catch (error) {
       console.error('Error starting editor after planner:', error)
       this.emit('output', {
