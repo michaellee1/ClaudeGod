@@ -1074,21 +1074,27 @@ class TaskStore {
     const task = this.tasks.get(taskId)
     if (!task) throw new Error('Task not found')
     
+    console.log(`[TaskStore] sendPromptToTask called for task ${taskId} with status: ${task.status}`)
+    console.log(`[TaskStore] Current promptHistory length: ${task.promptHistory?.length || 0}`)
+    
     // If task is finished or merged, we need to restart the editor/reviewer cycle
     if (task.status === 'finished' || task.status === 'merged') {
       // Store the current state in prompt history
       if (!task.promptHistory) {
         task.promptHistory = []
+        // Save immediately to ensure promptHistory is persisted
+        await this.saveTasksImmediately()
       }
       
       // On first additional prompt request, we need to capture the original task completion
-      if (task.promptHistory.length === 0 && task.commitHash) {
+      if (task.promptHistory.length === 0) {
         // Store the original task completion
         task.promptHistory.push({
           prompt: task.prompt,
           timestamp: task.createdAt,
-          commitHash: task.commitHash
+          commitHash: task.commitHash || undefined
         })
+        console.log(`[TaskStore] Added original task to promptHistory with commitHash: ${task.commitHash}`)
       }
       
       // Get git diff to see what we built
@@ -1172,10 +1178,13 @@ ${gitDiff}
       this.setupProcessManagerEvents(newProcessManager, task)
       
       // Start the new cycle with the context prompt
+      console.log(`[TaskStore] Starting new process manager with context prompt for request changes`)
+      console.log(`[TaskStore] Context prompt length: ${contextPrompt.length}`)
       await newProcessManager.start(contextPrompt, task.thinkMode)
       
       // Save the updated task
-      await this.saveTasks()
+      await this.saveTasksImmediately() // Use immediate save for request changes
+      console.log(`[TaskStore] Task saved after starting request changes cycle`)
       this.broadcastTaskUpdate(taskId, task)
     } else {
       // Original behavior for in-progress tasks
@@ -1481,8 +1490,17 @@ ${gitDiff}
       if (shouldAutoCommit) {
         try {
           console.log(`Auto-committing task ${task.id} after successful completion`)
+          
+          // Determine commit message based on whether this is a request changes cycle
+          let commitMessage = `Complete task: ${task.prompt}`
+          if (task.promptHistory && task.promptHistory.length > 1) {
+            // This is a request changes cycle - use the latest prompt
+            const latestPrompt = task.promptHistory[task.promptHistory.length - 1].prompt
+            commitMessage = `Apply requested changes: ${latestPrompt}`
+          }
+          
           const commitHash = await gitLock.withLock(task.repoPath, async () => {
-            return await commitChanges(task.worktree, `Complete task: ${task.prompt}`)
+            return await commitChanges(task.worktree, commitMessage)
           })
           task.commitHash = commitHash
           console.log(`Task ${task.id} auto-committed with hash: ${commitHash}`)

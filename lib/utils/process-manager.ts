@@ -570,7 +570,25 @@ Begin with 'git diff'.`
     }
     
     const editorPrompt = prompt
-    const reviewerPrompt = `## Task Review
+    
+    // For request changes, the prompt contains context about previous changes
+    const isRequestChanges = prompt.includes('Current implementation shown below') || prompt.includes('Previous tasks:')
+    
+    const reviewerPrompt = isRequestChanges ? 
+      `## Request Changes Review
+
+${prompt}
+
+Review the implementation:
+1. Run 'git diff' to see all changes
+2. Verify the requested changes were properly applied
+3. Ensure no regression from previous implementation
+4. Check for bugs, security issues, code quality
+5. Fix any issues found
+6. Run tests if available
+
+Begin with 'git diff'.` :
+      `## Task Review
 
 Original task: ${prompt}
 
@@ -589,6 +607,9 @@ Begin with 'git diff'.`
       const { paths } = await this.createOutputStreams('editor')
       
       // Write prompt to stdin file
+      console.log(`[ProcessManager ${this.taskId}] Writing editor prompt to stdin file (length: ${editorPrompt.length})`)
+      // Log first 200 chars of editor prompt for debugging
+      console.log(`[ProcessManager ${this.taskId}] Editor prompt preview: ${editorPrompt.substring(0, 200)}...`)
       await fsPromises.writeFile(paths.stdin, editorPrompt)
       
       const nodeExecutable = path.join(os.homedir(), '.nvm/versions/node/v22.14.0/bin/node')
@@ -670,6 +691,10 @@ Begin with 'git diff'.`
       })
 
       this.setupEditorHandlers()
+      
+      // Store the reviewer prompt for later use (important for request changes)
+      this.reviewerPrompt = reviewerPrompt
+      this.thinkMode = thinkMode
       
       // Start sequential execution which will handle reviewer process
       // Don't await this as we need to return PIDs immediately
@@ -866,6 +891,8 @@ Begin with 'git diff'.`
       
       // Write prompt to stdin file
       console.log(`[ProcessManager ${this.taskId}] Writing reviewer prompt to stdin file (length: ${reviewerPrompt.length})`)
+      // Log first 200 chars of reviewer prompt for debugging
+      console.log(`[ProcessManager ${this.taskId}] Reviewer prompt preview: ${reviewerPrompt.substring(0, 200)}...`)
       await fsPromises.writeFile(paths.stdin, reviewerPrompt)
       console.log(`[ProcessManager ${this.taskId}] Reviewer prompt written successfully`)
       
@@ -1117,12 +1144,19 @@ Begin with 'git diff'.`
         
         // Try to kill the entire process group (negative PID)
         try {
-          process.kill(-process.pid, 'SIGTERM')
-          console.log(`${name}: Sent SIGTERM to process group ${process.pid}`)
+          // Use OS-level kill for process group
+          if (process.pid) {
+            require('child_process').execSync(`kill -TERM -${process.pid}`, { stdio: 'ignore' })
+            console.log(`${name}: Sent SIGTERM to process group ${process.pid}`)
+          }
         } catch (e) {
           // If process group kill fails, try regular kill
-          process.kill('SIGTERM')
-          console.log(`${name}: Sent SIGTERM to process ${process.pid}`)
+          try {
+            process.kill('SIGTERM')
+            console.log(`${name}: Sent SIGTERM to process ${process.pid}`)
+          } catch (e2) {
+            // Process might already be dead
+          }
         }
         
         // Wait up to 5 seconds for graceful exit
@@ -1130,8 +1164,10 @@ Begin with 'git diff'.`
           const timeout = setTimeout(() => {
             console.warn(`${name} did not exit gracefully, sending SIGKILL`)
             try {
-              // Try process group kill first
-              process.kill(-process.pid, 'SIGKILL')
+              // Try process group kill first using OS-level kill
+              if (process.pid) {
+                require('child_process').execSync(`kill -KILL -${process.pid}`, { stdio: 'ignore' })
+              }
             } catch (e) {
               // Fallback to regular kill
               try {
