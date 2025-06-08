@@ -13,11 +13,12 @@ interface HealthStatus {
     sync: ComponentHealth
     recovery: ComponentHealth
     tasks: ComponentHealth
-    websocket: ComponentHealth
+    terminals: ComponentHealth
   }
   metrics: {
     activeTasks: number
     totalTasks: number
+    activeTerminals: number
     uptime: number
     memoryUsage: NodeJS.MemoryUsage
   }
@@ -41,11 +42,12 @@ export async function GET() {
       sync: { status: 'healthy' },
       recovery: { status: 'healthy' },
       tasks: { status: 'healthy' },
-      websocket: { status: 'healthy' }
+      terminals: { status: 'healthy' }
     },
     metrics: {
       activeTasks: 0,
       totalTasks: 0,
+      activeTerminals: 0,
       uptime: process.uptime(),
       memoryUsage: process.memoryUsage()
     },
@@ -66,8 +68,8 @@ export async function GET() {
     // Check task store
     checkTaskStore(health)
     
-    // Check WebSocket connections
-    checkWebSocketStatus(health)
+    // Check terminal sessions
+    checkTerminalStatus(health)
     
     // Determine overall health
     const components = Object.values(health.components)
@@ -215,22 +217,21 @@ function checkTaskStore(health: HealthStatus) {
   }
 }
 
-function checkWebSocketStatus(health: HealthStatus) {
+function checkTerminalStatus(health: HealthStatus) {
   try {
-    if (typeof global !== 'undefined' && (global as any).wss) {
-      const wss = (global as any).wss
-      const clientCount = wss.clients?.size || 0
-      
-      health.components.websocket.message = `${clientCount} active connections`
-      health.components.websocket.lastCheck = new Date()
+    const activeSessions = taskStore.getActiveTerminalSessions()
+    health.metrics.activeTerminals = activeSessions.length
+    
+    if (activeSessions.length > 0) {
+      health.components.terminals.message = `${activeSessions.length} active terminal sessions`
     } else {
-      health.components.websocket.status = 'degraded'
-      health.components.websocket.message = 'WebSocket server not accessible'
-      health.warnings.push('Cannot access WebSocket server status')
+      health.components.terminals.message = 'No active terminal sessions'
     }
+    
+    health.components.terminals.lastCheck = new Date()
   } catch (error) {
-    health.components.websocket.status = 'unhealthy'
-    health.components.websocket.message = error instanceof Error ? error.message : 'Unknown error'
-    health.errors.push('WebSocket check failed')
+    health.components.terminals.status = 'unhealthy'
+    health.components.terminals.message = error instanceof Error ? error.message : 'Unknown error'
+    health.errors.push('Terminal check failed')
   }
 }

@@ -14,16 +14,9 @@ const port = process.env.PORT || 3000
 
 const logger = getPersistentLogger()
 
-// Export functions for use in other modules (simplified - no WebSocket)
+// Export server for use in other modules
 declare global {
-  var broadcastTaskUpdate: (taskId: string, update: any) => void
   var server: any
-}
-
-// Stub functions since we're not using WebSocket anymore
-global.broadcastTaskUpdate = (taskId: string, update: any) => {
-  // No-op - we don't broadcast updates anymore
-  console.log(`[Server] Task update for ${taskId} (not broadcasting - no WebSocket)`)
 }
 
 // Enable merge protection

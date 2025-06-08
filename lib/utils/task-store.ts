@@ -228,7 +228,6 @@ class TaskStore {
           await this.saveTasks()
           
           // Broadcast the new task
-          this.broadcastTask(task)
           
           resolve(task)
         } catch (error) {
@@ -239,11 +238,6 @@ class TaskStore {
     })
   }
 
-  private broadcastTask(task: Task) {
-    if (typeof global !== 'undefined' && (global as any).broadcastTaskUpdate) {
-      (global as any).broadcastTaskUpdate(task.id, task)
-    }
-  }
 
   async updateTaskStatus(id: string, status: Task['status']) {
     const task = this.getTask(id)
@@ -258,7 +252,6 @@ class TaskStore {
       await this.persistentLogger.logTaskEvent(id, 'status-changed', { status })
       
       this.debouncedSave()
-      this.broadcastTask(task)
     }
   }
 
@@ -294,7 +287,6 @@ class TaskStore {
     await this.persistentLogger.logTaskEvent(task.id, 'task-started', { mode: task.mode })
     
     this.debouncedSave()
-    this.broadcastTask(task)
   }
 
   async bringTaskToFront(taskId: string): Promise<void> {
@@ -338,7 +330,6 @@ class TaskStore {
     await this.persistentLogger.logTaskEvent(taskId, 'task-committed', { commitHash })
     
     this.debouncedSave()
-    this.broadcastTask(task)
     
     return commitHash
   }
@@ -381,7 +372,6 @@ class TaskStore {
     })
     
     this.debouncedSave()
-    this.broadcastTask(task)
     
     return { newTask, previousCycle }
   }
@@ -429,7 +419,6 @@ class TaskStore {
     await this.persistentLogger.logTaskEvent(taskId, 'task-merged', {})
     
     this.debouncedSave()
-    this.broadcastTask(task)
     
     // Clean up worktree after merge
     await this.cleanupTask(taskId)
