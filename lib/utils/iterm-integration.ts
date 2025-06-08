@@ -20,13 +20,20 @@ export function runAppleScript(script: string): Promise<string> {
 }
 
 export async function spawnTaggedSession(tag: string, command: string): Promise<void> {
-  const escapedCommand = command.replace(/"/g, '\\"')
+  // Escape for AppleScript string literal
+  const escapedCommand = command
+    .replace(/\\/g, '\\\\') // Escape backslashes first
+    .replace(/"/g, '\\"')   // Escape double quotes
+    .replace(/\$/g, '\\$')  // Escape dollar signs
+    
+  const escapedTag = tag.replace(/"/g, '\\"')
+  
   const script = `
     tell application "iTerm"
       set newWindow to (create window with default profile)
       tell current session of newWindow
-        set name to "${tag}"
-        write text "${escapedCommand}; exec bash"
+        set name to "${escapedTag}"
+        write text "${escapedCommand}"
       end tell
     end tell
   `
@@ -35,12 +42,13 @@ export async function spawnTaggedSession(tag: string, command: string): Promise<
 }
 
 export async function focusTaggedSession(tag: string): Promise<void> {
+  const escapedTag = tag.replace(/"/g, '\\"')
   const script = `
     tell application "iTerm"
       repeat with aWindow in windows
         repeat with aTab in tabs of aWindow
           repeat with aSession in sessions of aTab
-            if name of aSession is "${tag}" then
+            if name of aSession is "${escapedTag}" then
               select aWindow
               select aTab
               select aSession

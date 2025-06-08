@@ -300,14 +300,21 @@ class TaskStore {
   async bringTaskToFront(taskId: string): Promise<void> {
     const processManager = this.processManagers.get(taskId)
     if (!processManager) {
-      // Try to create a new process manager if we have the terminal tag
+      // Try to bring the terminal to front using the saved terminal tag
       const task = this.getTask(taskId)
       if (task && task.terminalTag) {
+        // Create a temporary process manager just for bringing to front
         const pm = new ProcessManager(task.id, task.worktree, task.repoPath)
         pm.terminalTag = task.terminalTag
+        pm.mode = task.mode || 'edit'
+        pm.isActive = true // Assume it's active if we have a terminal tag
+        
+        // Store it for future use
+        this.processManagers.set(taskId, pm)
+        
         await pm.bringToFront()
       } else {
-        throw new Error(`No process manager found for task ${taskId}`)
+        throw new Error(`No terminal tag found for task ${taskId}`)
       }
     } else {
       await processManager.bringToFront()
@@ -470,6 +477,33 @@ class TaskStore {
     })
     
     console.log('[TaskStore] Cleanup completed')
+  }
+
+  async clearAllProcessManagers(): Promise<number> {
+    const count = this.processManagers.size
+    this.processManagers.clear()
+    
+    await this.persistentLogger.logSystemEvent('process-managers-cleared', {
+      count
+    })
+    
+    return count
+  }
+
+  getActiveTerminalSessions(): Array<{ taskId: string; terminalTag: string; mode: string }> {
+    const sessions: Array<{ taskId: string; terminalTag: string; mode: string }> = []
+    
+    for (const [taskId, pm] of this.processManagers) {
+      if (pm.terminalTag && pm.isActive) {
+        sessions.push({
+          taskId,
+          terminalTag: pm.terminalTag,
+          mode: pm.mode
+        })
+      }
+    }
+    
+    return sessions
   }
 }
 

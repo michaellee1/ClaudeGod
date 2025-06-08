@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { processStateManager } from '@/lib/utils/process-state'
+import { taskStore } from '@/lib/utils/task-store'
 
 export async function POST(request: NextRequest) {
   try {
-    const killed = await processStateManager.killAllProcesses()
+    // In the new architecture, we just clear process managers
+    // The iTerm sessions themselves remain open for the user to manage
+    const cleared = await taskStore.clearAllProcessManagers()
     
     return NextResponse.json({
       success: true,
-      message: `Killed ${killed} tracked processes`
+      message: `Cleared ${cleared} terminal references`
     })
   } catch (error) {
-    console.error('Error killing processes:', error)
+    console.error('Error clearing terminal references:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to kill processes' },
+      { success: false, error: 'Failed to clear terminal references' },
       { status: 500 }
     )
   }
@@ -20,21 +22,17 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const processes = await processStateManager.getAllProcesses()
+    // Return active terminal sessions
+    const activeSessions = taskStore.getActiveTerminalSessions()
     
     return NextResponse.json({
       success: true,
-      processes: processes.map(p => ({
-        pid: p.pid,
-        taskId: p.taskId,
-        phase: p.phase,
-        startTime: p.startTime
-      }))
+      sessions: activeSessions
     })
   } catch (error) {
-    console.error('Error getting processes:', error)
+    console.error('Error getting terminal sessions:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to get processes' },
+      { success: false, error: 'Failed to get terminal sessions' },
       { status: 500 }
     )
   }

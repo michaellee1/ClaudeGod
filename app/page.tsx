@@ -289,7 +289,7 @@ export default function Home() {
   }
 
   const handleKillAllProcesses = async () => {
-    if (!confirm('Kill all tracked processes? This will stop all running tasks.')) {
+    if (!confirm('Clear all terminal references? This will remove tracking of iTerm sessions but won\'t close them.')) {
       return
     }
     
@@ -299,11 +299,11 @@ export default function Home() {
       })
       
       if (response.ok) {
-        alert('All processes have been killed')
+        alert('All terminal references have been cleared')
         fetchTasks()
       }
     } catch (error) {
-      console.error('Error killing processes:', error)
+      console.error('Error clearing terminal references:', error)
     }
   }
 
@@ -422,7 +422,7 @@ export default function Home() {
                   className="text-destructive focus:text-destructive"
                 >
                   <Terminal className="mr-2 h-4 w-4" />
-                  Kill All Tracked Processes
+                  Clear All Terminal References
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -52,12 +52,15 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
   }
 
   private buildClaudeCommand(prompt: string): string {
-    // Change to the worktree directory and run Claude Code
-    // Escape the prompt for shell
-    const escapedPrompt = prompt.replace(/'/g, "'\"'\"'").replace(/\n/g, '\\n')
+    // Properly escape the prompt for shell - handle single quotes by ending the quote,
+    // adding an escaped quote, and starting a new quote
+    const escapedPrompt = prompt.replace(/'/g, "'\\''")
+    
+    // Escape the worktree path similarly
+    const escapedPath = this.worktreePath.replace(/'/g, "'\\''")
     
     // Build command to change directory and run Claude Code with the prompt
-    const command = `cd '${this.worktreePath}' && claude-code '${escapedPrompt}'`
+    const command = `cd '${escapedPath}' && claude-code '${escapedPrompt}'`
     
     return command
   }
