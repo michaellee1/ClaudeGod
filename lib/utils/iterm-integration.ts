@@ -20,25 +20,39 @@ export function runAppleScript(script: string): Promise<string> {
 }
 
 export async function spawnTaggedSession(tag: string, command: string): Promise<void> {
-  // Escape for AppleScript string literal
-  const escapedCommand = command
-    .replace(/\\/g, '\\\\') // Escape backslashes first
-    .replace(/"/g, '\\"')   // Escape double quotes
-    .replace(/\$/g, '\\$')  // Escape dollar signs
-    
-  const escapedTag = tag.replace(/"/g, '\\"')
+  console.log(`[iTerm] Spawning session with command: ${command}`)
   
+  // For AppleScript strings, we need to escape backslashes and double quotes
+  // Single quotes in the shell command should be fine within AppleScript double quotes
+  const escapedCommand = command
+    .replace(/\\/g, '\\\\')  // Escape backslashes
+    .replace(/"/g, '\\"')    // Escape double quotes
+    
+  const escapedTag = tag
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+  
+  // Create a new window and immediately write the command
+  // iTerm will execute it automatically when using 'write text'
   const script = `
     tell application "iTerm"
-      set newWindow to (create window with default profile)
-      tell current session of newWindow
+      create window with default profile
+      tell current session of current window
         set name to "${escapedTag}"
         write text "${escapedCommand}"
       end tell
     end tell
   `
-  await runAppleScript(script)
-  console.log(`[iTerm] Spawned session with tag: ${tag}`)
+  
+  console.log(`[iTerm] Executing AppleScript...`)
+  
+  try {
+    await runAppleScript(script)
+    console.log(`[iTerm] Successfully spawned session with tag: ${tag}`)
+  } catch (error) {
+    console.error(`[iTerm] Failed to spawn session:`, error)
+    throw error
+  }
 }
 
 export async function focusTaggedSession(tag: string): Promise<void> {
