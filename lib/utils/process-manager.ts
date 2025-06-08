@@ -60,7 +60,8 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
     const escapedPath = this.worktreePath.replace(/'/g, "'\\''")
     
     // Build command to change directory and run claude with the prompt
-    const command = `cd '${escapedPath}' && claude '${escapedPrompt}'`
+    // Include the same flags as before, except -p and output-format
+    const command = `cd '${escapedPath}' && claude --verbose --dangerously-skip-permissions '${escapedPrompt}'`
     
     return command
   }

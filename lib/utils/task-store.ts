@@ -441,6 +441,13 @@ class TaskStore {
         this.processManagers.delete(taskId)
       }
       
+      // Remove the task from the store
+      this.tasks.delete(taskId)
+      this.pendingTaskAdditions.delete(taskId)
+      
+      // Save the updated task list
+      this.debouncedSave()
+      
       await this.persistentLogger.logTaskEvent(taskId, 'task-cleaned-up', {})
     } catch (error) {
       console.error(`Error cleaning up task ${taskId}:`, error)
