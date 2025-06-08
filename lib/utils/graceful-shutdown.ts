@@ -197,7 +197,7 @@ export class GracefulShutdown {
     
     // Stop task monitoring
     try {
-      taskStore.cleanup()
+      await taskStore.cleanupAllTasks()
       console.log('[GracefulShutdown] Task monitoring stopped')
     } catch (error) {
       console.error('[GracefulShutdown] Error stopping task monitoring:', error)

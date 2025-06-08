@@ -167,48 +167,6 @@ export function AsyncErrorBoundary({
   );
 }
 
-/**
- * Initiative-specific error boundary with retry logic
- */
-export function InitiativeErrorBoundary({ 
-  children,
-  initiativeId,
-  onRetry
-}: {
-  children: ReactNode;
-  initiativeId?: string;
-  onRetry?: () => void;
-}) {
-  return (
-    <ErrorBoundary
-      fallback={
-        <Alert variant="destructive" className="m-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Initiative Error</AlertTitle>
-          <AlertDescription>
-            {initiativeId 
-              ? `Failed to load initiative ${initiativeId}`
-              : 'Failed to load initiative data'
-            }
-            {onRetry && (
-              <Button
-                onClick={onRetry}
-                variant="outline"
-                size="sm"
-                className="mt-2"
-              >
-                <RefreshCw className="mr-2 h-3 w-3" />
-                Retry
-              </Button>
-            )}
-          </AlertDescription>
-        </Alert>
-      }
-    >
-      {children}
-    </ErrorBoundary>
-  );
-}
 
 /**
  * HOC to wrap components with error boundary

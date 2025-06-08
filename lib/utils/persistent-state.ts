@@ -3,7 +3,6 @@ import path from 'path'
 import os from 'os'
 import { EventEmitter } from 'events'
 import { Task, TaskOutput } from '../types/task'
-import { Initiative } from '../types/initiative'
 import { FileLock } from './file-lock'
 import { getPersistentLogger } from './persistent-logger'
 
@@ -12,13 +11,11 @@ export interface StateSnapshot {
   version: string
   tasks: Record<string, Task>
   taskOutputs: Record<string, TaskOutput[]>
-  initiatives: Record<string, Initiative>
   processStates: Record<string, ProcessState>
 }
 
 export interface ProcessState {
   taskId?: string
-  initiativeId?: string
   pid?: number
   phase?: string
   startTime?: Date
@@ -51,13 +48,11 @@ export class PersistentState extends EventEmitter {
   // In-memory state caches
   private tasksCache: Map<string, Task> = new Map()
   private taskOutputsCache: Map<string, TaskOutput[]> = new Map()
-  private initiativesCache: Map<string, Initiative> = new Map()
   private processStatesCache: Map<string, ProcessState> = new Map()
   
   // Paths
   private readonly CURRENT_STATE_FILE = 'current-state.json'
   private readonly TASKS_DIR = 'tasks'
-  private readonly INITIATIVES_DIR = 'initiatives'
   private readonly SNAPSHOTS_DIR = 'snapshots'
   private readonly RECOVERY_DIR = 'recovery'
   
@@ -105,7 +100,6 @@ export class PersistentState extends EventEmitter {
     const dirs = [
       this.baseDir,
       path.join(this.baseDir, this.TASKS_DIR),
-      path.join(this.baseDir, this.INITIATIVES_DIR),
       path.join(this.baseDir, this.SNAPSHOTS_DIR),
       path.join(this.baseDir, this.RECOVERY_DIR)
     ]
@@ -173,34 +167,6 @@ export class PersistentState extends EventEmitter {
     this.emit('outputs-saved', { taskId, count: outputs.length })
   }
   
-  /**
-   * Save initiative state
-   */
-  async saveInitiative(initiative: Initiative): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('PersistentState not initialized')
-    }
-    
-    // Update cache
-    this.initiativesCache.set(initiative.id, initiative)
-    
-    // Save to individual file
-    const initiativeFile = path.join(this.baseDir, this.INITIATIVES_DIR, `${initiative.id}.json`)
-    await FileLock.withLock(initiativeFile, async () => {
-      await fs.writeFile(initiativeFile, JSON.stringify(initiative, null, 2))
-    })
-    
-    // Log the event
-    await this.logger.logInitiativeEvent(initiative.id, 'initiative-saved', {
-      status: initiative.status,
-      currentPhase: initiative.currentPhase
-    })
-    
-    // Save current state
-    await this.saveCurrentState()
-    
-    this.emit('initiative-saved', initiative)
-  }
   
   /**
    * Save process state
@@ -308,34 +274,6 @@ export class PersistentState extends EventEmitter {
     }
   }
   
-  /**
-   * Get initiative by ID
-   */
-  async getInitiative(initiativeId: string): Promise<Initiative | null> {
-    // Check cache first
-    if (this.initiativesCache.has(initiativeId)) {
-      return this.initiativesCache.get(initiativeId)!
-    }
-    
-    // Load from file
-    try {
-      const initiativeFile = path.join(this.baseDir, this.INITIATIVES_DIR, `${initiativeId}.json`)
-      const data = await fs.readFile(initiativeFile, 'utf-8')
-      const initiative = JSON.parse(data)
-      
-      // Restore Date objects
-      initiative.createdAt = new Date(initiative.createdAt)
-      initiative.updatedAt = new Date(initiative.updatedAt)
-      if (initiative.completedAt) initiative.completedAt = new Date(initiative.completedAt)
-      
-      // Update cache
-      this.initiativesCache.set(initiativeId, initiative)
-      
-      return initiative
-    } catch (error) {
-      return null
-    }
-  }
   
   /**
    * Delete task
@@ -371,7 +309,6 @@ export class PersistentState extends EventEmitter {
       version: this.stateVersion,
       tasks: Object.fromEntries(this.tasksCache),
       taskOutputs: Object.fromEntries(this.taskOutputsCache),
-      initiatives: Object.fromEntries(this.initiativesCache),
       processStates: Object.fromEntries(this.processStatesCache)
     }
     
@@ -412,7 +349,6 @@ export class PersistentState extends EventEmitter {
       // Restore state
       this.tasksCache.clear()
       this.taskOutputsCache.clear()
-      this.initiativesCache.clear()
       this.processStatesCache.clear()
       
       // Restore tasks
@@ -421,7 +357,8 @@ export class PersistentState extends EventEmitter {
         task.createdAt = new Date(task.createdAt)
         if (task.mergedAt) task.mergedAt = new Date(task.mergedAt)
         if (task.lastActivityTime) task.lastActivityTime = new Date(task.lastActivityTime)
-        if (task.lastHeartbeatTime) task.lastHeartbeatTime = new Date(task.lastHeartbeatTime)
+        if (task.finishedAt) task.finishedAt = new Date(task.finishedAt)
+        if (task.requestedChangesAt) task.requestedChangesAt = new Date(task.requestedChangesAt)
         
         this.tasksCache.set(taskId, task)
         await this.saveTask(task)
@@ -436,15 +373,6 @@ export class PersistentState extends EventEmitter {
         await this.saveTaskOutputs(taskId, outputs)
       }
       
-      // Restore initiatives
-      for (const [initiativeId, initiative] of Object.entries(snapshot.initiatives)) {
-        initiative.createdAt = new Date(initiative.createdAt)
-        initiative.updatedAt = new Date(initiative.updatedAt)
-        if (initiative.completedAt) initiative.completedAt = new Date(initiative.completedAt)
-        
-        this.initiativesCache.set(initiativeId, initiative)
-        await this.saveInitiative(initiative)
-      }
       
       // Restore process states
       for (const [processId, state] of Object.entries(snapshot.processStates)) {
@@ -503,7 +431,6 @@ export class PersistentState extends EventEmitter {
       version: this.stateVersion,
       lastUpdate: new Date(),
       taskCount: this.tasksCache.size,
-      initiativeCount: this.initiativesCache.size,
       processCount: this.processStatesCache.size
     }
     
@@ -519,15 +446,11 @@ export class PersistentState extends EventEmitter {
     // Load tasks
     await this.loadTasks()
     
-    // Load initiatives
-    await this.loadInitiatives()
-    
     // Load current state metadata
     await this.loadCurrentStateMetadata()
     
     this.emit('state-loaded', {
-      taskCount: this.tasksCache.size,
-      initiativeCount: this.initiativesCache.size
+      taskCount: this.tasksCache.size
     })
   }
   
@@ -549,20 +472,6 @@ export class PersistentState extends EventEmitter {
     }
   }
   
-  private async loadInitiatives(): Promise<void> {
-    try {
-      const files = await fs.readdir(path.join(this.baseDir, this.INITIATIVES_DIR))
-      
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          const initiativeId = file.replace('.json', '')
-          await this.getInitiative(initiativeId)
-        }
-      }
-    } catch (error) {
-      console.error('Error loading initiatives:', error)
-    }
-  }
   
   private async loadCurrentStateMetadata(): Promise<void> {
     try {
@@ -592,11 +501,6 @@ export class PersistentState extends EventEmitter {
       { recursive: true }
     )
     
-    await fs.cp(
-      path.join(this.baseDir, this.INITIATIVES_DIR),
-      path.join(backupDir, this.INITIATIVES_DIR),
-      { recursive: true }
-    )
   }
   
   /**
@@ -644,7 +548,6 @@ export class PersistentState extends EventEmitter {
         version: this.stateVersion,
         lastUpdate: new Date(),
         taskCount: this.tasksCache.size,
-        initiativeCount: this.initiativesCache.size,
         processCount: this.processStatesCache.size,
         shutdownClean: true
       }

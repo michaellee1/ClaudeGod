@@ -24,7 +24,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    await taskStore.removeTask(id)
+    await taskStore.cleanupTask(id)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error removing task:', error)

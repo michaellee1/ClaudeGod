@@ -7,13 +7,19 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    let message: string | undefined
+    let message: string = ''
     
     try {
       const body = await request.json()
-      message = body.message
+      message = body.message || ''
     } catch {
-      // Body parsing is optional, continue without message
+      // Body parsing failed, use default message
+      const task = taskStore.getTask(id)
+      if (task) {
+        message = `Complete task: ${task.prompt.substring(0, 60)}${task.prompt.length > 60 ? '...' : ''}`
+      } else {
+        message = 'Complete task'
+      }
     }
     
     const commitHash = await taskStore.commitTask(id, message)

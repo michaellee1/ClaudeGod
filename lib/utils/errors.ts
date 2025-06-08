@@ -1,5 +1,5 @@
 /**
- * Custom error classes for the initiative system
+ * Custom error classes for the system
  */
 
 export enum ErrorCode {
@@ -9,12 +9,6 @@ export enum ErrorCode {
   NOT_FOUND = 'NOT_FOUND',
   PERMISSION_DENIED = 'PERMISSION_DENIED',
   
-  // Initiative-specific errors
-  INITIATIVE_NOT_FOUND = 'INITIATIVE_NOT_FOUND',
-  INITIATIVE_INVALID_STATE = 'INITIATIVE_INVALID_STATE',
-  INITIATIVE_PROCESS_FAILED = 'INITIATIVE_PROCESS_FAILED',
-  INITIATIVE_VALIDATION_FAILED = 'INITIATIVE_VALIDATION_FAILED',
-  INITIATIVE_LIMIT_EXCEEDED = 'INITIATIVE_LIMIT_EXCEEDED',
   
   // Process errors
   PROCESS_SPAWN_FAILED = 'PROCESS_SPAWN_FAILED',
@@ -92,56 +86,6 @@ export class AppError extends Error {
   }
 }
 
-/**
- * Initiative-specific error classes
- */
-export class InitiativeError extends AppError {
-  constructor(
-    message: string,
-    code: ErrorCode = ErrorCode.INITIATIVE_PROCESS_FAILED,
-    context: ErrorContext = {},
-    statusCode: number = 500
-  ) {
-    super(message, code, statusCode, true, context);
-  }
-}
-
-export class InitiativeNotFoundError extends InitiativeError {
-  constructor(initiativeId: string) {
-    super(
-      `Initiative not found: ${initiativeId}`,
-      ErrorCode.INITIATIVE_NOT_FOUND,
-      { initiativeId },
-      404
-    );
-  }
-}
-
-export class InitiativeInvalidStateError extends InitiativeError {
-  constructor(initiativeId: string, currentState: string, expectedState?: string) {
-    const message = expectedState
-      ? `Initiative ${initiativeId} is in invalid state: ${currentState}, expected: ${expectedState}`
-      : `Initiative ${initiativeId} is in invalid state: ${currentState}`;
-    
-    super(
-      message,
-      ErrorCode.INITIATIVE_INVALID_STATE,
-      { initiativeId, currentState, expectedState },
-      400
-    );
-  }
-}
-
-export class InitiativeLimitExceededError extends InitiativeError {
-  constructor(limit: number, current: number) {
-    super(
-      `Initiative limit exceeded: ${current}/${limit}`,
-      ErrorCode.INITIATIVE_LIMIT_EXCEEDED,
-      { limit, current },
-      429
-    );
-  }
-}
 
 /**
  * Process-specific error classes
@@ -374,9 +318,6 @@ export function toAppError(error: unknown): AppError {
  */
 export function getUserFriendlyMessage(error: AppError): string {
   const messages: Partial<Record<ErrorCode, string>> = {
-    [ErrorCode.INITIATIVE_NOT_FOUND]: 'The requested initiative could not be found.',
-    [ErrorCode.INITIATIVE_INVALID_STATE]: 'The initiative is not in the correct state for this operation.',
-    [ErrorCode.INITIATIVE_LIMIT_EXCEEDED]: 'You have reached the maximum number of concurrent initiatives.',
     [ErrorCode.PROCESS_TIMEOUT]: 'The operation took too long and was cancelled.',
     [ErrorCode.GIT_CONFLICT]: 'There are conflicts that need to be resolved manually.',
     [ErrorCode.GIT_UNCOMMITTED_CHANGES]: 'Please commit or stash your changes before proceeding.',

@@ -17,11 +17,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const prompt = formData.get('prompt') as string
     const repoPath = formData.get('repoPath') as string
-    const thinkMode = formData.get('thinkMode') as string
+    const mode = formData.get('mode') as string
     const imageFile = formData.get('image') as File | null
-    const initiativeId = formData.get('initiativeId') as string | null
-    const stepNumber = formData.get('stepNumber') as string | null
-    const globalContext = formData.get('globalContext') as string | null
     
     if (!prompt || !repoPath) {
       return NextResponse.json(
@@ -30,11 +27,11 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Validate thinkMode if provided
-    const validThinkModes = ['no_review', 'none', 'level1', 'level2', 'planning']
-    if (thinkMode && !validThinkModes.includes(thinkMode)) {
+    // Validate mode if provided
+    const validModes = ['planning', 'edit']
+    if (mode && !validModes.includes(mode)) {
       return NextResponse.json(
-        { error: 'Invalid think mode' },
+        { error: 'Invalid mode. Valid modes are: planning, edit' },
         { status: 400 }
       )
     }
@@ -103,45 +100,15 @@ export async function POST(request: NextRequest) {
     // Modify prompt to include image reference if uploaded
     let finalPrompt = prompt
     if (imagePath) {
-      // Insert image reference before think mode (which is already appended)
-      const thinkModeRegex = /\. (Think hard|Think harder|Ultrathink)$/
-      const thinkModeMatch = finalPrompt.match(thinkModeRegex)
-      
-      if (thinkModeMatch) {
-        // Insert before think mode
-        finalPrompt = finalPrompt.replace(thinkModeRegex, `. See image: ${imagePath}${thinkModeMatch[0]}`)
-      } else {
-        // No think mode, append at end
-        finalPrompt = `${finalPrompt}. See image: ${imagePath}`
-      }
+      finalPrompt = `${finalPrompt}. See image: ${imagePath}`
     }
     
-    // Build initiative parameters if provided
-    const initiativeParams = (initiativeId || stepNumber !== null || globalContext) ? {
-      ...(initiativeId && { initiativeId }),
-      ...(stepNumber !== null && { stepNumber: parseInt(stepNumber, 10) }),
-      ...(globalContext && { globalContext })
-    } : undefined
-    
-    const task = await taskStore.createTask(finalPrompt, repoPath, thinkMode, initiativeParams)
+    const task = await taskStore.createTask(finalPrompt, repoPath, mode)
     return NextResponse.json(task)
   } catch (error: any) {
     console.error('Error creating task:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to create task' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function DELETE() {
-  try {
-    await taskStore.removeAllTasks()
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    console.error('Error deleting all tasks:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to delete all tasks' },
       { status: 500 }
     )
   }

@@ -2,16 +2,15 @@ import { EventEmitter } from 'events'
 import { getPersistentState } from './persistent-state'
 import { getPersistentLogger } from './persistent-logger'
 import { taskStore } from './task-store'
-import { Task, TaskOutput } from '../types/task'
+import { Task } from '../types/task'
 
 export interface SyncReport {
   timestamp: Date
   tasksInMemory: number
   tasksInPersistent: number
   tasksSynced: number
-  outputsSynced: number
   conflicts: Array<{
-    type: 'task' | 'output' | 'initiative'
+    type: 'task'
     id: string
     resolution: 'memory-wins' | 'persistent-wins' | 'merged'
     details?: string
@@ -23,8 +22,6 @@ export interface SyncOptions {
   syncInterval?: number // ms
   conflictResolution?: 'memory-wins' | 'persistent-wins' | 'newest-wins'
   syncTasks?: boolean
-  syncOutputs?: boolean
-  syncInitiatives?: boolean
 }
 
 /**
@@ -108,7 +105,6 @@ export class SyncService extends EventEmitter {
       tasksInMemory: 0,
       tasksInPersistent: 0,
       tasksSynced: 0,
-      outputsSynced: 0,
       conflicts: [],
       errors: []
     }
@@ -119,8 +115,7 @@ export class SyncService extends EventEmitter {
       // Sync tasks
       await this.syncTasks(report)
       
-      // Sync outputs
-      await this.syncOutputs(report)
+      // Outputs are no longer tracked in iTerm-based workflow
       
       // Update WebSocket connections with any changes
       await this.updateWebSocketState(report)
@@ -128,13 +123,12 @@ export class SyncService extends EventEmitter {
       const duration = Date.now() - startTime
       this.lastSyncTime = new Date()
       
-      console.log(`[SyncService] Sync completed in ${duration}ms. Synced ${report.tasksSynced} tasks, ${report.outputsSynced} outputs`)
+      console.log(`[SyncService] Sync completed in ${duration}ms. Synced ${report.tasksSynced} tasks`)
       
       await this.logger.logSystemEvent('sync-completed', {
         duration,
         report: {
           tasksSynced: report.tasksSynced,
-          outputsSynced: report.outputsSynced,
           conflicts: report.conflicts.length,
           errors: report.errors.length
         }
@@ -213,37 +207,6 @@ export class SyncService extends EventEmitter {
   /**
    * Sync outputs between memory and persistent storage
    */
-  private async syncOutputs(report: SyncReport): Promise<void> {
-    try {
-      const tasks = taskStore.getTasks()
-      
-      for (const task of tasks) {
-        const memoryOutputs = taskStore.getOutputs(task.id)
-        const persistentOutputs = await this.persistentState.getTaskOutputs(task.id)
-        
-        // Simple comparison by length - could be more sophisticated
-        if (memoryOutputs.length !== persistentOutputs.length) {
-          if (memoryOutputs.length > persistentOutputs.length) {
-            // Memory has more outputs, update persistent
-            await this.persistentState.saveTaskOutputs(task.id, memoryOutputs)
-            report.outputsSynced += memoryOutputs.length - persistentOutputs.length
-            console.log(`[SyncService] Updated persistent outputs for task ${task.id}`)
-          } else {
-            // Persistent has more outputs, this is unusual
-            report.conflicts.push({
-              type: 'output',
-              id: task.id,
-              resolution: 'memory-wins',
-              details: `Persistent has ${persistentOutputs.length} outputs, memory has ${memoryOutputs.length}`
-            })
-          }
-        }
-      }
-    } catch (error) {
-      report.errors.push(`Output sync error: ${error instanceof Error ? error.message : String(error)}`)
-      throw error
-    }
-  }
   
   /**
    * Detect if there's a conflict between two task versions
@@ -337,12 +300,9 @@ export class SyncService extends EventEmitter {
     }
     
     await this.persistentState.saveTask(task)
-    const outputs = taskStore.getOutputs(taskId)
-    await this.persistentState.saveTaskOutputs(taskId, outputs)
     
     await this.logger.logTaskEvent(taskId, 'force-synced', {
-      status: task.status,
-      outputCount: outputs.length
+      status: task.status
     })
     
     console.log(`[SyncService] Force synced task ${taskId}`)
@@ -375,7 +335,6 @@ export class SyncService extends EventEmitter {
       tasksInMemory: 0,
       tasksInPersistent: 0,
       tasksSynced: 0,
-      outputsSynced: 0,
       conflicts: [],
       errors: []
     }

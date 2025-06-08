@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Task, TaskOutput } from '@/lib/types/task'
+import { useState, useEffect } from 'react'
+import { Task } from '@/lib/types/task'
 import Link from 'next/link'
-import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -34,231 +33,85 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ChevronDown, Trash2, Plus } from 'lucide-react'
+import { ChevronDown, Trash2, Plus, Terminal, ExternalLink } from 'lucide-react'
 
 interface ActiveTaskCardsProps {
   tasks: Task[]
-  onPreview: (taskId: string, isCurrentlyPreviewing: boolean) => void
-  onMerge: (taskId: string) => void
+  onBringToFront: (taskId: string) => void
   onDelete: (taskId: string) => void
-  previewingTaskId: string | null
-  taskOutputs: Record<string, TaskOutput[]>
 }
 
-function ActiveTaskCards({ tasks, onPreview, onMerge, onDelete, previewingTaskId, taskOutputs }: ActiveTaskCardsProps) {
-  const outputRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const previousOutputCountsRef = useRef<Record<string, number>>({})
-
-  // Auto-scroll when new outputs arrive - this is an appropriate use of useEffect
-  // We need to synchronize scrolling with external updates (new outputs)
-  useEffect(() => {
-    Object.keys(taskOutputs).forEach(taskId => {
-      const outputDiv = outputRefs.current[taskId]
-      const currentCount = taskOutputs[taskId]?.length || 0
-      const previousCount = previousOutputCountsRef.current[taskId] || 0
-      
-      // Only scroll if there are new outputs
-      if (outputDiv && currentCount > previousCount) {
-        outputDiv.scrollTop = outputDiv.scrollHeight
-      }
-      
-      previousOutputCountsRef.current[taskId] = currentCount
-    })
-  }, [taskOutputs])
-
+function ActiveTaskCards({ tasks, onBringToFront, onDelete }: ActiveTaskCardsProps) {
   if (tasks.length === 0) {
     return <p className="text-muted-foreground text-center py-8">No active tasks</p>
   }
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {tasks.map((task) => {
-        const outputs = taskOutputs[task.id] || []
-        
-        return (
-          <Card key={task.id} className="flex flex-col">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <CardTitle className="text-base truncate">
-                    {task.prompt}
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-1">
-                    {task.id.substring(0, 8)} • {task.phase}
-                  </CardDescription>
-                </div>
-                <Badge
-                  variant={
-                    task.status === 'in_progress' ? 'default' :
-                    task.status === 'finished' ? 'success' :
-                    'secondary'
-                  }
-                  className="ml-2"
-                >
-                  {task.status}
-                </Badge>
+      {tasks.map((task) => (
+        <Card key={task.id} className="flex flex-col">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-base truncate">
+                  {task.prompt}
+                </CardTitle>
+                <CardDescription className="text-xs mt-1">
+                  {task.id.substring(0, 8)} • {task.phase}
+                </CardDescription>
               </div>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col pt-0">
-              {/* Full streamed output section */}
-              <div 
-                ref={(el) => { outputRefs.current[task.id] = el }}
-                className="flex-1 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-3 min-h-[200px] max-h-[400px] overflow-y-auto mb-3">
-                {outputs.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No output yet...</p>
-                ) : (
-                  <div className="space-y-1 font-mono text-xs">
-                    {outputs.map((output) => {
-                      if (!output.content) return null
-                      
-                      const isToolUse = output.content.startsWith('[') && (
-                        output.content.includes('[Tool:') || 
-                        output.content.includes('[Reading file:') || 
-                        output.content.includes('[Editing file:') || 
-                        output.content.includes('[Writing file:') || 
-                        output.content.includes('[Searching') || 
-                        output.content.includes('[Finding') || 
-                        output.content.includes('[Running:') || 
-                        output.content.includes('[Listing:') || 
-                        output.content.includes('[Multi-editing') || 
-                        output.content.includes('[System:')
-                      )
-                      
-                      // Process content to handle escaped characters
-                      let displayContent = output.content
-                      if (displayContent.includes('\\n') || displayContent.includes('\\t')) {
-                        displayContent = displayContent
-                          .replace(/\\n/g, '\n')
-                          .replace(/\\t/g, '\t')
-                      }
-                      
-                      return (
-                        <div key={output.id} className="leading-relaxed">
-                          <span className={`font-semibold text-xs ${
-                            output.type === 'editor' ? 'text-green-600 dark:text-green-400' : 
-                            output.type === 'reviewer' ? 'text-blue-600 dark:text-blue-400' :
-                            output.type === 'planner' ? 'text-purple-600 dark:text-purple-400' : 
-                            'text-gray-600 dark:text-gray-400'
-                          }`}>
-                            [{output.type.toUpperCase()}]
-                          </span>
-                          <span className="text-[10px] text-gray-400 dark:text-gray-600 ml-2">
-                            {new Date(output.timestamp).toLocaleTimeString([], { 
-                              hour: '2-digit', 
-                              minute: '2-digit',
-                              second: '2-digit'
-                            })}
-                          </span>
-                          <pre className={`${
-                            isToolUse 
-                              ? 'text-gray-500 dark:text-gray-500 italic' 
-                              : 'text-gray-700 dark:text-gray-300'
-                          } whitespace-pre-wrap break-words mt-1`}>
-                            {displayContent}
-                          </pre>
-                        </div>
-                      )
-                    }).filter(Boolean)}
-                  </div>
-                )}
-              </div>
-              
-              {/* Actions */}
-              <div className="flex items-center gap-2">
-                <Button variant="link" asChild size="sm" className="h-8 px-2">
-                  <Link href={`/task/${task.id}`}>
-                    View Details
-                  </Link>
-                </Button>
+              <Badge
+                variant={
+                  task.status === 'in_progress' ? 'default' :
+                  task.status === 'finished' ? 'success' :
+                  'secondary'
+                }
+                className="ml-2"
+              >
+                {task.status}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 pb-3">
+            {task.status === 'in_progress' && (
+              <div className="flex items-center justify-center py-4">
                 <Button
-                  onClick={() => onPreview(task.id, previewingTaskId === task.id)}
-                  variant="ghost"
-                  size="icon"
-                  className={`h-8 w-8 ${previewingTaskId === task.id ? 'text-orange-500 hover:text-orange-600' : 'hover:text-primary'}`}
-                  title={previewingTaskId === task.id ? 'Stop Preview' : 'Preview Changes'}
+                  onClick={() => onBringToFront(task.id)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
                 >
-                  {previewingTaskId === task.id ? (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="6" y="4" width="4" height="16" />
-                      <rect x="14" y="4" width="4" height="16" />
-                    </svg>
-                  ) : (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </Button>
-                <Button
-                  onClick={() => onMerge(task.id)}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-green-600 hover:text-green-700"
-                  title="Merge Task"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="18" cy="18" r="3" />
-                    <circle cx="6" cy="6" r="3" />
-                    <path d="M6 21V9a9 9 0 0 0 9 9" />
-                  </svg>
-                </Button>
-                <Button
-                  onClick={() => onDelete(task.id)}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  title="Delete Task"
-                >
-                  <Trash2 className="h-4 w-4" />
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Bring Terminal to Front
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        )
-      })}
+            )}
+            <div className="flex items-center justify-between mt-2">
+              <Button variant="link" asChild size="sm" className="h-8 px-0">
+                <Link href={`/task/${task.id}`}>View Details →</Link>
+              </Button>
+              <Button
+                onClick={() => onDelete(task.id)}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   )
 }
 
 interface TaskTableProps {
   tasks: Task[]
-  onPreview: (taskId: string, isCurrentlyPreviewing: boolean) => void
-  onMerge: (taskId: string) => void
   onDelete: (taskId: string) => void
-  previewingTaskId: string | null
 }
 
-function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: TaskTableProps) {
+function TaskTable({ tasks, onDelete }: TaskTableProps) {
   if (tasks.length === 0) {
     return <p className="text-muted-foreground text-center py-8">No other tasks</p>
   }
@@ -267,10 +120,8 @@ function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: Ta
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Task ID</TableHead>
-          <TableHead>Prompt</TableHead>
+          <TableHead>Task</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead>Phase</TableHead>
           <TableHead>Created</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -278,95 +129,22 @@ function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: Ta
       <TableBody>
         {tasks.map((task) => (
           <TableRow key={task.id}>
-            <TableCell className="font-mono text-sm">
-              {task.id.substring(0, 8)}
-            </TableCell>
-            <TableCell className="max-w-md truncate">
-              {task.prompt}
+            <TableCell className="max-w-md">
+              <div className="truncate">{task.prompt}</div>
+              <div className="text-xs text-muted-foreground">{task.id}</div>
             </TableCell>
             <TableCell>
-              <Badge
-                variant={
-                  task.status === 'starting' ? 'outline' :
-                  task.status === 'merged' ? 'purple' :
-                  'destructive'
-                }
-              >
+              <Badge variant={task.status === 'merged' ? 'success' : 'secondary'}>
                 {task.status}
               </Badge>
             </TableCell>
-            <TableCell>{task.phase}</TableCell>
-            <TableCell className="text-sm">
+            <TableCell className="text-sm text-muted-foreground">
               {new Date(task.createdAt).toLocaleString()}
             </TableCell>
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
                 <Button variant="link" asChild size="sm" className="h-8 px-2">
-                  <Link href={`/task/${task.id}`}>
-                    View
-                  </Link>
-                </Button>
-                <Button
-                  onClick={() => onPreview(task.id, previewingTaskId === task.id)}
-                  variant="ghost"
-                  size="icon"
-                  className={`h-8 w-8 ${previewingTaskId === task.id ? 'text-orange-500 hover:text-orange-600' : 'hover:text-primary'}`}
-                  title={previewingTaskId === task.id ? 'Stop Preview' : 'Preview Changes'}
-                >
-                  {previewingTaskId === task.id ? (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="6" y="4" width="4" height="16" />
-                      <rect x="14" y="4" width="4" height="16" />
-                    </svg>
-                  ) : (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </Button>
-                <Button
-                  onClick={() => onMerge(task.id)}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-green-600 hover:text-green-700"
-                  title="Merge Task"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="18" cy="18" r="3" />
-                    <circle cx="6" cy="6" r="3" />
-                    <path d="M6 21V9a9 9 0 0 0 9 9" />
-                  </svg>
+                  <Link href={`/task/${task.id}`}>View</Link>
                 </Button>
                 <Button
                   onClick={() => onDelete(task.id)}
@@ -388,24 +166,17 @@ function TaskTable({ tasks, onPreview, onMerge, onDelete, previewingTaskId }: Ta
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [taskOutputs, setTaskOutputs] = useState<Record<string, TaskOutput[]>>({})
   const [prompt, setPrompt] = useState('')
   const [repoPath, setRepoPath] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isDeletingAll, setIsDeletingAll] = useState(false)
-  const [previewingTaskId, setPreviewingTaskId] = useState<string | null>(null)
-  const [thinkMode, setThinkMode] = useState('none')
+  const [mode, setMode] = useState('edit')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   
-  // Use WebSocket for real-time updates
-  const { lastMessage } = useWebSocket('/ws')
-
-  // Initial data fetching - this is an appropriate use of useEffect
-  // We need to synchronize with external data on mount
   useEffect(() => {
     const initializeData = async () => {
       try {
@@ -415,6 +186,10 @@ export default function Home() {
       }
     }
     initializeData()
+    
+    // Poll for updates every 5 seconds
+    const interval = setInterval(fetchTasks, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   // Add keyboard shortcut for Command+K
@@ -429,35 +204,6 @@ export default function Home() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
-
-  // Handle WebSocket messages
-  useEffect(() => {
-    if (!lastMessage) return
-
-    if (lastMessage.type === 'task-update') {
-      // Refresh tasks when task is updated
-      fetchTasks()
-    } else if (lastMessage.type === 'task-output' && lastMessage.taskId && lastMessage.data) {
-      // Add output to the specific task
-      const taskId = lastMessage.taskId
-      const output = lastMessage.data as TaskOutput
-      setTaskOutputs(prev => ({
-        ...prev,
-        [taskId]: [...(prev[taskId] || []), output]
-      }))
-    } else if (lastMessage.type === 'task-removed') {
-      // Refresh tasks and remove outputs for deleted task
-      fetchTasks()
-      if (lastMessage.taskId) {
-        const taskId = lastMessage.taskId
-        setTaskOutputs(prev => {
-          const newOutputs = { ...prev }
-          delete newOutputs[taskId]
-          return newOutputs
-        })
-      }
-    }
-  }, [lastMessage])
 
   const fetchRepoPath = async () => {
     try {
@@ -479,157 +225,94 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json()
         setTasks(data)
-        // Fetch outputs for all tasks
-        data.forEach((task: Task) => {
-          fetchTaskOutputs(task.id)
-        })
       }
     } catch (error) {
       console.error('Error fetching tasks:', error)
     }
   }
 
-  const fetchTaskOutputs = async (taskId: string) => {
+  const handleBringToFront = async (taskId: string) => {
     try {
-      const response = await fetch(`/api/tasks/${taskId}/outputs`)
-      if (response.ok) {
-        const outputs = await response.json()
-        setTaskOutputs(prev => ({
-          ...prev,
-          [taskId]: outputs
-        }))
+      const response = await fetch(`/api/tasks/${taskId}/focus`, {
+        method: 'POST'
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        setError(data.error || 'Failed to bring terminal to front')
       }
-    } catch (error) {
-      console.error(`Error fetching outputs for task ${taskId}:`, error)
+    } catch (error: any) {
+      console.error('Error bringing terminal to front:', error)
+      setError(error.message || 'Failed to bring terminal to front')
     }
   }
 
   const handleDeleteTask = async (taskId: string) => {
-    if (!confirm('Are you sure you want to remove this task? This will delete the worktree and all changes.')) {
-      return
-    }
-    
     try {
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'DELETE',
       })
+      
       if (response.ok) {
         fetchTasks()
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to remove task: ${errorData.error || 'Unknown error'}`)
       }
-    } catch (error: any) {
-      console.error('Error removing task:', error)
-      setError(`Failed to remove task: ${error.message || 'Network error'}`)
+    } catch (error) {
+      console.error('Error deleting task:', error)
     }
   }
 
   const handleDeleteNonInProgressTasks = async () => {
-    const nonInProgressTasks = tasks.filter(task => task.status !== 'in_progress')
+    const tasksToDelete = tasks.filter(t => t.status !== 'in_progress' && t.status !== 'starting')
     
-    if (nonInProgressTasks.length === 0) {
-      setError('No non-in-progress tasks to delete')
+    if (tasksToDelete.length === 0) {
+      setError('No tasks to delete')
       return
     }
     
-    if (!confirm(`Are you sure you want to delete ${nonInProgressTasks.length} non-in-progress task(s)? This will remove their worktrees and changes permanently.`)) {
+    if (!confirm(`Delete ${tasksToDelete.length} non in-progress tasks?`)) {
       return
     }
     
     setIsDeletingAll(true)
-    setError(null)
-    
     try {
-      // Delete each non-in-progress task
-      const deletePromises = nonInProgressTasks.map(task => 
-        fetch(`/api/tasks/${task.id}`, { method: 'DELETE' })
+      await Promise.all(
+        tasksToDelete.map(task =>
+          fetch(`/api/tasks/${task.id}`, { method: 'DELETE' })
+        )
       )
-      
-      const results = await Promise.all(deletePromises)
-      const failedDeletes = results.filter(r => !r.ok)
-      
-      if (failedDeletes.length > 0) {
-        setError(`Failed to delete ${failedDeletes.length} task(s)`)
-      } else {
-        fetchTasks()
-      }
-    } catch (error: any) {
-      console.error('Error deleting non-in-progress tasks:', error)
-      setError(`Failed to delete tasks: ${error.message || 'Network error'}`)
+      fetchTasks()
+    } catch (error) {
+      console.error('Error deleting tasks:', error)
     } finally {
       setIsDeletingAll(false)
     }
   }
 
   const handleKillAllProcesses = async () => {
-    if (!confirm('Are you sure you want to kill all tracked Claude Code processes? This will stop all running tasks.')) {
+    if (!confirm('Kill all tracked processes? This will stop all running tasks.')) {
       return
     }
     
     try {
-      const response = await fetch('/api/processes/cleanup', { method: 'POST' })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setError(null)
-        alert(data.message)
-        fetchTasks() // Refresh tasks to update their status
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to kill processes: ${errorData.error || 'Unknown error'}`)
-      }
-    } catch (error: any) {
-      console.error('Error killing processes:', error)
-      setError(`Failed to kill processes: ${error.message || 'Network error'}`)
-    }
-  }
-
-  const handlePreview = async (taskId: string, isCurrentlyPreviewing: boolean) => {
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/preview`, {
-        method: isCurrentlyPreviewing ? 'DELETE' : 'POST',
-      })
-      
-      if (response.ok) {
-        setPreviewingTaskId(isCurrentlyPreviewing ? null : taskId)
-        setError(null)
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to ${isCurrentlyPreviewing ? 'stop' : 'start'} preview: ${errorData.error || 'Unknown error'}`)
-      }
-    } catch (error: any) {
-      console.error('Error toggling preview:', error)
-      setError(`Failed to ${isCurrentlyPreviewing ? 'stop' : 'start'} preview: ${error.message || 'Network error'}`)
-    }
-  }
-
-  const handleMerge = async (taskId: string) => {
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/merge`, {
+      const response = await fetch('/api/processes/cleanup', {
         method: 'POST',
       })
       
       if (response.ok) {
-        alert('Task merged successfully!')
+        alert('All processes have been killed')
         fetchTasks()
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to merge task: ${errorData.error || 'Unknown error'}`)
       }
-    } catch (error: any) {
-      console.error('Error merging task:', error)
-      setError(`Failed to merge task: ${error.message || 'Network error'}`)
+    } catch (error) {
+      console.error('Error killing processes:', error)
     }
   }
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // Validate file size (10MB limit)
       if (file.size > 10 * 1024 * 1024) {
         setError('Image size must be less than 10MB')
-        e.target.value = '' // Reset input
+        e.target.value = ''
         return
       }
       
@@ -655,24 +338,12 @@ export default function Home() {
     e.preventDefault()
     if (!prompt.trim() || !repoPath.trim()) return
 
-    let finalPrompt = prompt
-    
-    // Add think mode first (it will be moved after image ref on backend)
-    if (thinkMode !== 'none' && thinkMode !== 'no_review' && thinkMode !== 'planning') {
-      const thinkModeText = thinkMode === 'level1' ? 'Think hard' : 
-                           thinkMode === 'level2' ? 'Ultrathink' : 
-                           ''
-      if (thinkModeText) {
-        finalPrompt = `${finalPrompt}. ${thinkModeText}`
-      }
-    }
-
     setIsSubmitting(true)
     try {
       const formData = new FormData()
-      formData.append('prompt', finalPrompt)
+      formData.append('prompt', prompt)
       formData.append('repoPath', repoPath)
-      formData.append('thinkMode', thinkMode)
+      formData.append('mode', mode)
       if (selectedImage) {
         formData.append('image', selectedImage)
       }
@@ -683,11 +354,18 @@ export default function Home() {
       })
 
       if (response.ok) {
+        const task = await response.json()
         setPrompt('')
         setSelectedImage(null)
         setImagePreview(null)
         setError(null)
         setIsModalOpen(false)
+        
+        // Start the task immediately
+        await fetch(`/api/tasks/${task.id}/start`, {
+          method: 'POST'
+        })
+        
         fetchTasks()
       } else {
         const errorData = await response.json()
@@ -743,7 +421,7 @@ export default function Home() {
                   onClick={handleKillAllProcesses}
                   className="text-destructive focus:text-destructive"
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
+                  <Terminal className="mr-2 h-4 w-4" />
                   Kill All Tracked Processes
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -765,11 +443,8 @@ export default function Home() {
         </h2>
         <ActiveTaskCards
           tasks={activeTasks}
-          onPreview={handlePreview}
-          onMerge={handleMerge}
+          onBringToFront={handleBringToFront}
           onDelete={handleDeleteTask}
-          previewingTaskId={previewingTaskId}
-          taskOutputs={taskOutputs}
         />
       </div>
 
@@ -780,10 +455,7 @@ export default function Home() {
         </h2>
         <TaskTable
           tasks={otherTasks}
-          onPreview={handlePreview}
-          onMerge={handleMerge}
           onDelete={handleDeleteTask}
-          previewingTaskId={previewingTaskId}
         />
       </div>
 
@@ -796,7 +468,6 @@ export default function Home() {
               Create a coding task with clear requirements
             </DialogDescription>
           </DialogHeader>
-          
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="repoPath">Repository Path</Label>
@@ -854,27 +525,15 @@ export default function Home() {
             </div>
             
             <div className="space-y-2">
-              <Label>Think Mode</Label>
-              <RadioGroup value={thinkMode} onValueChange={setThinkMode}>
+              <Label>Mode</Label>
+              <RadioGroup value={mode} onValueChange={setMode}>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="no_review" id="no_review" />
-                  <Label htmlFor="no_review" className="font-normal">No Review</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="none" id="none" />
-                  <Label htmlFor="none" className="font-normal">None</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="level1" id="level1" />
-                  <Label htmlFor="level1" className="font-normal">Think hard (level 1)</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="level2" id="level2" />
-                  <Label htmlFor="level2" className="font-normal">Ultrathink (level 2)</Label>
+                  <RadioGroupItem value="edit" id="edit" />
+                  <Label htmlFor="edit" className="font-normal">Edit Mode (Direct implementation)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="planning" id="planning" />
-                  <Label htmlFor="planning" className="font-normal">Planning (level 3)</Label>
+                  <Label htmlFor="planning" className="font-normal">Planning Mode (Create plan first)</Label>
                 </div>
               </RadioGroup>
             </div>

@@ -2,41 +2,36 @@ export interface Task {
   id: string
   prompt: string
   status: 'starting' | 'in_progress' | 'finished' | 'failed' | 'merged'
-  phase: 'planner' | 'editor' | 'reviewer' | 'done'
+  phase: 'starting' | 'planning' | 'edit' | 'done'
   worktree: string
   repoPath: string
   createdAt: Date
+  finishedAt?: Date
   mergedAt?: Date
-  editorPid?: number
-  reviewerPid?: number
-  plannerPid?: number
-  output: TaskOutput[]
+  terminalTag: string
+  mode?: 'planning' | 'edit'
   isSelfModification?: boolean
   commitHash?: string
-  isPreviewing?: boolean
-  promptHistory?: PromptCycle[]
-  thinkMode?: string
-  initiativeId?: string
-  stepNumber?: number
-  globalContext?: string
-  needsRecovery?: boolean
-  retryCount?: number
+  promptCycles?: PromptCycle[]
+  previousTaskId?: string
   lastActivityTime?: Date
-  lastHeartbeatTime?: Date
-  recovered?: boolean
+  requestedChangesAt?: Date
 }
 
 export interface PromptCycle {
+  id: string
   prompt: string
-  timestamp: Date
   commitHash?: string
-  mergedAt?: Date
+  requestedChanges?: string
+  createdAt: Date
+  finishedAt: Date
 }
 
+// Deprecated - kept for backward compatibility
 export interface TaskOutput {
   id: string
   taskId: string
-  type: 'planner' | 'editor' | 'reviewer' | 'system' | 'merge-conflict-resolver'
+  type: string
   content: string
   timestamp: Date
 }

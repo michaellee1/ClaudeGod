@@ -3,25 +3,26 @@ import { taskStore } from '@/lib/utils/task-store'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
-    const { prompt } = await request.json()
+    const params = await context.params
+    const taskId = params.id
     
-    if (!prompt) {
+    if (!taskId) {
       return NextResponse.json(
-        { error: 'Prompt is required' },
+        { error: 'Task ID is required' },
         { status: 400 }
       )
     }
     
-    await taskStore.sendPromptToTask(id, prompt)
+    await taskStore.startTask(taskId)
+    
     return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Error sending prompt:', error)
+  } catch (error: any) {
+    console.error(`Error starting task:`, error)
     return NextResponse.json(
-      { error: 'Failed to send prompt' },
+      { error: error.message || 'Failed to start task' },
       { status: 500 }
     )
   }

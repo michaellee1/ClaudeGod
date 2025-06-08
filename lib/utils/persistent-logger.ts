@@ -6,12 +6,11 @@ import { EventEmitter } from 'events'
 
 export interface LogEntry {
   timestamp: Date
-  type: 'websocket' | 'task' | 'initiative' | 'system' | 'error'
+  type: 'websocket' | 'task' | 'system' | 'error'
   category: string
   data: any
   metadata?: {
     taskId?: string
-    initiativeId?: string
     pid?: number
     phase?: string
     [key: string]: any
@@ -48,7 +47,6 @@ export class PersistentLogger extends EventEmitter {
   private readonly LOG_CATEGORIES = {
     WEBSOCKET: 'websocket',
     TASK: 'task',
-    INITIATIVE: 'initiative',
     SYSTEM: 'system',
     ERROR: 'error'
   }
@@ -140,17 +138,6 @@ export class PersistentLogger extends EventEmitter {
     })
   }
   
-  /**
-   * Log initiative event
-   */
-  async logInitiativeEvent(initiativeId: string, event: string, data: any, metadata?: any): Promise<void> {
-    await this.log({
-      type: 'initiative',
-      category: event,
-      data,
-      metadata: { initiativeId, ...metadata }
-    })
-  }
   
   /**
    * Log system event
@@ -186,7 +173,6 @@ export class PersistentLogger extends EventEmitter {
     type?: LogEntry['type']
     category?: string
     taskId?: string
-    initiativeId?: string
     startTime?: Date
     endTime?: Date
     limit?: number
@@ -206,7 +192,6 @@ export class PersistentLogger extends EventEmitter {
           if (criteria.type && entry.type !== criteria.type) return false
           if (criteria.category && entry.category !== criteria.category) return false
           if (criteria.taskId && entry.metadata?.taskId !== criteria.taskId) return false
-          if (criteria.initiativeId && entry.metadata?.initiativeId !== criteria.initiativeId) return false
           if (criteria.startTime && new Date(entry.timestamp) < criteria.startTime) return false
           if (criteria.endTime && new Date(entry.timestamp) > criteria.endTime) return false
           return true

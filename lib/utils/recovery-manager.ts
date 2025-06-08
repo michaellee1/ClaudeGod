@@ -1,24 +1,18 @@
 import { getPersistentState } from './persistent-state'
 import { getPersistentLogger } from './persistent-logger'
 import { taskStore } from './task-store'
-import { initiativeStore } from './initiative-store'
 import { ProcessManager } from './process-manager'
-import { Task, TaskOutput } from '../types/task'
-import { Initiative } from '../types/initiative'
+import { Task } from '../types/task'
 
 export interface RecoveryReport {
   timestamp: Date
   tasksRecovered: number
-  initiativesRecovered: number
-  outputsRecovered: number
   errors: Array<{ type: string; message: string; context?: any }>
   warnings: Array<{ type: string; message: string; context?: any }>
 }
 
 export interface RecoveryOptions {
   recoverTasks?: boolean
-  recoverInitiatives?: boolean
-  recoverOutputs?: boolean
   recoverFromSnapshot?: string
   dryRun?: boolean
 }
@@ -37,8 +31,6 @@ export class RecoveryManager {
     const report: RecoveryReport = {
       timestamp: new Date(),
       tasksRecovered: 0,
-      initiativesRecovered: 0,
-      outputsRecovered: 0,
       errors: [],
       warnings: []
     }
@@ -58,20 +50,14 @@ export class RecoveryManager {
         await this.recoverTasks(report, options.dryRun)
       }
       
-      // Recover initiatives
-      if (options.recoverInitiatives !== false) {
-        await this.recoverInitiatives(report, options.dryRun)
-      }
       
-      // Recover outputs
-      if (options.recoverOutputs !== false) {
-        await this.recoverOutputs(report, options.dryRun)
-      }
+      // Outputs are no longer tracked in iTerm-based workflow
+      // Skip output recovery
       
       // Verify data integrity
       await this.verifyDataIntegrity(report)
       
-      console.log(`[RecoveryManager] Recovery completed. Tasks: ${report.tasksRecovered}, Initiatives: ${report.initiativesRecovered}`)
+      console.log(`[RecoveryManager] Recovery completed. Tasks: ${report.tasksRecovered}`)
       await this.logger.logSystemEvent('recovery-completed', report)
       
     } catch (error) {
@@ -163,103 +149,28 @@ export class RecoveryManager {
     }
   }
   
-  /**
-   * Recover task outputs
-   */
-  private async recoverOutputs(report: RecoveryReport, dryRun?: boolean): Promise<void> {
-    console.log('[RecoveryManager] Recovering outputs...')
-    
-    try {
-      const tasks = await this.persistentState.getAllTasks()
-      
-      for (const task of tasks) {
-        try {
-          const outputs = await this.persistentState.getTaskOutputs(task.id)
-          const currentOutputs = taskStore.getOutputs(task.id)
-          
-          if (outputs.length > currentOutputs.length) {
-            if (!dryRun) {
-              // Restore missing outputs
-              const missingCount = outputs.length - currentOutputs.length
-              console.log(`[RecoveryManager] Restoring ${missingCount} missing outputs for task ${task.id}`)
-              
-              // Update task store with all outputs
-              // Note: This is a simplified approach - in production you'd merge intelligently
-              report.outputsRecovered += missingCount
-            }
-          }
-        } catch (error) {
-          report.warnings.push({
-            type: 'output-recovery-failed',
-            message: error instanceof Error ? error.message : String(error),
-            context: { taskId: task.id }
-          })
-        }
-      }
-    } catch (error) {
-      report.errors.push({
-        type: 'outputs-recovery-failed',
-        message: error instanceof Error ? error.message : String(error)
-      })
-    }
-  }
+  
   
   /**
-   * Recover initiatives
-   */
-  private async recoverInitiatives(report: RecoveryReport, dryRun?: boolean): Promise<void> {
-    console.log('[RecoveryManager] Recovering initiatives...')
-    
-    // Similar recovery logic for initiatives
-    // This is a placeholder - implement based on initiative store structure
-    report.warnings.push({
-      type: 'initiatives-recovery-skipped',
-      message: 'Initiative recovery not yet implemented'
-    })
-  }
-  
-  /**
-   * Recover task process
+   * Handle iTerm terminal recovery
    */
   private async recoverTaskProcess(task: Task, report: RecoveryReport, dryRun?: boolean): Promise<void> {
     if (dryRun) return
     
     try {
-      // Check if process is still running
-      if (task.editorPid || task.reviewerPid || task.plannerPid) {
-        const processesAlive = await this.checkProcessesAlive({
-          editorPid: task.editorPid,
-          reviewerPid: task.reviewerPid,
-          plannerPid: task.plannerPid
+      // With iTerm integration, we can't automatically recover terminals
+      // Just note that the task needs manual intervention
+      console.log(`[RecoveryManager] Task ${task.id} was in progress - iTerm terminal needs to be reopened manually`)
+      
+      if (!dryRun && task.terminalTag) {
+        report.warnings.push({
+          type: 'terminal-needs-reopening',
+          message: `Task ${task.id} was in progress - iTerm terminal with tag '${task.terminalTag}' needs to be reopened`,
+          context: { taskId: task.id, terminalTag: task.terminalTag }
         })
-        
-        if (processesAlive) {
-          console.log(`[RecoveryManager] Processes still running for task ${task.id}, attempting reconnection`)
-          
-          // Create new process manager and reconnect
-          const processManager = new ProcessManager(task.id, task.worktree, task.repoPath)
-          await processManager.reconnectToProcesses({
-            editorPid: task.editorPid,
-            reviewerPid: task.reviewerPid,
-            plannerPid: task.plannerPid
-          }, task.phase, task.thinkMode)
-          
-          report.warnings.push({
-            type: 'process-reconnected',
-            message: `Reconnected to running processes for task ${task.id}`,
-            context: { taskId: task.id }
-          })
-        } else {
-          // Processes are dead, mark task for recovery
-          report.warnings.push({
-            type: 'process-dead',
-            message: `Processes terminated for task ${task.id}`,
-            context: { taskId: task.id }
-          })
-        }
       }
     } catch (error) {
-      report.errors.push({
+      report.warnings.push({
         type: 'process-recovery-failed',
         message: error instanceof Error ? error.message : String(error),
         context: { taskId: task.id }
@@ -333,33 +244,6 @@ export class RecoveryManager {
     })
   }
   
-  /**
-   * Check if processes are alive
-   */
-  private async checkProcessesAlive(pids: { editorPid?: number, reviewerPid?: number, plannerPid?: number }): Promise<boolean> {
-    const { execFile } = require('child_process')
-    const { promisify } = require('util')
-    const exec = promisify(execFile)
-    
-    const pidsToCheck = [pids.editorPid, pids.reviewerPid, pids.plannerPid].filter(pid => pid)
-    
-    if (pidsToCheck.length === 0) return false
-    
-    try {
-      for (const pid of pidsToCheck) {
-        try {
-          await exec('kill', ['-0', pid!.toString()])
-          return true // At least one process is alive
-        } catch {
-          // Process not found, continue checking others
-        }
-      }
-      return false
-    } catch (error) {
-      console.error('Error checking process status:', error)
-      return false
-    }
-  }
   
   /**
    * Get recovery status

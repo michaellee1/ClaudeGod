@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Task, TaskOutput } from '@/lib/types/task'
-import { useWebSocket } from '@/lib/hooks/useWebSocket'
+import { Task } from '@/lib/types/task'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,134 +10,43 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DiffViewer } from '@/components/DiffViewer'
+import { Terminal, ExternalLink, GitCommit, GitMerge, AlertCircle, Trash2, Plus } from 'lucide-react'
 
 export default function TaskDetail() {
   const params = useParams()
   const router = useRouter()
   const [task, setTask] = useState<Task | null>(null)
-  const [outputs, setOutputs] = useState<TaskOutput[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [showMergeConfirm, setShowMergeConfirm] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
-  const [additionalPrompt, setAdditionalPrompt] = useState('')
-  const [isSendingPrompt, setIsSendingPrompt] = useState(false)
-  const [isPreviewing, setIsPreviewing] = useState(false)
+  const [requestedChanges, setRequestedChanges] = useState('')
+  const [isRequestingChanges, setIsRequestingChanges] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCommitting, setIsCommitting] = useState(false)
-  const [showPreviewConflict, setShowPreviewConflict] = useState(false)
-  const [conflictBranchName, setConflictBranchName] = useState<string | null>(null)
-  const [showMergeConflict, setShowMergeConflict] = useState(false)
-  const [mergeConflictBranchName, setMergeConflictBranchName] = useState<string | null>(null)
-  const [showFailedTaskPreviewConfirm, setShowFailedTaskPreviewConfirm] = useState(false)
-  const [showFailedTaskCommitConfirm, setShowFailedTaskCommitConfirm] = useState(false)
-  const [showDiffModal, setShowDiffModal] = useState(false)
-  const [diffContent, setDiffContent] = useState<string>('')
-  const [isLoadingDiff, setIsLoadingDiff] = useState(false)
-  const [isResolvingConflict, setIsResolvingConflict] = useState(false)
-  const [conflictResolutionOutputs, setConflictResolutionOutputs] = useState<string[]>([])
-  const MAX_CONFLICT_OUTPUTS = 500 // Limit to prevent memory issues
-  const outputEndRef = useRef<HTMLDivElement>(null)
-  const hasScrolledToBottom = useRef(false)
-  const outputContainerRef = useRef<HTMLDivElement>(null)
-  const conflictOutputEndRef = useRef<HTMLDivElement>(null)
+  const [commitMessage, setCommitMessage] = useState('')
+  const [isBringingToFront, setIsBringingToFront] = useState(false)
 
   const taskId = params.id as string
   
-  // Use WebSocket for real-time updates
-  const { lastMessage } = useWebSocket('/ws', taskId)
-
-  // Fetching task data on mount/id change is an appropriate use of useEffect
-  // We're synchronizing with external data from the server
   useEffect(() => {
     if (taskId) {
       fetchTask()
-      fetchOutputs()
+      // Poll for updates every 5 seconds
+      const interval = setInterval(fetchTask, 5000)
+      return () => clearInterval(interval)
     }
   }, [taskId])
 
-  // Handling WebSocket messages is an appropriate use of useEffect
-  // We're synchronizing with external WebSocket updates
-  useEffect(() => {
-    if (!lastMessage || !taskId) return
-
-    if (lastMessage.type === 'task-update' && lastMessage.taskId === taskId) {
-      // Update task directly from WebSocket data
-      if (lastMessage.data) {
-        setTask(lastMessage.data)
-        // Sync preview state
-        if (lastMessage.data.isPreviewing !== undefined) {
-          setIsPreviewing(lastMessage.data.isPreviewing)
-        }
-      }
-    } else if (lastMessage.type === 'task-output' && lastMessage.taskId === taskId) {
-      // Add new output directly
-      if (lastMessage.data) {
-        setOutputs(prev => [...prev, lastMessage.data])
-        
-        // Check if this is merge conflict resolver output
-        if (lastMessage.data.type === 'merge-conflict-resolver') {
-          setIsResolvingConflict(true)
-          setConflictResolutionOutputs(prev => {
-            const newOutputs = [...prev, lastMessage.data.content]
-            // Keep only the last MAX_CONFLICT_OUTPUTS entries
-            if (newOutputs.length > MAX_CONFLICT_OUTPUTS) {
-              return newOutputs.slice(-MAX_CONFLICT_OUTPUTS)
-            }
-            return newOutputs
-          })
-          
-          // Auto-scroll conflict output
-          setTimeout(() => {
-            conflictOutputEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-          }, 100)
-          
-          // Check if resolution is complete
-          if (lastMessage.data.content.includes('Successfully resolved conflicts') || 
-              lastMessage.data.content.includes('[ERROR]')) {
-            setTimeout(() => {
-              setIsResolvingConflict(false)
-            }, 2000) // Keep dialog open for 2 seconds after completion
-          }
-        }
-      }
-    } else if (lastMessage.type === 'task-removed' && lastMessage.taskId === taskId) {
-      // Task was removed, redirect to home
-      router.push('/')
-    } else if ((lastMessage.type === 'connection-lost' || lastMessage.type === 'connection-restored') && lastMessage.taskId === taskId) {
-      // Add connection status as system output only in development or if explicitly enabled
-      const showConnectionStatus = process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_SHOW_CONNECTION_STATUS === 'true'
-      if (showConnectionStatus && lastMessage.data) {
-        const systemOutput: TaskOutput = {
-          id: Math.random().toString(36).substring(7),
-          taskId: taskId,
-          type: 'system',
-          content: lastMessage.data.content,
-          timestamp: lastMessage.data.timestamp
-        }
-        setOutputs(prev => [...prev, systemOutput])
-      }
-    }
-  }, [lastMessage, taskId, router])
-
-  // Scrolling on initial load is an appropriate use of useEffect
-  // We're synchronizing scroll position with DOM updates
-  useEffect(() => {
-    if (outputs.length > 0 && !hasScrolledToBottom.current && outputContainerRef.current) {
-      outputContainerRef.current.scrollTop = outputContainerRef.current.scrollHeight
-      hasScrolledToBottom.current = true
-    }
-  }, [outputs.length > 0])
-
   const fetchTask = async () => {
     try {
-      const response = await fetch(`/api/tasks/${taskId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setTask(data)
-        // Sync preview state with task data
-        if (data.isPreviewing !== undefined) {
-          setIsPreviewing(data.isPreviewing)
+      const res = await fetch('/api/tasks')
+      const tasks = await res.json()
+      const currentTask = tasks.find((t: Task) => t.id === taskId)
+      if (currentTask) {
+        setTask(currentTask)
+        // Auto-generate commit message
+        if (currentTask.status === 'finished' && !currentTask.commitHash && !commitMessage) {
+          setCommitMessage(`Complete task: ${currentTask.prompt.substring(0, 60)}${currentTask.prompt.length > 60 ? '...' : ''}`)
         }
       }
     } catch (error) {
@@ -146,264 +54,152 @@ export default function TaskDetail() {
     }
   }
 
-  const fetchOutputs = async () => {
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/outputs`)
-      if (response.ok) {
-        const data = await response.json()
-        setOutputs(data)
-      }
-    } catch (error) {
-      console.error('Error fetching outputs:', error)
-    }
-  }
-
-  const handleMerge = async () => {
-    setIsMerging(true)
-    setConflictResolutionOutputs([]) // Reset conflict outputs
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/merge`, {
-        method: 'POST',
-      })
-      if (response.ok) {
-        await fetchTask() // Refresh task to show merged status
-        setError(null)
-        setIsResolvingConflict(false) // Stop showing progress on success
-      } else {
-        const errorData = await response.json()
-        const errorMessage = errorData.error || 'Unknown error'
-        const errorCode = errorData.code
-        const errorDetails = errorData.details
-        
-        if (errorCode === 'MERGE_IN_PROGRESS') {
-          // Another merge is in progress
-          setError(errorMessage)
-        } else if (errorMessage.startsWith('MERGE_CONFLICT:')) {
-          const branchName = errorMessage.split(':')[1]
-          setMergeConflictBranchName(branchName)
-          
-          // If we have details about failed auto-resolution, show them
-          if (errorDetails) {
-            setError(`Automatic conflict resolution attempted but failed: ${errorDetails}`)
-          }
-          
-          setIsResolvingConflict(false) // Stop showing progress
-          setShowMergeConflict(true)
-        } else if (errorMessage.startsWith('UNCOMMITTED_CHANGES:')) {
-          // Extract the descriptive error message after the prefix
-          const description = errorMessage.substring('UNCOMMITTED_CHANGES:'.length).trim()
-          setError(`Cannot merge: ${description}`)
-        } else {
-          setError(`Failed to merge: ${errorMessage}`)
-        }
-      }
-    } catch (error: any) {
-      console.error('Error merging task:', error)
-      setError(`Failed to merge task: ${error.message || 'Network error'}`)
-    } finally {
-      setIsMerging(false)
-      setShowMergeConfirm(false)
-    }
-  }
-
-  const handleRemove = async () => {
-    if (!confirm('Are you sure you want to remove this task? This will delete the worktree and all changes.')) {
-      return
-    }
+  const bringToFront = async () => {
+    if (!task) return
     
-    setIsRemoving(true)
-    try {
-      const response = await fetch(`/api/tasks/${taskId}`, {
-        method: 'DELETE',
-      })
-      if (response.ok) {
-        router.push('/')
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to remove: ${errorData.error || 'Unknown error'}`)
-      }
-    } catch (error: any) {
-      console.error('Error removing task:', error)
-      setError(`Failed to remove task: ${error.message || 'Network error'}`)
-    } finally {
-      setIsRemoving(false)
-    }
-  }
-
-  const handleSendPrompt = async () => {
-    if (!additionalPrompt.trim()) return
-    
-    setIsSendingPrompt(true)
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/prompt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: additionalPrompt }),
-      })
-      if (response.ok) {
-        setAdditionalPrompt('')
-        setError(null)
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to send prompt: ${errorData.error || 'Unknown error'}`)
-      }
-    } catch (error: any) {
-      console.error('Error sending prompt:', error)
-      setError(`Failed to send prompt: ${error.message || 'Network error'}`)
-    } finally {
-      setIsSendingPrompt(false)
-    }
-  }
-
-  const handleStartPreview = async () => {
-    // If task failed, show confirmation first
-    if (task?.status === 'failed') {
-      setShowFailedTaskPreviewConfirm(true)
-      return
-    }
-    
-    await startPreview()
-  }
-
-  const startPreview = async () => {
-    setIsPreviewing(true)
+    setIsBringingToFront(true)
     setError(null)
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/preview`, {
-        method: 'POST',
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        const errorMessage = errorData.error || 'Unknown error'
-        
-        // Check if this is a cherry-pick conflict
-        if (errorMessage.startsWith('CHERRY_PICK_CONFLICT:')) {
-          const branchName = errorMessage.split(':')[1]
-          setConflictBranchName(branchName)
-          setShowPreviewConflict(true)
-          setIsPreviewing(false)
-        } else {
-          setError(`Failed to start preview: ${errorMessage}`)
-          setIsPreviewing(false)
-        }
-      }
-    } catch (error: any) {
-      console.error('Error starting preview:', error)
-      setError(`Failed to start preview: ${error.message || 'Network error'}`)
-      setIsPreviewing(false)
-    }
-  }
-
-  const handleStopPreview = async () => {
-    setError(null)
-    try {
-      const response = await fetch(`/api/tasks/${taskId}/preview`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        setError(`Failed to stop preview: ${errorData.error || 'Unknown error'}`)
-      } else {
-        setIsPreviewing(false)
-      }
-    } catch (error: any) {
-      console.error('Error stopping preview:', error)
-      setError(`Failed to stop preview: ${error.message || 'Network error'}`)
-    }
-  }
-
-  const handleManualCommit = async () => {
-    // If task failed, show confirmation first
-    if (task?.status === 'failed') {
-      setShowFailedTaskCommitConfirm(true)
-      return
-    }
     
-    await performCommit()
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/focus`, {
+        method: 'POST'
+      })
+      
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to bring terminal to front')
+      }
+    } catch (error: any) {
+      setError(error.message)
+    } finally {
+      setIsBringingToFront(false)
+    }
   }
 
-  const performCommit = async () => {
+  const handleCommit = async () => {
+    if (!task || !commitMessage.trim()) return
+    
     setIsCommitting(true)
     setError(null)
+    
     try {
-      const commitMessage = task?.status === 'failed' 
-        ? `Failed task: ${task?.prompt}` 
-        : `Complete task: ${task?.prompt}`
-      
-      const response = await fetch(`/api/tasks/${taskId}/commit`, {
+      const res = await fetch(`/api/tasks/${task.id}/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: commitMessage }),
+        body: JSON.stringify({ message: commitMessage })
       })
-      if (!response.ok) {
-        const errorData = await response.json()
-        setError(`Failed to commit: ${errorData.error || 'Unknown error'}`)
-      } else {
-        // Refresh task data to get the new commit hash
-        await fetchTask()
+      
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to commit')
       }
+      
+      await fetchTask()
     } catch (error: any) {
-      console.error('Error committing:', error)
-      setError(`Failed to commit: ${error.message || 'Network error'}`)
+      setError(error.message)
     } finally {
       setIsCommitting(false)
     }
   }
 
-  const handleResubmitTask = async () => {
+  const handleMerge = async () => {
     if (!task) return
     
+    setIsMerging(true)
+    setError(null)
+    
     try {
-      // Create a new task with the same prompt
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt: task.prompt,
-          repoPath: task.repoPath
-        }),
+      const res = await fetch(`/api/tasks/${task.id}/merge`, {
+        method: 'POST'
       })
       
-      if (response.ok) {
-        const newTask = await response.json()
-        router.push(`/task/${newTask.id}`)
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to resubmit task: ${errorData.error || 'Unknown error'}`)
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to merge')
       }
+      
+      setShowMergeConfirm(false)
+      await fetchTask()
     } catch (error: any) {
-      console.error('Error resubmitting task:', error)
-      setError(`Failed to resubmit task: ${error.message || 'Network error'}`)
+      setError(error.message)
+    } finally {
+      setIsMerging(false)
     }
   }
 
-  const handleViewDiff = async () => {
-    setIsLoadingDiff(true)
+  const handleRequestChanges = async () => {
+    if (!task || !requestedChanges.trim()) return
+    
+    setIsRequestingChanges(true)
     setError(null)
+    
     try {
-      const response = await fetch(`/api/tasks/${taskId}/diff`)
-      if (response.ok) {
-        const data = await response.json()
-        setDiffContent(data.diff)
-        setShowDiffModal(true)
-      } else {
-        const errorData = await response.json()
-        setError(`Failed to load diff: ${errorData.error || 'Unknown error'}`)
+      const formData = new FormData()
+      formData.append('requestedChanges', requestedChanges)
+      
+      const res = await fetch(`/api/tasks/${task.id}/request-changes`, {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to request changes')
       }
+      
+      const data = await res.json()
+      router.push(`/task/${data.newTask.id}`)
     } catch (error: any) {
-      console.error('Error loading diff:', error)
-      setError(`Failed to load diff: ${error.message || 'Network error'}`)
+      setError(error.message)
     } finally {
-      setIsLoadingDiff(false)
+      setIsRequestingChanges(false)
     }
+  }
+
+  const handleRemove = async () => {
+    if (!task) return
+    
+    setIsRemoving(true)
+    
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'DELETE'
+      })
+      
+      if (res.ok) {
+        router.push('/')
+      }
+    } catch (error) {
+      console.error('Error removing task:', error)
+    } finally {
+      setIsRemoving(false)
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'starting': return 'bg-gray-500'
+      case 'in_progress': return 'bg-blue-500'
+      case 'finished': return 'bg-green-500'
+      case 'failed': return 'bg-red-500'
+      case 'merged': return 'bg-purple-500'
+      default: return 'bg-gray-500'
+    }
+  }
+
+  const getPhaseText = (phase: string, mode?: string) => {
+    if (mode === 'planning' && phase === 'planning') return 'Planning'
+    if (phase === 'edit') return 'Editing'
+    if (phase === 'done') return 'Complete'
+    return phase
   }
 
   if (!task) {
     return (
-      <div className="container mx-auto p-8">
+      <div className="container mx-auto px-4 py-8">
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Loading...</p>
+          <CardContent className="p-8">
+            <p className="text-center text-muted-foreground">Loading task...</p>
           </CardContent>
         </Card>
       </div>
@@ -411,500 +207,199 @@ export default function TaskDetail() {
   }
 
   return (
-    <div className="h-screen flex flex-col p-4">
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>
-            <pre className="whitespace-pre-wrap font-sans">{error}</pre>
-          </AlertDescription>
-        </Alert>
-      )}
-      
-      <div className="flex gap-4 h-full">
-        {/* Left side - controls */}
-        <div className="w-96 flex flex-col gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => router.push('/')}
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="15 18 9 12 15 6" />
-                    </svg>
-                  </Button>
-                  <CardTitle className="text-lg">Task: {task.id}</CardTitle>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      task.status === 'starting' ? 'outline' :
-                      task.status === 'in_progress' ? 'default' :
-                      task.status === 'finished' ? 'success' :
-                      task.status === 'merged' ? 'purple' :
-                      'destructive'
-                    }
-                  >
-                    {task.status}
-                  </Badge>
-                  <Button
-                    onClick={handleRemove}
-                    disabled={isRemoving}
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </Button>
-                </div>
-              </div>
-              <CardDescription className="text-xs mt-1">{task.prompt}</CardDescription>
-              {task.repoPath && (
-                <CardDescription className="text-xs mt-1 text-muted-foreground">
-                  Repository: {task.repoPath}
-                </CardDescription>
-              )}
-            </CardHeader>
-            <CardContent className="pt-0 space-y-2">
-              <Button
-                onClick={() => setShowMergeConfirm(true)}
-                disabled={isMerging || !task.commitHash || task.status === 'merged'}
-                variant="default"
-                className="w-full"
-                size="sm"
-              >
-                {isMerging ? 'Merging...' : task.status === 'merged' ? 'Already Merged' : 'Merge to Main'}
-              </Button>
-              
-              {task.commitHash && (
-                <Button
-                  onClick={isPreviewing ? handleStopPreview : handleStartPreview}
-                  disabled={(task.status !== 'finished' && task.status !== 'merged' && task.status !== 'failed') || isMerging}
-                  variant={isPreviewing ? "destructive" : "secondary"}
-                  className="w-full"
-                  size="sm"
-                >
-                  {isPreviewing ? 'Stop Preview' : 'Preview Changes'}
-                </Button>
-              )}
-              
-              {(task.status === 'finished' || task.status === 'failed') && !task.commitHash && (
-                <Button
-                  onClick={handleManualCommit}
-                  disabled={isCommitting}
-                  variant="secondary"
-                  className="w-full"
-                  size="sm"
-                >
-                  {isCommitting ? 'Committing...' : 'Commit Changes'}
-                </Button>
-              )}
-              
-              <Button
-                onClick={handleViewDiff}
-                disabled={isLoadingDiff || !task.worktree}
-                variant="outline"
-                className="w-full"
-                size="sm"
-              >
-                {isLoadingDiff ? 'Loading Diff...' : 'View Diff'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="flex-1">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Additional Prompt</CardTitle>
-              {task.status !== 'finished' && task.status !== 'merged' && (
-                <p className="text-sm text-muted-foreground">
-                  Available after task completion
-                </p>
-              )}
-              {(task.status === 'finished' || task.status === 'merged') && (
-                <p className="text-sm text-muted-foreground">
-                  Request additional changes to the completed task
-                </p>
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <Textarea
-                  id="additionalPrompt"
-                  value={additionalPrompt}
-                  onChange={(e) => setAdditionalPrompt(e.target.value)}
-                  className="min-h-[200px]"
-                  placeholder={
-                    task.status === 'finished' || task.status === 'merged'
-                      ? "Describe additional changes you'd like..."
-                      : "Additional prompts available after completion..."
-                  }
-                  disabled={task.status !== 'finished' && task.status !== 'merged'}
-                />
-                <Button
-                  onClick={handleSendPrompt}
-                  disabled={isSendingPrompt || (task.status !== 'finished' && task.status !== 'merged') || !additionalPrompt.trim()}
-                  className="w-full"
-                  size="sm"
-                >
-                  {isSendingPrompt ? 'Sending...' : 'Send Additional Details'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right side - full height process output */}
-        <div ref={outputContainerRef} className="flex-1 bg-gray-50 text-gray-900 p-4 rounded-lg overflow-y-auto font-mono text-sm border border-gray-200">
-          {outputs.map((output) => {
-            // Skip outputs without content
-            if (!output.content) return null
-            
-            // Check if this is a tool use or file content
-            const isToolUse = output.content.startsWith('[') && (output.content.includes('[Tool:') || output.content.includes('[Reading file:') || output.content.includes('[Editing file:') || output.content.includes('[Writing file:') || output.content.includes('[Searching') || output.content.includes('[Finding') || output.content.includes('[Running:') || output.content.includes('[Listing:') || output.content.includes('[Multi-editing') || output.content.includes('[System:'))
-            const isFileContent = !isToolUse && output.content.includes('\n') && output.content.length > 100
-            
-            // Process content to handle escaped characters
-            let displayContent = output.content
-            
-            // If it contains escaped newlines and tabs, unescape them
-            if (displayContent.includes('\\n') || displayContent.includes('\\t')) {
-              displayContent = displayContent
-                .replace(/\\n/g, '\n')
-                .replace(/\\t/g, '\t')
-            }
-            
-            return (
-              <div key={output.id} className="mb-4">
-                <div className={`font-semibold ${
-                  output.type === 'editor' ? 'text-green-700' : 
-                  output.type === 'reviewer' ? 'text-blue-700' :
-                  output.type === 'planner' ? 'text-purple-700' : 
-                  'text-gray-700'
-                }`}>
-                  [{output.type.toUpperCase()}] {new Date(output.timestamp).toLocaleTimeString()}
-                </div>
-                {isToolUse ? (
-                  <div className="text-gray-600 italic mt-1">{displayContent}</div>
-                ) : isFileContent ? (
-                  <pre className="whitespace-pre text-gray-600 leading-relaxed text-xs mt-1 font-mono overflow-x-auto bg-gray-100 p-2 rounded border border-gray-200">{displayContent}</pre>
-                ) : (
-                  <pre className="whitespace-pre-wrap text-gray-800 leading-relaxed mt-1">{displayContent}</pre>
-                )}
-              </div>
-            )
-          }).filter(Boolean)}
-          <div ref={outputEndRef} />
-        </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="mb-6 flex items-center justify-between">
+        <Button variant="outline" onClick={() => router.push('/')}>
+          ← Back to Tasks
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={handleRemove}
+          disabled={isRemoving}
+        >
+          <Trash2 className="w-4 h-4 mr-1" />
+          {isRemoving ? 'Removing...' : 'Remove Task'}
+        </Button>
       </div>
 
-      {/* Merge Confirmation Dialog */}
-      {showMergeConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Merge to Main</h3>
-            {task?.status === 'failed' && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
-                <p className="text-red-700 text-sm font-medium">⚠️ Warning: This task failed</p>
-                <p className="text-red-600 text-sm mt-1">
-                  This task did not complete successfully. Merging failed tasks may introduce bugs or incomplete features.
-                </p>
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="text-2xl">Task {task.id}</CardTitle>
+              <CardDescription className="mt-2">{task.prompt}</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge className={getStatusColor(task.status)}>
+                {task.status}
+              </Badge>
+              {task.mode && (
+                <Badge variant="outline">
+                  Mode: {task.mode}
+                </Badge>
+              )}
+              <Badge variant="outline">
+                {getPhaseText(task.phase, task.mode)}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Terminal Control */}
+            {task.status === 'in_progress' && (
+              <div className="flex items-center justify-center p-8 bg-muted rounded-lg">
+                <div className="text-center space-y-4">
+                  <Terminal className="w-16 h-16 mx-auto text-muted-foreground" />
+                  <p className="text-lg font-medium">Task is running in iTerm</p>
+                  <Button 
+                    onClick={bringToFront}
+                    disabled={isBringingToFront}
+                    size="lg"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    {isBringingToFront ? 'Bringing to Front...' : 'Bring Terminal to Front'}
+                  </Button>
+                </div>
               </div>
             )}
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to merge this task to the main branch? This will apply the changes permanently. The worktree will be preserved for reference.
-            </p>
-            <div className="flex justify-end space-x-2">
-              <Button
-                onClick={() => setShowMergeConfirm(false)}
-                variant="outline"
-                size="sm"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleMerge}
-                variant="default"
-                size="sm"
-                disabled={isMerging}
-              >
-                {isMerging ? 'Merging...' : 'Merge'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Preview Conflict Dialog */}
-      {showPreviewConflict && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2 text-red-600">Preview Conflict Detected</h3>
-            <div className="space-y-4">
-              <p className="text-gray-600">
-                A merge conflict was detected while trying to preview changes. You have two options:
-              </p>
-              
-              <div className="bg-gray-50 p-4 rounded-md">
-                <h4 className="font-medium mb-2">Option 1: Manual Resolution</h4>
-                <p className="text-sm text-gray-600 mb-2">
-                  You can manually resolve the conflict using these commands:
-                </p>
-                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-{`cd ${task?.repoPath || 'your-repo'}
-git cherry-pick ${conflictBranchName || 'branch-name'}
-# Resolve conflicts in your editor
-git add .
-git cherry-pick --continue`}
-                </pre>
-              </div>
-              
-              <div className="bg-blue-50 p-4 rounded-md">
-                <h4 className="font-medium mb-2">Option 2: Resubmit Task</h4>
-                <p className="text-sm text-gray-600">
-                  Create a new task with the same prompt, starting from the latest main branch changes.
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-2 mt-6">
-              <Button
-                onClick={() => {
-                  setShowPreviewConflict(false)
-                  setConflictBranchName(null)
-                }}
-                variant="outline"
-                size="sm"
-              >
-                Close
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowPreviewConflict(false)
-                  handleResubmitTask()
-                }}
-                variant="default"
-                size="sm"
-              >
-                Resubmit Task
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            {/* Error Display */}
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
-      {/* Merge Conflict Dialog */}
-      {showMergeConflict && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2 text-red-600">Merge Conflict Detected</h3>
-            <div className="space-y-4">
-              <p className="text-gray-600">
-                A merge conflict was detected while trying to merge to main. {error?.includes('Automatic conflict resolution attempted') ? 'Claude Code attempted to resolve the conflicts automatically but was unable to complete the resolution. ' : ''}You have two options:
-              </p>
-              
-              <div className="bg-gray-50 p-4 rounded-md">
-                <h4 className="font-medium mb-2">Option 1: Manual Resolution</h4>
-                <p className="text-sm text-gray-600 mb-2">
-                  You can manually resolve the conflict using these commands:
-                </p>
-                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-{`cd ${task?.repoPath || 'your-repo'}
-git checkout main
-git merge ${mergeConflictBranchName || 'branch-name'}
-# Resolve conflicts in your editor
-git add .
-git commit`}
-                </pre>
-              </div>
-              
-              <div className="bg-blue-50 p-4 rounded-md">
-                <h4 className="font-medium mb-2">Option 2: Resubmit Task</h4>
-                <p className="text-sm text-gray-600">
-                  Create a new task with the same prompt, starting from the latest main branch changes.
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-2 mt-6">
-              <Button
-                onClick={() => {
-                  setShowMergeConflict(false)
-                  setMergeConflictBranchName(null)
-                }}
-                variant="outline"
-                size="sm"
-              >
-                Close
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowMergeConflict(false)
-                  handleResubmitTask()
-                }}
-                variant="default"
-                size="sm"
-              >
-                Resubmit Task
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            {/* Task Actions */}
+            {task.status === 'finished' && !task.commitHash && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Commit Changes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="commit-message">Commit Message</Label>
+                      <Textarea
+                        id="commit-message"
+                        value={commitMessage}
+                        onChange={(e) => setCommitMessage(e.target.value)}
+                        placeholder="Enter commit message..."
+                        className="mt-1"
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleCommit}
+                      disabled={isCommitting || !commitMessage.trim()}
+                      className="w-full"
+                    >
+                      <GitCommit className="w-4 h-4 mr-2" />
+                      {isCommitting ? 'Committing...' : 'Commit Changes'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-      {/* Failed Task Preview Confirmation Dialog */}
-      {showFailedTaskPreviewConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Preview Failed Task</h3>
-            <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
-              <p className="text-red-700 text-sm font-medium">⚠️ This task failed</p>
-              <p className="text-red-600 text-sm mt-1">
-                The task did not complete successfully. Previewing may show incomplete or broken changes.
-              </p>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to preview the changes from this failed task?
-            </p>
-            <div className="flex justify-end space-x-2">
-              <Button
-                onClick={() => setShowFailedTaskPreviewConfirm(false)}
-                variant="outline"
-                size="sm"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  setShowFailedTaskPreviewConfirm(false)
-                  await startPreview()
-                }}
-                variant="default"
-                size="sm"
-              >
-                Preview Anyway
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            {task.commitHash && task.status === 'finished' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Merge to Main</CardTitle>
+                  <CardDescription>
+                    Commit: {task.commitHash.substring(0, 7)}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button 
+                    onClick={() => setShowMergeConfirm(true)}
+                    className="w-full"
+                    variant="default"
+                  >
+                    <GitMerge className="w-4 h-4 mr-2" />
+                    Merge to Main Branch
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
-      {/* Failed Task Commit Confirmation Dialog */}
-      {showFailedTaskCommitConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Commit Failed Task</h3>
-            <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
-              <p className="text-red-700 text-sm font-medium">⚠️ This task failed</p>
-              <p className="text-red-600 text-sm mt-1">
-                The task did not complete successfully. Committing may preserve incomplete or broken code.
-              </p>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to commit the changes from this failed task?
-            </p>
-            <div className="flex justify-end space-x-2">
-              <Button
-                onClick={() => setShowFailedTaskCommitConfirm(false)}
-                variant="outline"
-                size="sm"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  setShowFailedTaskCommitConfirm(false)
-                  await performCommit()
-                }}
-                variant="default"
-                size="sm"
-              >
-                Commit Anyway
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            {task.status === 'finished' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Request Changes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="requested-changes">What changes would you like?</Label>
+                      <Textarea
+                        id="requested-changes"
+                        value={requestedChanges}
+                        onChange={(e) => setRequestedChanges(e.target.value)}
+                        placeholder="Describe the changes you want..."
+                        className="mt-1"
+                        rows={4}
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleRequestChanges}
+                      disabled={isRequestingChanges || !requestedChanges.trim()}
+                      className="w-full"
+                      variant="secondary"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      {isRequestingChanges ? 'Creating New Task...' : 'Request Changes'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-      {/* Diff Viewer Modal */}
-      <Dialog open={showDiffModal} onOpenChange={setShowDiffModal}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+            {task.previousTaskId && (
+              <Alert>
+                <AlertDescription>
+                  This task is a follow-up to{' '}
+                  <Button
+                    variant="link"
+                    className="p-0 h-auto"
+                    onClick={() => router.push(`/task/${task.previousTaskId}`)}
+                  >
+                    task {task.previousTaskId}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Merge Confirmation Dialog */}
+      <Dialog open={showMergeConfirm} onOpenChange={setShowMergeConfirm}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Task Diff</DialogTitle>
+            <DialogTitle>Confirm Merge</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
-            <DiffViewer diff={diffContent} />
+          <p className="text-sm text-muted-foreground mb-4">
+            Are you sure you want to merge this task to the main branch?
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setShowMergeConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMerge}
+              disabled={isMerging}
+            >
+              {isMerging ? 'Merging...' : 'Confirm Merge'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Conflict Resolution Progress Dialog */}
-      {isResolvingConflict && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
-            <h3 className="text-lg font-semibold mb-4 text-blue-600">
-              Resolving Merge Conflicts with Claude Code
-            </h3>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-600">
-                Claude Code is automatically resolving merge conflicts. This may take a few minutes...
-              </p>
-            </div>
-            
-            {/* Rolling output window */}
-            <div className="flex-1 bg-gray-900 text-gray-100 p-4 rounded-lg overflow-y-auto font-mono text-xs mb-4">
-              {conflictResolutionOutputs.map((output, index) => (
-                <div key={index} className="mb-1">
-                  {output}
-                </div>
-              ))}
-              <div ref={conflictOutputEndRef} />
-            </div>
-            
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span className="text-sm text-gray-600">Processing...</span>
-              </div>
-              <Button
-                onClick={() => setIsResolvingConflict(false)}
-                variant="outline"
-                size="sm"
-                disabled={isMerging}
-              >
-                Hide Progress
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
