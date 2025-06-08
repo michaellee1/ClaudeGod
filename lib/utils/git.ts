@@ -95,13 +95,26 @@ export async function createWorktree(repoPath: string, branchName: string): Prom
 
 export async function removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
   try {
-    // First remove the git worktree
-    await execFileAsync('git', [
-      '-C', repoPath,
-      'worktree', 'remove',
-      worktreePath,
-      '--force'
-    ])
+    // Check if the worktree exists first
+    try {
+      const { stdout: worktrees } = await execFileAsync('git', [
+        '-C', repoPath,
+        'worktree', 'list'
+      ])
+      
+      // Only try to remove if the worktree is listed
+      if (worktrees.includes(worktreePath)) {
+        await execFileAsync('git', [
+          '-C', repoPath,
+          'worktree', 'remove',
+          worktreePath,
+          '--force'
+        ])
+      }
+    } catch (error) {
+      // If worktree list fails, log but continue
+      console.warn('Could not list worktrees:', error)
+    }
     
     // Then remove the branch
     const branchName = path.basename(worktreePath)
@@ -114,9 +127,17 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
     } catch {
       // Branch might not exist or be checked out elsewhere
     }
+    
+    // Finally, clean up the directory if it still exists
+    try {
+      const fs = await import('fs/promises')
+      await fs.rm(worktreePath, { recursive: true, force: true })
+    } catch {
+      // Directory might not exist
+    }
   } catch (error) {
     console.error('Error removing worktree:', error)
-    throw error
+    // Don't throw - we want cleanup to be best effort
   }
 }
 
