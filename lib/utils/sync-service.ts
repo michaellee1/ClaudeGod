@@ -115,10 +115,8 @@ export class SyncService extends EventEmitter {
       // Sync tasks
       await this.syncTasks(report)
       
-      // Outputs are no longer tracked in iTerm-based workflow
       
-      // Update WebSocket connections with any changes
-      await this.updateWebSocketState(report)
+      // No longer need to update WebSocket connections
       
       const duration = Date.now() - startTime
       this.lastSyncTime = new Date()
@@ -204,9 +202,6 @@ export class SyncService extends EventEmitter {
     }
   }
   
-  /**
-   * Sync outputs between memory and persistent storage
-   */
   
   /**
    * Detect if there's a conflict between two task versions
@@ -214,11 +209,9 @@ export class SyncService extends EventEmitter {
   private detectTaskConflict(task1: Task, task2: Task): boolean {
     // Compare key fields that might change
     return (
-      task1.status !== task2.status ||
-      task1.phase !== task2.phase ||
       task1.commitHash !== task2.commitHash ||
-      task1.mergedAt?.getTime() !== task2.mergedAt?.getTime() ||
-      task1.lastActivityTime?.getTime() !== task2.lastActivityTime?.getTime()
+      task1.terminalTag !== task2.terminalTag ||
+      task1.mode !== task2.mode
     )
   }
   
@@ -241,17 +234,14 @@ export class SyncService extends EventEmitter {
         break
         
       case 'newest-wins':
-        // Compare last activity times
-        const memoryTime = memoryTask.lastActivityTime?.getTime() || 0
-        const persistentTime = persistentTask.lastActivityTime?.getTime() || 0
+        // Compare creation times (we no longer have lastActivityTime)
+        const memoryTime = memoryTask.createdAt.getTime()
+        const persistentTime = persistentTask.createdAt.getTime()
         
-        if (memoryTime > persistentTime) {
-          winningTask = memoryTask
-          resolution = 'memory-wins'
-        } else {
-          winningTask = persistentTask
-          resolution = 'persistent-wins'
-        }
+        // Since creation time should be the same, prefer memory version
+        // as it's the most recent state
+        winningTask = memoryTask
+        resolution = 'memory-wins'
         break
     }
     
@@ -267,28 +257,12 @@ export class SyncService extends EventEmitter {
       type: 'task',
       id: memoryTask.id,
       resolution,
-      details: `Status: ${memoryTask.status} vs ${persistentTask.status}`
+      details: `Mode: ${memoryTask.mode} vs ${persistentTask.mode}`
     })
     
     console.log(`[SyncService] Resolved conflict for task ${memoryTask.id}: ${resolution}`)
   }
   
-  /**
-   * Update WebSocket connections with sync results
-   */
-  private async updateWebSocketState(report: SyncReport): Promise<void> {
-    // Broadcast sync status to connected clients
-    if (typeof global !== 'undefined' && (global as any).broadcastTaskUpdate) {
-      for (const conflict of report.conflicts) {
-        if (conflict.type === 'task') {
-          const task = taskStore.getTask(conflict.id)
-          if (task) {
-            (global as any).broadcastTaskUpdate(conflict.id, task)
-          }
-        }
-      }
-    }
-  }
   
   /**
    * Force sync a specific task
@@ -302,7 +276,7 @@ export class SyncService extends EventEmitter {
     await this.persistentState.saveTask(task)
     
     await this.logger.logTaskEvent(taskId, 'force-synced', {
-      status: task.status
+      mode: task.mode
     })
     
     console.log(`[SyncService] Force synced task ${taskId}`)

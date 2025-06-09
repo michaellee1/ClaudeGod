@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Terminal, ExternalLink, GitCommit, GitMerge, AlertCircle, Trash2, Plus } from 'lucide-react'
+import { Terminal, ExternalLink, GitCommit, GitMerge, AlertCircle, Trash2 } from 'lucide-react'
 
 export default function TaskDetail() {
   const params = useParams()
@@ -19,8 +19,6 @@ export default function TaskDetail() {
   const [isMerging, setIsMerging] = useState(false)
   const [showMergeConfirm, setShowMergeConfirm] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
-  const [requestedChanges, setRequestedChanges] = useState('')
-  const [isRequestingChanges, setIsRequestingChanges] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCommitting, setIsCommitting] = useState(false)
   const [commitMessage, setCommitMessage] = useState('')
@@ -45,7 +43,7 @@ export default function TaskDetail() {
       if (currentTask) {
         setTask(currentTask)
         // Auto-generate commit message
-        if (currentTask.status === 'finished' && !currentTask.commitHash && !commitMessage) {
+        if (!currentTask.commitHash && !commitMessage) {
           setCommitMessage(`Complete task: ${currentTask.prompt.substring(0, 60)}${currentTask.prompt.length > 60 ? '...' : ''}`)
         }
       }
@@ -127,34 +125,6 @@ export default function TaskDetail() {
     }
   }
 
-  const handleRequestChanges = async () => {
-    if (!task || !requestedChanges.trim()) return
-    
-    setIsRequestingChanges(true)
-    setError(null)
-    
-    try {
-      const formData = new FormData()
-      formData.append('requestedChanges', requestedChanges)
-      
-      const res = await fetch(`/api/tasks/${task.id}/request-changes`, {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to request changes')
-      }
-      
-      const data = await res.json()
-      router.push(`/task/${data.newTask.id}`)
-    } catch (error: any) {
-      setError(error.message)
-    } finally {
-      setIsRequestingChanges(false)
-    }
-  }
 
   const handleRemove = async () => {
     if (!task) return
@@ -176,23 +146,6 @@ export default function TaskDetail() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'starting': return 'bg-gray-500'
-      case 'in_progress': return 'bg-blue-500'
-      case 'finished': return 'bg-green-500'
-      case 'failed': return 'bg-red-500'
-      case 'merged': return 'bg-purple-500'
-      default: return 'bg-gray-500'
-    }
-  }
-
-  const getPhaseText = (phase: string, mode?: string) => {
-    if (mode === 'planning' && phase === 'planning') return 'Planning'
-    if (phase === 'edit') return 'Editing'
-    if (phase === 'done') return 'Complete'
-    return phase
-  }
 
   if (!task) {
     return (
@@ -231,39 +184,31 @@ export default function TaskDetail() {
               <CardDescription className="mt-2">{task.prompt}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className={getStatusColor(task.status)}>
-                {task.status}
-              </Badge>
               {task.mode && (
                 <Badge variant="outline">
                   Mode: {task.mode}
                 </Badge>
               )}
-              <Badge variant="outline">
-                {getPhaseText(task.phase, task.mode)}
-              </Badge>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {/* Terminal Control */}
-            {task.status === 'in_progress' && (
-              <div className="flex items-center justify-center p-8 bg-muted rounded-lg">
-                <div className="text-center space-y-4">
-                  <Terminal className="w-16 h-16 mx-auto text-muted-foreground" />
-                  <p className="text-lg font-medium">Task is running in iTerm</p>
-                  <Button 
-                    onClick={bringToFront}
-                    disabled={isBringingToFront}
-                    size="lg"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    {isBringingToFront ? 'Bringing to Front...' : 'Bring Terminal to Front'}
-                  </Button>
-                </div>
+            <div className="flex items-center justify-center p-8 bg-muted rounded-lg">
+              <div className="text-center space-y-4">
+                <Terminal className="w-16 h-16 mx-auto text-muted-foreground" />
+                <p className="text-lg font-medium">Task Terminal</p>
+                <Button 
+                  onClick={bringToFront}
+                  disabled={isBringingToFront}
+                  size="lg"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  {isBringingToFront ? 'Bringing to Front...' : 'Bring Terminal to Front'}
+                </Button>
               </div>
-            )}
+            </div>
 
             {/* Error Display */}
             {error && (
@@ -274,7 +219,7 @@ export default function TaskDetail() {
             )}
 
             {/* Task Actions */}
-            {task.status === 'finished' && !task.commitHash && (
+            {!task.commitHash && (
               <Card>
                 <CardHeader>
                   <CardTitle>Commit Changes</CardTitle>
@@ -304,7 +249,7 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {task.commitHash && task.status === 'finished' && (
+            {task.commitHash && (
               <Card>
                 <CardHeader>
                   <CardTitle>Merge to Main</CardTitle>
@@ -325,52 +270,7 @@ export default function TaskDetail() {
               </Card>
             )}
 
-            {task.status === 'finished' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Request Changes</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="requested-changes">What changes would you like?</Label>
-                      <Textarea
-                        id="requested-changes"
-                        value={requestedChanges}
-                        onChange={(e) => setRequestedChanges(e.target.value)}
-                        placeholder="Describe the changes you want..."
-                        className="mt-1"
-                        rows={4}
-                      />
-                    </div>
-                    <Button 
-                      onClick={handleRequestChanges}
-                      disabled={isRequestingChanges || !requestedChanges.trim()}
-                      className="w-full"
-                      variant="secondary"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      {isRequestingChanges ? 'Creating New Task...' : 'Request Changes'}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
-            {task.previousTaskId && (
-              <Alert>
-                <AlertDescription>
-                  This task is a follow-up to{' '}
-                  <Button
-                    variant="link"
-                    className="p-0 h-auto"
-                    onClick={() => router.push(`/task/${task.previousTaskId}`)}
-                  >
-                    task {task.previousTaskId}
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
           </div>
         </CardContent>
       </Card>

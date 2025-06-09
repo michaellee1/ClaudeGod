@@ -6,7 +6,7 @@ import { EventEmitter } from 'events'
 
 export interface LogEntry {
   timestamp: Date
-  type: 'websocket' | 'task' | 'system' | 'error'
+  type: 'task' | 'system' | 'error'
   category: string
   data: any
   metadata?: {
@@ -27,7 +27,7 @@ export interface PersistentLoggerOptions {
 
 /**
  * PersistentLogger provides redundant file-based logging for all critical operations
- * ensuring data persistence even during server crashes or WebSocket failures
+ * ensuring data persistence even during server crashes
  */
 export class PersistentLogger extends EventEmitter {
   private baseDir: string
@@ -45,7 +45,6 @@ export class PersistentLogger extends EventEmitter {
   
   // Separate log files for different categories
   private readonly LOG_CATEGORIES = {
-    WEBSOCKET: 'websocket',
     TASK: 'task',
     SYSTEM: 'system',
     ERROR: 'error'
@@ -114,17 +113,6 @@ export class PersistentLogger extends EventEmitter {
     }
   }
   
-  /**
-   * Log WebSocket event
-   */
-  async logWebSocketEvent(event: string, data: any, metadata?: any): Promise<void> {
-    await this.log({
-      type: 'websocket',
-      category: event,
-      data,
-      metadata
-    })
-  }
   
   /**
    * Log task event

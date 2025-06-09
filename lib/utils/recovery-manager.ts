@@ -117,7 +117,7 @@ export class RecoveryManager {
             }
             report.tasksRecovered++
             
-            console.log(`[RecoveryManager] Recovered task ${task.id} (status: ${task.status})`)
+            console.log(`[RecoveryManager] Recovered task ${task.id}`)
           } else {
             // Verify task integrity
             if (this.isTaskCorrupted(existingTask, task)) {
@@ -129,10 +129,7 @@ export class RecoveryManager {
             }
           }
           
-          // Recover processes for in-progress tasks
-          if (task.status === 'in_progress' || task.status === 'starting') {
-            await this.recoverTaskProcess(task, report, dryRun)
-          }
+          // Since we no longer track status, skip process recovery
         } catch (error) {
           report.errors.push({
             type: 'task-recovery-failed',
@@ -223,7 +220,7 @@ export class RecoveryManager {
     // Simple integrity check - can be expanded
     return (
       task1.id !== task2.id ||
-      task1.status !== task2.status ||
+      task1.worktree !== task2.worktree ||
       task1.createdAt.getTime() !== task2.createdAt.getTime()
     )
   }
@@ -239,8 +236,8 @@ export class RecoveryManager {
     // The task store would need a method to restore tasks without recreating worktrees
     // This is a simplified approach
     await this.logger.logTaskEvent(task.id, 'task-restored', {
-      status: task.status,
-      phase: task.phase
+      mode: task.mode,
+      worktree: task.worktree
     })
   }
   

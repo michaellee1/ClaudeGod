@@ -2,7 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { EventEmitter } from 'events'
-import { Task, TaskOutput } from '../types/task'
+import { Task } from '../types/task'
 import { FileLock } from './file-lock'
 import { getPersistentLogger } from './persistent-logger'
 
@@ -10,7 +10,6 @@ export interface StateSnapshot {
   timestamp: Date
   version: string
   tasks: Record<string, Task>
-  taskOutputs: Record<string, TaskOutput[]>
   processStates: Record<string, ProcessState>
 }
 
@@ -47,7 +46,6 @@ export class PersistentState extends EventEmitter {
   
   // In-memory state caches
   private tasksCache: Map<string, Task> = new Map()
-  private taskOutputsCache: Map<string, TaskOutput[]> = new Map()
   private processStatesCache: Map<string, ProcessState> = new Map()
   
   // Paths
@@ -128,8 +126,8 @@ export class PersistentState extends EventEmitter {
     
     // Log the event
     await this.logger.logTaskEvent(task.id, 'task-saved', {
-      status: task.status,
-      phase: task.phase
+      mode: task.mode,
+      worktree: task.worktree
     })
     
     // Save current state
@@ -138,34 +136,6 @@ export class PersistentState extends EventEmitter {
     this.emit('task-saved', task)
   }
   
-  /**
-   * Save task outputs
-   */
-  async saveTaskOutputs(taskId: string, outputs: TaskOutput[]): Promise<void> {
-    if (!this.isInitialized) {
-      throw new Error('PersistentState not initialized')
-    }
-    
-    // Update cache
-    this.taskOutputsCache.set(taskId, outputs)
-    
-    // Save to file
-    const outputFile = path.join(this.baseDir, this.TASKS_DIR, `${taskId}-outputs.json`)
-    await FileLock.withLock(outputFile, async () => {
-      await fs.writeFile(outputFile, JSON.stringify(outputs, null, 2))
-    })
-    
-    // Log significant outputs
-    const lastOutput = outputs[outputs.length - 1]
-    if (lastOutput) {
-      await this.logger.logTaskEvent(taskId, 'output-added', {
-        type: lastOutput.type,
-        length: lastOutput.content?.length || 0
-      })
-    }
-    
-    this.emit('outputs-saved', { taskId, count: outputs.length })
-  }
   
   
   /**
@@ -245,34 +215,6 @@ export class PersistentState extends EventEmitter {
     return tasks
   }
   
-  /**
-   * Get task outputs
-   */
-  async getTaskOutputs(taskId: string): Promise<TaskOutput[]> {
-    // Check cache first
-    if (this.taskOutputsCache.has(taskId)) {
-      return this.taskOutputsCache.get(taskId)!
-    }
-    
-    // Load from file
-    try {
-      const outputFile = path.join(this.baseDir, this.TASKS_DIR, `${taskId}-outputs.json`)
-      const data = await fs.readFile(outputFile, 'utf-8')
-      const outputs = JSON.parse(data)
-      
-      // Restore Date objects
-      outputs.forEach((output: any) => {
-        output.timestamp = new Date(output.timestamp)
-      })
-      
-      // Update cache
-      this.taskOutputsCache.set(taskId, outputs)
-      
-      return outputs
-    } catch (error) {
-      return []
-    }
-  }
   
   
   /**
@@ -281,7 +223,6 @@ export class PersistentState extends EventEmitter {
   async deleteTask(taskId: string): Promise<void> {
     // Remove from cache
     this.tasksCache.delete(taskId)
-    this.taskOutputsCache.delete(taskId)
     
     // Delete files
     try {
@@ -290,11 +231,6 @@ export class PersistentState extends EventEmitter {
       // Ignore if file doesn't exist
     }
     
-    try {
-      await fs.unlink(path.join(this.baseDir, this.TASKS_DIR, `${taskId}-outputs.json`))
-    } catch (error) {
-      // Ignore if file doesn't exist
-    }
     
     await this.logger.logTaskEvent(taskId, 'task-deleted', {})
     this.emit('task-deleted', taskId)
@@ -308,7 +244,6 @@ export class PersistentState extends EventEmitter {
       timestamp: new Date(),
       version: this.stateVersion,
       tasks: Object.fromEntries(this.tasksCache),
-      taskOutputs: Object.fromEntries(this.taskOutputsCache),
       processStates: Object.fromEntries(this.processStatesCache)
     }
     
@@ -348,29 +283,15 @@ export class PersistentState extends EventEmitter {
       
       // Restore state
       this.tasksCache.clear()
-      this.taskOutputsCache.clear()
       this.processStatesCache.clear()
       
       // Restore tasks
       for (const [taskId, task] of Object.entries(snapshot.tasks)) {
         // Restore Date objects
         task.createdAt = new Date(task.createdAt)
-        if (task.mergedAt) task.mergedAt = new Date(task.mergedAt)
-        if (task.lastActivityTime) task.lastActivityTime = new Date(task.lastActivityTime)
-        if (task.finishedAt) task.finishedAt = new Date(task.finishedAt)
-        if (task.requestedChangesAt) task.requestedChangesAt = new Date(task.requestedChangesAt)
         
         this.tasksCache.set(taskId, task)
         await this.saveTask(task)
-      }
-      
-      // Restore outputs
-      for (const [taskId, outputs] of Object.entries(snapshot.taskOutputs)) {
-        outputs.forEach(output => {
-          output.timestamp = new Date(output.timestamp)
-        })
-        this.taskOutputsCache.set(taskId, outputs)
-        await this.saveTaskOutputs(taskId, outputs)
       }
       
       
@@ -459,12 +380,9 @@ export class PersistentState extends EventEmitter {
       const files = await fs.readdir(path.join(this.baseDir, this.TASKS_DIR))
       
       for (const file of files) {
-        if (file.endsWith('.json') && !file.includes('-outputs')) {
+        if (file.endsWith('.json')) {
           const taskId = file.replace('.json', '')
           await this.getTask(taskId)
-        } else if (file.endsWith('-outputs.json')) {
-          const taskId = file.replace('-outputs.json', '')
-          await this.getTaskOutputs(taskId)
         }
       }
     } catch (error) {

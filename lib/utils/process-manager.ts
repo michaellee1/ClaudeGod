@@ -35,7 +35,6 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
       await spawnTaggedSession(this.terminalTag, command)
       
       this.isActive = true
-      this.emit('status', 'in_progress')
       this.emit('terminalSpawned', {
         taskId: this.taskId,
         tag: this.terminalTag,
@@ -45,7 +44,6 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
       console.log(`[ProcessManager] Spawned iTerm session for task ${this.taskId} in ${mode} mode with tag: ${this.terminalTag}`)
     } catch (error) {
       console.error(`[ProcessManager] Failed to spawn iTerm session:`, error)
-      this.emit('status', 'failed')
       this.emit('error', error)
       throw error
     }
@@ -60,7 +58,7 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
     const escapedPath = this.worktreePath.replace(/'/g, "'\\''")
     
     // Build command to change directory and run claude with the prompt
-    // Include the same flags as before, except -p and output-format
+    // Include the same flags as before, except -p
     const command = `cd '${escapedPath}' && claude --verbose --dangerously-skip-permissions '${escapedPrompt}'`
     
     return command
@@ -85,7 +83,6 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
     // Since we're using iTerm, we don't manage the process lifecycle
     // The user will close the terminal when done
     this.isActive = false
-    this.emit('status', 'stopped')
   }
 
   isProcessRunning(): boolean {

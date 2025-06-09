@@ -143,15 +143,7 @@ export class GracefulShutdown {
   private async stopAcceptingConnections(): Promise<void> {
     console.log('[GracefulShutdown] Stopping new connections...')
     
-    // Close WebSocket server
-    if ((global as any).wss) {
-      await new Promise<void>((resolve) => {
-        (global as any).wss.close(() => {
-          console.log('[GracefulShutdown] WebSocket server closed')
-          resolve()
-        })
-      })
-    }
+    // No WebSocket server to close in iTerm-based workflow
   }
   
   /**
@@ -160,25 +152,7 @@ export class GracefulShutdown {
   private async closeConnections(): Promise<void> {
     console.log('[GracefulShutdown] Closing existing connections...')
     
-    // Close WebSocket connections
-    if ((global as any).wss) {
-      const wss = (global as any).wss
-      const closePromises: Promise<void>[] = []
-      
-      wss.clients.forEach((client: any) => {
-        if (client.readyState === 1) { // OPEN
-          closePromises.push(new Promise<void>((resolve) => {
-            client.close(1000, 'Server shutting down')
-            client.once('close', resolve)
-            // Timeout individual connection close
-            setTimeout(resolve, 1000)
-          }))
-        }
-      })
-      
-      await Promise.all(closePromises)
-      console.log(`[GracefulShutdown] Closed ${closePromises.length} WebSocket connections`)
-    }
+    // No WebSocket connections to close in iTerm-based workflow
   }
   
   /**

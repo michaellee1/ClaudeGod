@@ -189,25 +189,10 @@ function checkTaskStore(health: HealthStatus) {
     const tasks = taskStore.getTasks()
     health.metrics.totalTasks = tasks.length
     
-    const activeTasks = tasks.filter(t => 
-      t.status === 'in_progress' || t.status === 'starting'
-    )
-    health.metrics.activeTasks = activeTasks.length
+    // All tasks are now just tasks - no status tracking
+    health.metrics.activeTasks = tasks.length
     
-    // Check for hung tasks
-    const now = Date.now()
-    const hungTasks = activeTasks.filter(t => {
-      const lastActivity = t.lastActivityTime?.getTime() || t.createdAt.getTime()
-      return (now - lastActivity) > 600000 // 10 minutes
-    })
-    
-    if (hungTasks.length > 0) {
-      health.components.tasks.status = 'degraded'
-      health.components.tasks.message = `${hungTasks.length} tasks may be hung`
-      health.warnings.push(`Found ${hungTasks.length} potentially hung tasks`)
-    } else {
-      health.components.tasks.message = `${activeTasks.length} active, ${tasks.length} total tasks`
-    }
+    health.components.tasks.message = `${tasks.length} total tasks`
     
     health.components.tasks.lastCheck = new Date()
   } catch (error) {

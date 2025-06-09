@@ -1,4 +1,4 @@
-import { Task, PromptCycle } from '@/lib/types/task'
+import { Task } from '@/lib/types/task'
 import { ProcessManager } from './process-manager'
 import { createWorktree, removeWorktree, commitChanges, cherryPickCommit, undoCherryPick, mergeWorktreeToMain } from './git'
 import { gitLock } from './git-lock'
@@ -58,10 +58,6 @@ class TaskStore {
       for (const task of tasks) {
         // Restore Date objects
         task.createdAt = new Date(task.createdAt)
-        task.lastActivityTime = task.lastActivityTime ? new Date(task.lastActivityTime) : undefined
-        task.finishedAt = task.finishedAt ? new Date(task.finishedAt) : undefined
-        task.mergedAt = task.mergedAt ? new Date(task.mergedAt) : undefined
-        task.requestedChangesAt = task.requestedChangesAt ? new Date(task.requestedChangesAt) : undefined
         
         this.tasks.set(task.id, task)
       }
@@ -79,10 +75,6 @@ class TaskStore {
       for (const task of tasks) {
         // Restore Date objects
         task.createdAt = new Date(task.createdAt)
-        task.lastActivityTime = task.lastActivityTime ? new Date(task.lastActivityTime) : undefined
-        task.finishedAt = task.finishedAt ? new Date(task.finishedAt) : undefined
-        task.mergedAt = task.mergedAt ? new Date(task.mergedAt) : undefined
-        task.requestedChangesAt = task.requestedChangesAt ? new Date(task.requestedChangesAt) : undefined
         
         this.tasks.set(task.id, task)
       }
@@ -206,8 +198,6 @@ class TaskStore {
           const task: Task = {
             id: taskId,
             prompt,
-            status: 'starting',
-            phase: 'starting',
             createdAt: new Date(),
             worktree,
             repoPath,
@@ -239,21 +229,6 @@ class TaskStore {
   }
 
 
-  async updateTaskStatus(id: string, status: Task['status']) {
-    const task = this.getTask(id)
-    if (task) {
-      task.status = status
-      task.lastActivityTime = new Date()
-      
-      if (status === 'finished') {
-        task.finishedAt = new Date()
-      }
-      
-      await this.persistentLogger.logTaskEvent(id, 'status-changed', { status })
-      
-      this.debouncedSave()
-    }
-  }
 
   async startTask(taskId: string): Promise<void> {
     const task = this.getTask(taskId)
@@ -261,29 +236,25 @@ class TaskStore {
       throw new Error(`Task ${taskId} not found`)
     }
 
-    if (task.status !== 'starting') {
-      throw new Error(`Task ${taskId} is not in starting state`)
-    }
-
     // Create ProcessManager
     const processManager = new ProcessManager(task.id, task.worktree, task.repoPath)
     this.processManagers.set(task.id, processManager)
     
     // Set up event handlers
-    processManager.on('status', (status: string) => {
-      this.updateTaskStatus(task.id, status as Task['status'])
-    })
-    
     processManager.on('terminalSpawned', (data: any) => {
       task.terminalTag = data.tag
       this.debouncedSave()
     })
     
-    // Start the process with the appropriate mode
-    await processManager.start(task.prompt, task.mode || 'edit')
+    // Build the prompt with mode-specific instructions
+    let finalPrompt = task.prompt
+    if (task.mode === 'planning') {
+      finalPrompt = this.buildPlanningPrompt(task.prompt)
+    }
     
-    task.status = 'in_progress'
-    task.phase = task.mode || 'edit'
+    // Start the process with the appropriate mode
+    await processManager.start(finalPrompt, task.mode || 'edit')
+    
     await this.persistentLogger.logTaskEvent(task.id, 'task-started', { mode: task.mode })
     
     this.debouncedSave()
@@ -324,8 +295,6 @@ class TaskStore {
     })
     
     task.commitHash = commitHash
-    task.status = 'finished'
-    task.finishedAt = new Date()
     
     await this.persistentLogger.logTaskEvent(taskId, 'task-committed', { commitHash })
     
@@ -334,70 +303,16 @@ class TaskStore {
     return commitHash
   }
 
-  async requestChanges(taskId: string, requestedChanges: string): Promise<{ newTask: Task; previousCycle: PromptCycle }> {
-    const task = this.getTask(taskId)
-    if (!task) {
-      throw new Error(`Task ${taskId} not found`)
-    }
 
-    // Store the current state as a prompt cycle
-    const previousCycle: PromptCycle = {
-      id: Math.random().toString(36).substring(7),
-      prompt: task.prompt,
-      commitHash: task.commitHash,
-      requestedChanges: requestedChanges,
-      createdAt: task.createdAt,
-      finishedAt: task.finishedAt || new Date()
-    }
-
-    // Update task's prompt cycles
-    if (!task.promptCycles) {
-      task.promptCycles = []
-    }
-    task.promptCycles.push(previousCycle)
-    task.requestedChangesAt = new Date()
+  private buildPlanningPrompt(userPrompt: string): string {
+    let planningPrompt = userPrompt + "\n\n"
+    planningPrompt += "Create a comprehensive plan that solves this and write it to an md file. "
+    planningPrompt += "Then tell me a summary of what the plan is, and ask me any questions you might have about implementation. "
+    planningPrompt += "Don't write any code yet. Then I will answer your questions and give you approval."
     
-    // Create new prompt with context
-    const newPrompt = this.buildRequestChangesPrompt(task, requestedChanges)
-    
-    // Create new task for the requested changes
-    const newTask = await this.createTask(newPrompt, task.repoPath, task.mode)
-    
-    // Link the tasks
-    newTask.previousTaskId = task.id
-    
-    await this.persistentLogger.logTaskEvent(taskId, 'changes-requested', {
-      newTaskId: newTask.id,
-      requestedChanges: requestedChanges.substring(0, 200)
-    })
-    
-    this.debouncedSave()
-    
-    return { newTask, previousCycle }
+    return planningPrompt
   }
 
-  private buildRequestChangesPrompt(task: Task, requestedChanges: string): string {
-    let contextPrompt = "## Request Changes\n\n"
-    contextPrompt += `The user has requested changes to a task that was previously completed.\n\n`
-    contextPrompt += `### Original Task:\n${task.prompt}\n\n`
-    
-    if (task.promptCycles && task.promptCycles.length > 0) {
-      contextPrompt += `### Previous Change Requests:\n`
-      task.promptCycles.forEach((cycle, index) => {
-        contextPrompt += `${index + 1}. ${cycle.requestedChanges || 'Initial implementation'}\n`
-      })
-      contextPrompt += '\n'
-    }
-    
-    contextPrompt += `### Requested Changes:\n${requestedChanges}\n\n`
-    contextPrompt += `### Instructions:\n`
-    contextPrompt += `1. First run 'git diff' to see the current implementation\n`
-    contextPrompt += `2. Make ONLY the requested changes\n`
-    contextPrompt += `3. Preserve all existing functionality unless explicitly asked to change it\n`
-    contextPrompt += `4. Do not refactor or improve unrelated code\n`
-    
-    return contextPrompt
-  }
 
   async mergeTask(taskId: string): Promise<void> {
     const task = this.getTask(taskId)
@@ -412,9 +327,6 @@ class TaskStore {
     await gitLock.withLock(task.repoPath, async () => {
       await mergeWorktreeToMain(task.worktree, task.repoPath)
     })
-    
-    task.status = 'merged'
-    task.mergedAt = new Date()
     
     await this.persistentLogger.logTaskEvent(taskId, 'task-merged', {})
     

@@ -35,93 +35,20 @@ import {
 } from '@/components/ui/table'
 import { ChevronDown, Trash2, Plus, Terminal, ExternalLink } from 'lucide-react'
 
-interface ActiveTaskCardsProps {
+
+interface TaskTableProps {
   tasks: Task[]
   onBringToFront: (taskId: string) => void
   onDelete: (taskId: string) => void
 }
 
-function ActiveTaskCards({ tasks, onBringToFront, onDelete }: ActiveTaskCardsProps) {
-  if (tasks.length === 0) {
-    return <p className="text-muted-foreground text-center py-8">No active tasks</p>
-  }
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {tasks.map((task) => (
-        <Card key={task.id} className="flex flex-col">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <CardTitle className="text-base truncate">
-                  {task.prompt}
-                </CardTitle>
-                <CardDescription className="text-xs mt-1">
-                  {task.id.substring(0, 8)} • {task.phase}
-                </CardDescription>
-              </div>
-              <Badge
-                variant={
-                  task.status === 'in_progress' ? 'default' :
-                  task.status === 'finished' ? 'success' :
-                  'secondary'
-                }
-                className="ml-2"
-              >
-                {task.status}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="flex-1 pb-3">
-            {task.status === 'in_progress' && (
-              <div className="flex items-center justify-center py-4">
-                <Button
-                  onClick={() => onBringToFront(task.id)}
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Bring Terminal to Front
-                </Button>
-              </div>
-            )}
-            <div className="flex items-center justify-between mt-2">
-              <Button variant="link" asChild size="sm" className="h-8 px-0">
-                <Link href={`/task/${task.id}`}>View Details →</Link>
-              </Button>
-              <Button
-                onClick={() => onDelete(task.id)}
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-interface TaskTableProps {
-  tasks: Task[]
-  onDelete: (taskId: string) => void
-}
-
-function TaskTable({ tasks, onDelete }: TaskTableProps) {
-  if (tasks.length === 0) {
-    return <p className="text-muted-foreground text-center py-8">No other tasks</p>
-  }
-
+function TaskTable({ tasks, onBringToFront, onDelete }: TaskTableProps) {
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>Task</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead>Mode</TableHead>
           <TableHead>Created</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -134,8 +61,8 @@ function TaskTable({ tasks, onDelete }: TaskTableProps) {
               <div className="text-xs text-muted-foreground">{task.id}</div>
             </TableCell>
             <TableCell>
-              <Badge variant={task.status === 'merged' ? 'success' : 'secondary'}>
-                {task.status}
+              <Badge variant="secondary">
+                {task.mode || 'edit'}
               </Badge>
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
@@ -143,6 +70,16 @@ function TaskTable({ tasks, onDelete }: TaskTableProps) {
             </TableCell>
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
+                <Button
+                  onClick={() => onBringToFront(task.id)}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  title="Bring Terminal to Front"
+                >
+                  <Terminal className="h-3.5 w-3.5 mr-1" />
+                  Terminal
+                </Button>
                 <Button variant="link" asChild size="sm" className="h-8 px-2">
                   <Link href={`/task/${task.id}`}>View</Link>
                 </Button>
@@ -254,29 +191,32 @@ export default function Home() {
       })
       
       if (response.ok) {
+        // Immediately update the UI
         fetchTasks()
+      } else {
+        const error = await response.json()
+        setError(error.error || 'Failed to delete task')
       }
     } catch (error) {
       console.error('Error deleting task:', error)
+      setError('Failed to delete task')
     }
   }
 
-  const handleDeleteNonInProgressTasks = async () => {
-    const tasksToDelete = tasks.filter(t => t.status !== 'in_progress' && t.status !== 'starting')
-    
-    if (tasksToDelete.length === 0) {
+  const handleDeleteAllTasks = async () => {
+    if (tasks.length === 0) {
       setError('No tasks to delete')
       return
     }
     
-    if (!confirm(`Delete ${tasksToDelete.length} non in-progress tasks?`)) {
+    if (!confirm(`Delete all ${tasks.length} tasks?`)) {
       return
     }
     
     setIsDeletingAll(true)
     try {
       await Promise.all(
-        tasksToDelete.map(task =>
+        tasks.map(task =>
           fetch(`/api/tasks/${task.id}`, { method: 'DELETE' })
         )
       )
@@ -379,8 +319,10 @@ export default function Home() {
     }
   }
 
-  const activeTasks = tasks.filter(t => t.status === 'in_progress' || t.status === 'finished')
-  const otherTasks = tasks.filter(t => t.status !== 'in_progress' && t.status !== 'finished')
+  // Sort tasks by creation date, newest first
+  const sortedTasks = [...tasks].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
 
   return (
     <div className="w-full px-4 py-6">
@@ -410,12 +352,12 @@ export default function Home() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={handleDeleteNonInProgressTasks}
+                  onClick={handleDeleteAllTasks}
                   disabled={isDeletingAll}
                   className="text-destructive focus:text-destructive"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
-                  {isDeletingAll ? 'Deleting Tasks...' : 'Delete Non In-Progress'}
+                  {isDeletingAll ? 'Deleting Tasks...' : 'Delete All Tasks'}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleKillAllProcesses}
@@ -436,27 +378,22 @@ export default function Home() {
         </Alert>
       )}
 
-      {/* Active Tasks Section with Cards */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold mb-4">
-          Active Tasks ({activeTasks.length})
-        </h2>
-        <ActiveTaskCards
-          tasks={activeTasks}
-          onBringToFront={handleBringToFront}
-          onDelete={handleDeleteTask}
-        />
-      </div>
-
-      {/* Other Tasks Section with Table */}
+      {/* All Tasks Section */}
       <div>
         <h2 className="text-lg font-semibold mb-4">
-          Other Tasks ({otherTasks.length})
+          Tasks ({tasks.length})
         </h2>
-        <TaskTable
-          tasks={otherTasks}
-          onDelete={handleDeleteTask}
-        />
+        {sortedTasks.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">No tasks yet. Click "Submit New Task" to get started.</p>
+          </Card>
+        ) : (
+          <TaskTable
+            tasks={sortedTasks}
+            onBringToFront={handleBringToFront}
+            onDelete={handleDeleteTask}
+          />
+        )}
       </div>
 
       {/* Task Submission Modal */}
