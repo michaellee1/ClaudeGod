@@ -57,7 +57,7 @@ function TaskTable({ tasks, onBringToFront, onDelete }: TaskTableProps) {
         {tasks.map((task) => (
           <TableRow key={task.id}>
             <TableCell className="max-w-md">
-              <div className="truncate">{task.prompt}</div>
+              <div className="whitespace-pre-wrap break-words">{task.prompt}</div>
               <div className="text-xs text-muted-foreground">{task.id}</div>
             </TableCell>
             <TableCell>
@@ -278,11 +278,18 @@ export default function Home() {
     e.preventDefault()
     if (!prompt.trim() || !repoPath.trim()) return
 
+    // Basic path validation
+    const trimmedPath = repoPath.trim()
+    if (!trimmedPath.startsWith('/') && !trimmedPath.startsWith('~')) {
+      setError('Repository path must be an absolute path (starting with / or ~)')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const formData = new FormData()
-      formData.append('prompt', prompt)
-      formData.append('repoPath', repoPath)
+      formData.append('prompt', prompt.trim())
+      formData.append('repoPath', repoPath.trim())
       formData.append('mode', mode)
       if (selectedImage) {
         formData.append('image', selectedImage)
@@ -416,6 +423,9 @@ export default function Home() {
                 placeholder="/path/to/your/repo"
                 required
               />
+              <p className="text-sm text-muted-foreground">
+                Enter the absolute path to your git repository (e.g., /Users/username/projects/myrepo)
+              </p>
             </div>
             
             <div className="space-y-2">

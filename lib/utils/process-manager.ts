@@ -1,5 +1,8 @@
 import { EventEmitter } from 'events'
 import { spawnTaggedSession, focusTaggedSession } from './iterm-integration'
+import { promises as fs } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 export interface ITermProcessManager extends EventEmitter {
   taskId: string
@@ -27,10 +30,14 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
     this.mode = mode
     this.terminalTag = `claude-${this.taskId}-${mode}`
     
-    // Build the Claude Code command without -p flag
-    const command = this.buildClaudeCommand(prompt)
-    
+    // Save prompt to a temporary file to avoid command line length limits
+    const tempFile = join(tmpdir(), `claude-prompt-${this.taskId}.txt`)
     try {
+      await fs.writeFile(tempFile, prompt, 'utf-8')
+      
+      // Build the Claude Code command
+      const command = await this.buildClaudeCommand(tempFile)
+      
       // Spawn a new iTerm session with our command
       await spawnTaggedSession(this.terminalTag, command)
       
@@ -49,17 +56,16 @@ export class ProcessManager extends EventEmitter implements ITermProcessManager 
     }
   }
 
-  private buildClaudeCommand(prompt: string): string {
-    // Properly escape the prompt for shell - handle single quotes by ending the quote,
-    // adding an escaped quote, and starting a new quote
-    const escapedPrompt = prompt.replace(/'/g, "'\\''")
-    
-    // Escape the worktree path similarly
+  private async buildClaudeCommand(promptFile: string): Promise<string> {
+    // Escape the worktree path
     const escapedPath = this.worktreePath.replace(/'/g, "'\\''")
     
-    // Build command to change directory and run claude with the prompt
-    // Include the same flags as before, except -p
-    const command = `cd '${escapedPath}' && claude --verbose --dangerously-skip-permissions '${escapedPrompt}'`
+    // Escape the prompt file path
+    const escapedPromptFile = promptFile.replace(/'/g, "'\\''")
+    
+    // Build command to change directory, cat the prompt file and pipe to claude
+    // This avoids command line length limits for long prompts
+    const command = `cd '${escapedPath}' && cat '${escapedPromptFile}' | claude --verbose --dangerously-skip-permissions && rm -f '${escapedPromptFile}'`
     
     return command
   }

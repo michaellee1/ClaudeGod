@@ -5,7 +5,7 @@ import { isSelfModification } from '@/lib/utils/self-modification-check'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { tmpdir } from 'os'
+import { tmpdir, homedir } from 'os'
 
 export async function GET() {
   const tasks = taskStore.getTasks()
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const prompt = formData.get('prompt') as string
-    const repoPath = formData.get('repoPath') as string
+    let repoPath = formData.get('repoPath') as string
     const mode = formData.get('mode') as string
     const imageFile = formData.get('image') as File | null
     
@@ -25,6 +25,11 @@ export async function POST(request: NextRequest) {
         { error: 'Prompt and repoPath are required' },
         { status: 400 }
       )
+    }
+    
+    // Handle tilde expansion
+    if (repoPath.startsWith('~')) {
+      repoPath = repoPath.replace(/^~/, homedir())
     }
     
     // Validate mode if provided
@@ -37,10 +42,12 @@ export async function POST(request: NextRequest) {
     }
     
     // Validate the repo path
+    console.log('Validating repo path:', repoPath)
     const isValidRepo = await validateGitRepo(repoPath)
     if (!isValidRepo) {
+      console.error('Invalid git repository path:', repoPath)
       return NextResponse.json(
-        { error: 'Invalid git repository path' },
+        { error: `Invalid git repository path: ${repoPath}. Please ensure the path exists and is a git repository.` },
         { status: 400 }
       )
     }

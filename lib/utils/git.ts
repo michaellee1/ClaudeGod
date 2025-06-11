@@ -19,10 +19,19 @@ export async function stageAllChanges(repoPath: string): Promise<void> {
 
 export async function validateGitRepo(repoPath: string): Promise<boolean> {
   try {
+    // Check if path exists
     await fs.access(repoPath)
+    
+    // Check if it's a git repository
     await execFileAsync('git', ['-C', repoPath, 'rev-parse', '--git-dir'])
+    
     return true
-  } catch {
+  } catch (error: any) {
+    console.error('Git repo validation error:', {
+      path: repoPath,
+      error: error.message,
+      code: error.code
+    })
     return false
   }
 }
